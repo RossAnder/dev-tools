@@ -588,6 +588,69 @@ rest = "949355a51a25d57e"
 rows = "7fc9a4b133b848fa"
 specs = "1ef27f3875ff5f7e"
 
+[[run]]
+step = "implement:apply-1"
+workflow = "implement-v2-milestone"
+args_hash = "6b7ef964e1627f7c839df5d3c8f41ff2e8b78f950a622a3de0cb1b4e6a9670f8"
+run_id = "wf_6fb18a7b-793"
+session = "3790ec38-b2c9-4f26-98b9-62eaaa635c99"
+started = 2026-11-18T15:45:31Z
+finished = 2026-11-18T15:50:07Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+]
+digest_at = 2026-11-18T15:45:09Z
+
+[run.store_digest]
+changes = "aa74d8b8a24da785"
+milestones = "03bb8815e39183ec"
+rest = "c6150dce274ddbdb"
+rows = "c8a34f4cb9e1062f"
+specs = "d09030763f6205cb"
+
+[[run]]
+step = "implement:apply-1"
+workflow = "implement-v2-milestone"
+args_hash = "b12b8dccac59bb7eba843180dac07a05b696703073047f2b72d964f7f9a4a2ea"
+run_id = "wf_e5410c9f-975"
+session = "3790ec38-b2c9-4f26-98b9-62eaaa635c99"
+started = 2026-11-18T15:51:16Z
+finished = 2026-11-18T15:51:49Z
+skip_reason = ""
+outcome = "ok"
+tasks = [33]
+digest_at = 2026-11-18T15:51:04Z
+
+[run.store_digest]
+changes = "b3ebd13e6c169982"
+milestones = "03bb8815e39183ec"
+rest = "c6150dce274ddbdb"
+rows = "831ad76e0f99709f"
+specs = "2e686a02a0e1d9a3"
+
+[[run]]
+step = "reproduce:apply-1"
+workflow = "review-v2-pipeline"
+args_hash = "0006792e91fcc57e4fe18aa47eeb9e2dc85aa3e65adba949b4092db332b583be"
+run_id = "wf_30d5a659-d8e"
+session = "3790ec38-b2c9-4f26-98b9-62eaaa635c99"
+started = 2026-11-18T15:52:17Z
+finished = 2026-11-18T15:53:14Z
+skip_reason = ""
+outcome = "ok"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -1258,6 +1321,237 @@ means = "detail: a fix row returning failed with needs_files is widened by drain
 command = "grep -q 'requests.md' claude/skills/implement-v2-engine/references/apply-rows.md && grep -q 'plan request add' claude/skills/flow-contract-task-store/SKILL.md && grep -q 'requests.md' claude/skills/implement-v2-engine/references/questions.md"
 result = "pass"
 
+[[attempt]]
+task = 22
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "moved the doc comment from request_flow to plan_flows"
+block = "present"
+files_touched = ["tomlctl/tests/output_options.rs"]
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 23
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "request paths canonicalised, item refs keyed by parsed index, generated-map errors no longer refuse add, coupling dropped from the holder closure, one missing-outputs rule"
+block = "present"
+files_touched = [
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/view.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The path comparison key now lives in generated.rs as `path_key` (over a new `canonical_path`), and holders::fold_key delegates to it, instead of generated.rs reusing fold_key."
+why = "holders is a private module of plan (plan/mod.rs declares `mod holders;`) and plan/mod.rs is not this task's file, so the crate-level generated module cannot reach fold_key. Defining the key once in generated.rs keeps one definition for every comparison site; the alternative, a second copy of the folding rule, is what the finding complains about."
+means = "missing_outputs compares by fold_key's definition"
+
+[[attempt.deviations]]
+what = "The duplicate-path canonicalisation was applied both ways: parse_payload stores the canonical form and refuses an empty one, and fold_key itself collapses empty and `.` segments."
+why = "Rows' own `files` and earlier grants are compared through fold_key too, so canonicalising only the request side would still miss a row whose files say `src/./a.rs`. A leading `/` is kept so forbidden() still reads `//etc/passwd` as absolute."
+means = "canonicalise in parse_payload, or alternatively in fold_key"
+
+[[attempt.deviations]]
+what = "The holder closure walks `needs` only; spec `after:` targets are not added."
+why = "The finding names them as optional. Leaving them out can only treat more rows as possible holders, which denies more and never grants a concurrent path."
+means = "walk needs plus, optionally, after: premise targets"
+
+[[attempt.deviations]]
+what = "`plan request add` loads the generated-file map only when the payload has paths, and on a load error falls back to no generators and adds a `warnings` array to its summary; the key is absent when there is no warning."
+why = "Keeps the summary's shape unchanged for every request with a well-formed config."
+means = "fall back to an empty generator list and surface a warnings entry"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/generated.rs tomlctl/src/plan/holders.rs tomlctl/src/plan/request.rs tomlctl/src/plan/check/generated_outputs.rs tomlctl/src/plan/view.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- generated:: plan::holders:: plan::request::"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl review anchor F66 --slug mid-run-requests --gone"
+result = "pass"
+
+[[attempt]]
+task = 24
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "added the partial-rule/change-item test and the later-run repost test"
+block = "present"
+files_touched = ["tomlctl/tests/plan_request.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo nextest run -E 'test(/^plan_request::(a_partial|a_task_may)/)'"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/plan_request.rs"
+result = "pass"
+
+[[attempt]]
+task = 25
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "added the test covering the done-row and deferred-milestone skips"
+block = "present"
+files_touched = ["tomlctl/tests/plan_check.rs"]
+tangential = []
+
+[[attempt.deviations]]
+what = "Asserted with assert_clean instead of finding_ids(...).is_empty()"
+why = "finding_ids panics when the class is absent from the report, so the empty case cannot be read through it"
+means = "the spec's finding_ids assertion"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/a_generated_input_on_a_done_row/)'"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt]]
+task = 26
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "Pre-flight bullet now names the command that lists unapplied granted request paths"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 27
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = """plan-store.md now says a request item's `by` is `""` while open"""
+block = "present"
+files_touched = ["claude/skills/tomlctl/references/plan-store.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 28
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "added the generated.md bullet to the tomlctl SKILL.md reference list"
+block = "present"
+files_touched = ["claude/skills/tomlctl/SKILL.md"]
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 29
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "added `request` to the README plan verb line"
+block = "present"
+files_touched = ["tomlctl/README.md"]
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 30
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "generated.md now says plan request add also refuses on a malformed config"
+block = "present"
+files_touched = ["claude/skills/tomlctl/references/generated.md"]
+deviations = []
+tangential = []
+checks = []
+
+[[attempt]]
+task = 31
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "requests.md now links report.md for the line shape and states the cross-milestone holder gap correctly"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/requests.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 32
+run_id = "wf_6fb18a7b-793"
+milestone = "apply-1"
+status = "done"
+summary = "added the restart branch to step 2 of Asking the orchestrator in both worker agents"
+block = "present"
+files_touched = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 33
+run_id = "wf_e5410c9f-975"
+milestone = "apply-1"
+status = "done"
+summary = "generated.md and plan-request.md now match the code for add's warnings, path canonicalisation and item refs"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan-request.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "! grep -qF 'and `plan request add` refuse' generated.md && grep -qF '`warnings`' plan-request.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
 [[gate_round]]
 milestone = "A"
 round = 0
@@ -1338,6 +1632,61 @@ log = ""
 
 [[gate_round.commands]]
 command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round]]
+milestone = "apply-1"
+round = 0
+seq = 1
+at = 2026-11-18T16:03:00Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 16
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 6
+summary = "libtest x1: 56 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 470
+summary = "Summary [ 380.988s] 3421 tests run: 3421 passed (5 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
 outcome = "pass"
 duration_s = 1
 summary = ""
@@ -1500,3 +1849,50 @@ task = 2
 text = "H1 from task 2 (restart): Restart the glimpse pane so it runs the glimpse milestone A's gate reinstalled, which reads a schema-5 plan.toml. — when: After milestone A's commit, before the first /implement-v2 run that posts a plan request.; done when: glimpse shows the mid-run-requests flow without a parse error."
 path = ""
 needs_person = true
+
+[[report]]
+at = 2026-11-18T16:04:33Z
+milestone = "apply-1"
+why = "apply-1 committed; every milestone is done"
+
+[[report.entries]]
+kind = "audit"
+task = 25
+text = "agent-a3b3657e184326b0a: cargo nextest run -E 'test(/a_generated_input_on_a_done_row/)' (narrow test of task 25's own case) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 24
+text = "agent-a3dbe06e470c58703: cargo nextest run -E 'test(/^plan_request::(a_partial|a_task.../)' (narrow tests of task 24's own cases) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 23
+text = "agent-a855cf4eba662acc1: cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets (compile check the build discipline permits) and cargo test --lib -- generated:: plan::holders:: plan::request:: (narrow module tests) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a785918061f1392ba, agent-a8c59c1c8c6f6e25c, agent-a8c999facc11d6073: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-ac61d1c1501126d00: bash scripts/verify-shared-blocks.sh, a gate command (a one-second parity script, no build), plus cli::dispatch::tests — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 33
+text = "agent-a157c11b022098267: task 33's own grep accept check — allowed"
+path = ""
+needs_person = false

@@ -1,8 +1,8 @@
-schema_version = 1
+schema_version = 2
 last_updated = 2026-11-18
 
 [id_high_water]
-U = 1
+U = 2
 
 [[runs]]
 id = "U1"
@@ -370,6 +370,459 @@ suppressed = 0
 
 [runs.audit]
 sampled = 4
+overturned = 0
+
+[[runs]]
+id = "U3"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-11-18T15:23:26Z"
+finished = "2026-11-18T15:43:28Z"
+base = "4e95f98dd858670488ed65cbb58a4e31b3b6bdb7"
+head = "c7c85ae91fd3e732b5d9d5d1c70ebb9281147dd5"
+scope = [
+    "Cargo.lock",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/commands/implement-v2.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "claude/skills/implement-v2-engine/references/requests.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+changed_lines = 3907
+substrate = "workflow"
+agents = 32
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "381fad8527db12927be790a60a1ca8a79914a5b5bb0af18f735bd6fa1262b97a"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    ".",
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/ui-capture",
+]
+
+[[runs.signals]]
+name = "rename-or-removal"
+source = "detector"
+roots = ["tomlctl/src/plan"]
+
+[[runs.signals]]
+name = "process-heavy"
+source = "detector"
+roots = ["tomlctl/src/plan/check"]
+
+[[runs.signals]]
+name = "docs-touched"
+source = "detector"
+roots = [
+    "claude/agents",
+    "claude/commands",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "tests-touched"
+source = "detector"
+roots = [
+    "tomlctl/src/cli/dispatch/tests",
+    "tomlctl/tests",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/glimpse-v2-visibility",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/mid-run-requests",
+    ".claude/flows/milestone-cadence",
+    ".claude/flows/milestones-by-dependency",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/review-v2-first-run-repairs",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/tomlctl-test-and-gate-cost",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-apply",
+    ".claude/flows/v2-harness-tuning",
+    ".claude/flows/v2-planning",
+    ".claude/flows/v2-ui-fidelity",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "claude/skills/ui-capture",
+    "claude/skills/ui-capture/references",
+    "config/nvim",
+    "docs/flows/glimpse-v2-visibility",
+    "docs/flows/glimpse-v2-visibility/design",
+    "docs/flows/glimpse-v2-visibility/notes",
+    "docs/flows/glimpse-v2-visibility/notes/run",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/flows/mid-run-requests",
+    "docs/flows/mid-run-requests/design",
+    "docs/flows/mid-run-requests/notes",
+    "docs/flows/mid-run-requests/notes/run",
+    "docs/flows/milestone-cadence",
+    "docs/flows/milestone-cadence/notes",
+    "docs/flows/milestone-cadence/notes/run",
+    "docs/flows/milestones-by-dependency",
+    "docs/flows/milestones-by-dependency/design",
+    "docs/flows/milestones-by-dependency/notes",
+    "docs/flows/milestones-by-dependency/notes/run",
+    "docs/flows/tomlctl-test-and-gate-cost",
+    "docs/flows/tomlctl-test-and-gate-cost/design",
+    "docs/flows/tomlctl-test-and-gate-cost/notes",
+    "docs/flows/tomlctl-test-and-gate-cost/notes/run",
+    "docs/flows/v2-apply",
+    "docs/flows/v2-apply/design",
+    "docs/flows/v2-apply/notes",
+    "docs/flows/v2-apply/notes/run",
+    "docs/flows/v2-harness-tuning",
+    "docs/flows/v2-harness-tuning/design",
+    "docs/flows/v2-harness-tuning/notes",
+    "docs/flows/v2-harness-tuning/notes/run",
+    "docs/flows/v2-ui-fidelity",
+    "docs/flows/v2-ui-fidelity/design",
+    "docs/flows/v2-ui-fidelity/notes",
+    "docs/flows/v2-ui-fidelity/notes/run",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "churn-hotspot"
+source = "detector"
+roots = [
+    "tomlctl/src",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/plan",
+    "tomlctl/tests",
+]
+evidence = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+
+[[runs.signals]]
+name = "finding-hotspot"
+source = "detector"
+roots = [
+    "tomlctl/src/cli/types",
+    "tomlctl/src/plan",
+    "tomlctl/tests",
+]
+evidence = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/output_options.rs",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[[runs.signals]]
+name = "trust-boundary"
+source = "judged"
+accepted = true
+evidence = ["tomlctl/src/plan/request.rs"]
+
+[runs.baselines]
+lint-baseline = "C:/Users/rossa/AppData/Local/Temp/tmp.XcBn5T9m7x/c1.log"
+harness-gates = "none — pass (56 passed, 0 failed); verification returned no log path"
+ui-capture = "none — the change touches no UI"
+
+[runs.counts]
+cells = 14
+uncovered = 0
+defect = 6
+cleanup = 12
+advisory = 0
+refuted = 2
+suppressed = 0
+
+[runs.audit]
+sampled = 6
 overturned = 0
 
 [[cells]]
@@ -1026,6 +1479,753 @@ reason = "all SCHEMA_VERSION hits name tasks::schema's own consts (lines 31/35/3
 file = "tomlctl/src/review/store.rs"
 line = 48
 reason = "all SCHEMA_VERSION hits name review::store's own consts (lines 48/50); no import of plan::schema"
+
+[[cells]]
+id = "C18"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/mod.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "re-sliced by risk: the new plan request verbs (1150 added lines) are the change's core, so correctness runs alone on them rather than bundled over a mixed tests-and-prose slice"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Read in full: request.rs, schema_request.rs, dispatch.rs, plan/mod.rs, plus the slice's diff of cli/types/plan.rs and cli/types/mod.rs; callees holders.rs, normal_path, read_ndjson_source and read_json_value_from_arg traced. Contract: plan-request.md, engine requests.md. Probes run: `plan request list --where/--select` (works), scratch rustc on usize alias parsing, 1 sweep (item-ref parsing, complete). 1 defect; 4 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "add"
+reason = "tasks.toml read before the plan.toml lock is the documented convention of the other plan writers; grants race-checked inside the lock via holder"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "rule"
+reason = "needs-user is final for rule by design: requests.md routes it to the worker's own question, not a re-rule"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "parse_payload"
+reason = "a path normalising to empty (`./`) stays open, not granted; only a contrived worker payload reaches it and the orchestrator rules it"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "rule_path"
+reason = "stale unapplied grants from an ended session are applied at re-entry before the pick (requests.md Re-entry), so they do not block holders forever"
+
+[[cells]]
+id = "C19"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "re-sliced by subsystem: the holder, lane, check and generated-output modules the request verbs feed, separate from the request core so one agent can hold each"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Read the base..head diff of all 10 slice files in full, plus callers in plan/request.rs, emit.rs Launch::build, tasks normal_path, the milestone Workflow's gates, and the request contracts in plan-request.md and requests.md. Traces: 3 (forbidden/fold_key canonicalisation, holder closure vs Workflow gating, cross-milestone holders); 1 sweep for case-sensitive output compares (2 sites, complete). 4 defects, 4 sites ruled out. Prior findings: none."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/emit.rs"
+symbol = "gate_list"
+reason = "refusing on a malformed generated.toml is deliberate: a gate list silently missing a generator check would pass a stale output"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check/case_collision.rs"
+symbol = "case_collision_findings"
+reason = "an edited existing file is skipped by design; only created files are judged, per the module doc"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/schema.rs"
+symbol = "write_version"
+reason = "version tiers ordered by const asserts; a request store stamps 5 so older binaries refuse rather than drop requests"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/lane.rs"
+symbol = "lane_paths"
+reason = "grants of unapplied requests on lane rows only widen the lane; denied, applied and foreign grants stay out, as tested"
+
+[[cells]]
+id = "C20"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/generated.rs",
+]
+concerns = ["security"]
+agent = "review-finder"
+reason = "re-sliced to the accepted trust-boundary: worker-written request payloads and the file paths they name flow through these modules; the proposal spread security over prose and lockfile slices"
+status = "covered"
+sealed = true
+note = "Security lens with trace. Read 7/7 slice files in full, plus normal_path, repo_or_cwd_root and the worker/requests.md request contract. Traced the request path from the worker's --json through parse_payload, rule_path/forbidden/holder, rule() and the generated-output auto-grant; checked case_collision's dir joins and the generated.toml parse. 1 defect (path-equivalence bypass of forbidden/holder), 4 sites ruled out. No lint-baseline lines in the slice."
+
+[[cells.bound]]
+concern = "security"
+hash = "f68292fa8f5d406e1445e1a49c52bbaabf71ecbd1d6f346ba3f25b67c48f29c0"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/security.md"
+methods = ["trace"]
+v1_category = "security"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "rule"
+reason = "no caller identity on rule/applied; workers are told never to run them and the drain audits transcripts for self-written rulings (requests.md)"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "parse_payload"
+reason = "why/what/evidence length and changes count are unbounded, but the writer is a local worker on the user's machine; no harmful vector"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/generated.rs"
+symbol = "parse"
+reason = "outputs/regenerate/check come from repo-owned .claude/generated.toml; auto-grant runs forbidden() on the requested path first"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check/case_collision.rs"
+symbol = "split"
+reason = "listing() joins only dirs that split() has stripped of `..`, `:` and leading `/`; it reads directory names only"
+
+[[cells]]
+id = "C21"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "re-sliced: test-gaps over the test files, judged against the request and check modules they exercise; includes both churn hotspots (capabilities.rs, output_options.rs)"
+status = "covered"
+sealed = true
+note = "Read in full: plan_request.rs; diffs of plan_check, plan_emit, plan_view, output_options, capabilities, it.rs, finding_classes. Also read the code under test (request.rs, holders.rs, generated.rs, check/case_collision.rs, check/generated_outputs.rs, plus the lane/emit/view/schema diffs) and the plan-request.md contract. Made 1 lens pass (test-gaps), 1 hygiene sweep and 3 rule-outs. 4 cleanups."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+v1_category = "testability"
+
+[[cells.ruled_out]]
+file = "tomlctl/tests/plan_request.rs"
+symbol = "a_generated_output_of_a_held_input_is_granted_by_tomlctl_and_ruled_at_once"
+reason = "concurrent-post lock claim has no test, but pinning it needs a concurrency harness; holder precedence and closure are unit-tested in holders.rs"
+
+[[cells.ruled_out]]
+file = "tomlctl/tests/plan_emit.rs"
+symbol = "gate_list_omits_an_untouched_generators_check"
+reason = "a generator touched only by another milestone's row is a narrow variant of the untouched case; the milestone filter is one line"
+
+[[cells.ruled_out]]
+file = "tomlctl/tests/plan_request.rs"
+symbol = "applied_refuses_an_open_request_and_marks_a_ruled_one"
+reason = "multi-id atomicity is safe: store::mutate discards the store on Err, so a partial mark cannot persist"
+
+[[cells]]
+id = "C22"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/commands/implement-v2.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+]
+concerns = [
+    "correctness",
+    "doc-drift",
+]
+agent = "review-finder"
+reason = "re-sliced to the implement-v2 harness prose: the worker and engine procedure for requests must match the verbs' actual flags and rulings; doc-drift moved in from unselected because this prose is the request feature's only caller"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "covered"
+sealed = true
+note = "Read in full: requests.md, report.md, drain.md, run-milestone.md, SKILL.md, plan-worker-deep.md (lite diffed), plan-request.md; diffs of questions.md, apply-rows.md, implement-v2.md, flow-contract-task-store, write-and-prove.md. Checked against --help: plan request list/rule, agents audit, tasks show/closure; code: holders.rs, lane.rs, request.rs, generated_outputs.rs, case_collision.rs, query bool filter. 4 sites ruled out. Escalated a holders.rs coupling gap."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-drift"
+hash = "a82f55abaaabf6458d1ccfa9648012857e7d6bff88d49e2345b2219794394bc9"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-drift.md"
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/requests.md"
+symbol = "Audit the rulings first"
+reason = "pattern also matches a worker grepping docs for 'plan request rule', but only a request id the command names is a breach, so no false breach"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/report.md"
+line = 3
+reason = "verbatim move of drain step 11 plus the requests section; diffed against base, nothing lost"
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+line = 228
+reason = "generated-output-unheld and file-case-collision prose matches check/generated_outputs.rs and check/case_collision.rs"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/drain.md"
+symbol = "5a. Granted requests"
+reason = "ordering after the lane check and step 5, before step 6 and the agents audit, agrees with requests.md and lane.rs reading unapplied grants"
+
+[[cells]]
+id = "C23"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/tomlctl/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+concerns = [
+    "correctness",
+    "doc-drift",
+]
+agent = "review-finder"
+reason = "re-sliced to the tomlctl reference docs and manifests: flag tables and output shapes against the CLI types; doc-drift moved in from unselected for the same reason"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "covered"
+sealed = true
+note = "Read in full: the slice diff (10 files), plan-request.md, generated.md; against request.rs, holders.rs, schema_request.rs, generated.rs, lane.rs, emit gate-list, view generator_lines, check/generated_outputs.rs and case_collision.rs, capabilities list. Checks: every doc claim in plan-request/plan-store/plan-run/plan-engine/generated traced to code; anchors resolve; SKILL.md reference-list sweep (1 miss); version bump consistent across Cargo.toml/lock/README. 4 cleanups, 3 rule-outs."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-drift"
+hash = "a82f55abaaabf6458d1ccfa9648012857e7d6bff88d49e2345b2219794394bc9"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-drift.md"
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/tomlctl/references/plan-request.md"
+line = 58
+reason = "rule 3 omits that rows in the requester's needs/coupling closure never hold; they never run alongside it, so 'could edit alongside' is accurate"
+
+[[cells.ruled_out]]
+file = "claude/skills/tomlctl/references/plan-store.md"
+line = 22
+reason = "sample [id_high_water] holds only D while C1 and Q1 appear; pre-existing sample simplification, not introduced by this change"
+
+[[cells.ruled_out]]
+file = "tomlctl/README.md"
+line = 93
+reason = "plan emit line omits lane-check and schedule; pre-dates this change and not touched by it"
+
+[[cells]]
+id = "C24"
+run = "U3"
+wave = 1
+slice = [
+    "Cargo.lock",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/commands/implement-v2.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "claude/skills/implement-v2-engine/references/requests.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+facets = ["claude-harness"]
+status = "thin"
+sealed = true
+note = "Ripple sweep, diff 4e95f98..c7c85ae. 14 NAMES searched (fix_shape, out_of_lane, SCHEMA_VERSION, moved report and out-of-lane prose, step 10/11 refs, steps 1 to 6, Record the report, needs_human report, 0.24.0, 0.25.0 manifests, feature lists, Cargo.lock). Hits read. Clean: 12 probes. Ruled out: fix_shape legacy handling in fields.rs:329. Not grepped repo-wide: schema_version = 4 and 0.24.0 (whole-tree sweeps timed out), searched only in claude/ and tomlctl/. No escalations."
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/review/fields.rs"
+line = 329
+reason = "fix_shape removal is deliberate: legacy needs-plan rows migrate to blocked_on; the retired key is refused by tests in the same crate."
+
+[[cells]]
+id = "C25"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = 'Slice: 6 test files, diff base..head is additions only (it.rs mod line, output_options.rs request cases and fixtures, plan_check/plan_emit/plan_view generator tests, new plan_request.rs). NAMES removed or renamed by the diff: 0, so no tree-wide name sweep was owed. Ran 2 sweeps: tomlctl sweep for plan_flows and plan request/request:: wiring, and a Grep of "request" under tomlctl/src for the production verb. Seam check for plan request not settled by grep here, so not escalated. Found 1 candidate: output_options.rs:1573 doc comment for plan_flows now sits above request_flow (cleanup F43).…(+58)'
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells]]
+id = "C26"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/**",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/it.rs",
+]
+concerns = ["hygiene"]
+agent = "review-sweeper"
+reason = "hygiene moved in from unselected: one Haiku sweeper over the Rust source and tests is cheap, and the repeat ripple passes were cut to pay for it"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = """
+NAMES: 10 searched tree-wide. Renamed or removed: SCHEMA_VERSION, the test stamps_the_newest_version, the version string 0.24.0, out_of_lane (signature only), fix_shape. Visibility-only changes, grepped: records, insert_records, nested, required_u32, str_or, required_str, required_datetime, vocab, bool_or_false, Table, ELABORATION_DEFERRED.
+Probes: 2 tomlctl sweeps (whole tree), 3 Grep scans of tomlctl/, 1 catalogue read. Clean: every name resolves to a live use or a visibility-only change; no dead item, stale TODO or unused key proven. Hits in docs/flows notes and claude/skills are hist…(+65)"""
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "a3eb120d3cde6f3ff9eae8fd72260f2c1e6541a5f043ee76386c993ae1ff25d7"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C27"
+run = "U3"
+wave = 1
+slice = [
+    "Cargo.lock",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/commands/implement-v2.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "claude/skills/implement-v2-engine/references/requests.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+concerns = [
+    "intent-fidelity",
+    "doc-consolidation",
+    "architecture",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: request.rs, holders.rs, generated.rs, generated_outputs.rs, case_collision.rs, requests.md, report.md, plan-request.md. Read as diffs: lane/emit/view/check/dispatch, drain/run-milestone/apply-rows/questions/SKILL, the worker blocks, and the tomlctl refs. Brief: 6 of 8 criteria checked in scope. Decisions: 5 read (D1 partly honoured, F67). Workflow gates traced. 3 sweeps (step-11 links, input_globs, closure fns). 4 sites ruled out. Tests and Cargo files were skimmed only."
+
+[[cells.bound]]
+concern = "intent-fidelity"
+hash = "64b174e3d75774d51fb27e99bacb612888f326c62b59eb2369f93f7c96692d75"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/intent-fidelity.md"
+methods = ["trace"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "doc-consolidation"
+hash = "936ae9c8fa1da52e9ae9c7fe0577db09012102251d0935b14cc297a30b654171"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-consolidation.md"
+methods = ["sweep"]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "architecture"
+hash = "c3f1c3c0719c47fbe78bcb58775ff5fbbc29a98995b82da1909e775640280f1d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/architecture.md"
+v1_category = "architecture"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/holders.rs"
+symbol = "closure"
+reason = "A local walk rather than tasks::graph closure_up/down is deliberate: graph is private to tasks (task-3 run note). Only its edge set is wrong, which F67 covers."
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/emit.rs"
+symbol = "gate_list"
+reason = "A malformed generated.toml refusing gate-list is documented in plan-engine.md's gate-list table; it is a deliberate choice."
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/questions.md"
+symbol = "Requests before questions"
+reason = "A one-line pointer at the point of use that links to requests.md, the rule's owner; consolidating it would cost more churn than it saves."
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/drain.md"
+line = 488
+reason = "The step 11 stub that links to report.md is a deliberate pointer left by the move; a sweep found no stale 'drain.md step 11' links."
+
+[[cells]]
+id = "C28"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/**",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack; one cell over the Rust source, which both context-bound correctness cells split"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Context-free: read the full base..head diff for all 16 slice files (request.rs, holders.rs, schema_request.rs, generated.rs, case_collision.rs, generated_outputs.rs, lane/emit/view/dispatch/schema/check/mod hunks, cli types, lib.rs) plus normal_path for the path contract. Traced 5 entry points (add, rule, list, applied, holder); 4 defects raised, 3 sites ruled out. No lint-baseline hits in the slice. No build or tests run."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "load_tasks"
+reason = "task store read before the plan.toml lock; request verbs never write tasks.toml and the comment says other plan writers do the same"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check/case_collision.rs"
+symbol = "stem"
+reason = "byte slice at rfind('.') is on an ASCII boundary, cannot panic on non-ASCII names"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/holders.rs"
+symbol = "closure"
+reason = "cycle and dangling edges terminate via the seen sets; requester itself is in the closure so never holds"
+
+[[cells]]
+id = "C29"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/commands/implement-v2.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/tomlctl/**",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack; one cell over the harness and reference prose, which both context-bound prose cells split"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Context-free: read the base..head diff of all 19 slice files (new requests.md, report.md, plan-request.md, generated.md in full). Traced worker request loop, ruling, drain 5a apply/audit/re-entry, lane and pre-flight exemptions against plan-request.md and holders.rs; checked plan request list --help for --where/--get. Lint baseline: no slice hits. 1 cleanup (pre-flight lacks command for granted paths), 3 rule-outs."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/requests.md"
+symbol = "Order the holders"
+reason = "started holder in another milestone is not checked by add/rule (holders.rs scopes to requester's milestone), but the schedule lets only a started milestone run, so unreachable"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/drain.md"
+symbol = "Out-of-lane edits"
+reason = "lane-check counts a worker-written grant in lane; step 5a's breach audit reports those paths as out of lane and blocks the gate, so the procedure still holds"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-lite.md"
+symbol = "Asking the orchestrator"
+reason = "wait loop uses plan request list --where/--get; the verb takes the read bundle with --where and --get (checked --help), empty output on no match"
+
+[[cells]]
+id = "C30"
+run = "U3"
+wave = 1
+pass = 2
+slice = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/request.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "repeat pass on the request-verb correctness cell, files in reverse order: the floor lens on the change's riskiest slice"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Read in full: request.rs, schema_request.rs, plan/mod.rs, dispatch.rs; the diff hunks of cli/types/mod.rs and cli/types/plan.rs (FEATURES, PlanRequestOp, four arg structs); traced into holders.rs, schema.rs write_version/mint_id, tasks normal_path, items parse_ndjson_batch, plan-request.md and requests.md. Probes: one rustc parse/normalise probe. Sweep: request path entry points (parse_payload only), clean. 2 defects, 4 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "rule"
+reason = "needs-user is terminal for rule by design: requests.md routes the user's answer through the worker's own question, not a re-rule"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "load_tasks"
+reason = "task store read before the plan.toml lock is the documented pattern of the other plan writers; grants themselves are checked under the lock"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/request.rs"
+symbol = "applied"
+reason = "marking an all-denied or already-applied ruled request applied is idempotent and harmless; only open requests are refused, as documented"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/schema_request.rs"
+symbol = "request_from_toml"
+reason = "str_or defaults for run_id, milestone and item text are lenient reads of a tool-owned store; required keys and vocabularies are refused as tested"
+
+[[cells]]
+id = "C31"
+run = "U3"
+wave = 1
+pass = 2
+slice = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/holders.rs",
+]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "repeat pass on the holder, lane and check correctness cell, files in reverse order: churn and finding hotspots (lane.rs, schema.rs, check.rs, view.rs)"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "10 slice files read (diff 4e95f98d..c7c85ae9 plus full new files generated.rs, case_collision.rs, generated_outputs.rs, holders.rs body); traced holder/closure against emit.rs Launch::build and implement-v2-milestone.js gates, request.rs rule_path and outputs folding, normal_path, ReportKind usage. Sweeps: coupling in workflow (0 hits), input_globs readers (0 outside generated.rs). 1 defect, 1 hygiene cleanup, 5 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check/generated_outputs.rs"
+symbol = "generated_output_findings"
+reason = "exact-case output-held compare differs from request.rs fold_key, but a case-variant spelling is already warned by plan/file-case-collision"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/view.rs"
+symbol = "generator_lines"
+reason = "same exact-case held compare; degrades to a line on a malformed config by design, per its doc comment"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/emit.rs"
+symbol = "gate_list"
+reason = "refusing a malformed generated.toml at gate-list matches request add's refusal; a gate that silently dropped generator checks would be worse"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/schema.rs"
+symbol = "write_version"
+reason = "a report of kind request without a request row stamps below 5, but an older binary still refuses the unknown kind, so nothing is dropped"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check/case_collision.rs"
+symbol = "case_collision_findings"
+reason = "planned neighbours compared by exact dir; two rows spelling one directory in two cases is narrow and the file-level warning still fires"
 
 [[findings]]
 id = "F1"
@@ -2627,6 +3827,1021 @@ addressed = [
     "milestone:B.gates",
 ]
 
+[[findings]]
+id = "F43"
+run = "U3"
+cell = "C25"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "checker"
+file = "tomlctl/tests/output_options.rs"
+line = 1573
+symbol = "request_flow"
+summary = "Doc comment for plan_flows now sits above request_flow; plan_flows is left undocumented"
+effort = "trivial"
+evidence = [
+    "tomlctl/tests/output_options.rs:1573-1576 doc comment directly above fn request_flow",
+    "tomlctl/tests/output_options.rs:1632 fn plan_flows has no doc comment; request_flows added at 1601-1631 between them",
+]
+edit = "Delete the three-line doc comment and the fn line from the anchor, keep `fn request_flow(root: &Path, slug: &str) {` alone, and place the doc comment immediately above `fn plan_flows(root: &Path) {`."
+direction = "change"
+old = """
+/// The `plan` group's flows, added to its fixture alone so that no other group
+/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
+/// `PLAN_FILE` is what gives `plan drift` an affected task.
+fn request_flow(root: &Path, slug: &str) {"""
+anchor = "code|tomlctl/tests/output_options.rs|request_flow"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+apply_task_id = 22
+
+[[findings]]
+id = "F44"
+run = "U3"
+cell = "C20"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "security"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 30
+symbol = "forbidden"
+summary = "fold_key keeps `.` and empty segments, so docs/./flows/<slug>/x or src//held.rs escapes the forbidden deny-list and the holder collision check"
+severity = "minor"
+failure_scenario = """A worker posts `plan request add` with path `docs/./flows/<slug>/brief.md` (or `docs//flows/<slug>/brief.md`), or `src/./x.rs` for a file an unrelated pending row holds. fold_key leaves the segments in place, so `under(key, "docs/flows/<slug>")` and the holder's `fold_key(file) == key` both miss; the item stays open instead of denied, and `rule --ruling granted` re-checks only holder (same miss), so the orchestrator can grant a path the contract says no task may hold, or one another row edits concurrently. On Windows `.claude./x` (trailing dot) likewise resolves to `.claude/x`. CWE-41."""
+fix = "Canonicalise or refuse non-canonical request paths before ruling. In request.rs parse_payload, refuse a path with an empty segment, a `.` segment, or a segment ending in `.` or a space (Win32 strips those), naming the canonical spelling; or make the comparison key collapse empty and `.` segments so forbidden and holder see one spelling. Also call holders::forbidden in rule() before writing a granted path item, so a grant cannot land on a forbidden path. Add cases to holders.rs `paths_under_claude_or_the_flow_directory_are_forbidden` and request.rs payload tests for `docs/./flows/demo/x`, `docs//flows/demo/x` and `.claude./x`."
+effort = "small"
+counter = "If the drain's audited task update or lane check canonicalises and refuses such a path before it reaches a row's files, the grant is caught downstream; I did not read drain.md's update step or the tasks update path validator."
+grade = "high"
+evidence = [
+    'tomlctl/src/tasks/schema.rs:714 normal_path only replaces `\` and trims leading `./`; no `.`/empty-segment collapse',
+    "tomlctl/src/plan/holders.rs:22 fold_key = normal_path(..).to_lowercase(); holders.rs:47-48 flow-dir check is a raw prefix strip on that key",
+    "tomlctl/src/plan/holders.rs:108 holder compares fold_key(file) == key by string equality",
+    "tomlctl/src/plan/request.rs:369-377 rule() grants after holder() alone, never forbidden()",
+    "tomlctl/src/plan/request.rs:223 parse_payload stores normal_path(path) with no segment validation",
+]
+fix_files = ["tomlctl/src/plan/request.rs"]
+same_as = "F45"
+anchor = "code|tomlctl/src/plan/holders.rs|forbidden"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F45"
+
+[[findings]]
+id = "F45"
+run = "U3"
+cell = "C28"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 223
+symbol = "parse_payload"
+summary = "Request paths are not canonicalised: `a/./b`, `a//b` and `./` (empty) pass and fold_key compares them unequal, bypassing holder, held and forbidden checks"
+severity = "minor"
+failure_scenario = 'Task 1 posts {"paths":[{"path":"src/./shared.rs","why":"x"}]} while unrelated pending task 2 holds src/shared.rs. normal_path only trims a leading `./` and swaps slashes, so fold_key gives `src/./shared.rs` != `src/shared.rs`: holder() finds no holder, the item stays open, and `rule` grants it (its holder recheck misses too), so two tasks edit one file. `docs/./flows/<slug>/x.md` likewise escapes forbidden(); `./` normalises to an empty path that is accepted.'
+fix = "In parse_payload, canonicalise each path before use: split on `/`, drop empty and `.` segments, rejoin; refuse the item when the result is empty. Store the canonical form so fold_key, forbidden and holder all compare it. Alternatively make fold_key (holders.rs) collapse `.` and empty segments so every comparison site agrees, and add a test for `src/./a.rs` and `src//a.rs` against a held `src/a.rs`."
+effort = "small"
+counter = "A caller (the worker skill or drain) canonicalising paths before `plan request add`, or `rule` being always preceded by a human check, would make the variant unreachable in practice."
+grade = "high"
+evidence = [
+    'tomlctl/src/plan/request.rs:223 `let path = normal_path(&text(entry, "path", &at)?);` — text() checks non-empty before normalising',
+    'tomlctl/src/tasks/schema.rs:714-716 normal_path only replaces `\` and trims leading `./`; rustc probe: "./" normalises to ""',
+    "tomlctl/src/plan/holders.rs fold_key = normal_path(path).to_lowercase(); forbidden() checks only absolute, `..`, .claude/ and the flow dir",
+    "tomlctl/src/plan/holders.rs holder(): `row.files.iter().any(|file| fold_key(file) == key)` — a plain string compare of folded keys",
+]
+fix_files = ["tomlctl/src/plan/holders.rs"]
+anchor = "code|tomlctl/src/plan/request.rs|parse_payload"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F46"
+run = "U3"
+cell = "C28"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 349
+symbol = "rule"
+summary = "`rule` dedupes rows by raw item text, so `p1` and `p01` (or `p+1`) both rule the same item and the last silently overwrites the first"
+severity = "minor"
+failure_scenario = 'An NDJSON batch {"item":"p1","ruling":"granted",...} then {"item":"p01","ruling":"denied",...}: item_ref parses both to Path(0) (usize::from_str accepts leading zeros and `+`), `named` holds the raw strings so the "ruled twice" refusal never fires, both pass the `current != Open` check (state is read before edits apply), and the second edit overwrites the first: the item ends denied with no error.'
+fix = "Key the duplicate check on the parsed reference rather than the raw string: insert (is_path, index) into `named` after item_ref succeeds. Optionally make item_ref refuse a number with a leading `0` or `+` so only the canonical `p<n>`/`c<n>` form is accepted, and extend item_refs_number_from_one with `p01` and `p+1`."
+effort = "trivial"
+counter = "If item_ref refused non-canonical numbers elsewhere (it does not: `number.parse::<usize>()` is the only check) the duplicate could not arise."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/request.rs:349 `if !named.insert(row.item.clone())` dedups on the trimmed raw string",
+    "tomlctl/src/plan/request.rs:406 `let number: usize = number.parse().ok()?;` with no canonical-form check",
+    'rustc 2024 probe: "+1".parse::<usize>() = Ok(1), "01".parse::<usize>() = Ok(1)',
+    "tomlctl/src/plan/request.rs:355-359 reads `current` from the unmodified request, so a second row for the same item still sees Open; edits apply in order at 382-396",
+    'claude/skills/tomlctl/references/plan-request.md (plan request rule): "an item is ruled once per call and only while it is open"',
+]
+anchor = "code|tomlctl/src/plan/request.rs|rule"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F47"
+run = "U3"
+cell = "C28"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/check/generated_outputs.rs"
+line = 46
+symbol = "generated_output_findings"
+summary = "Outputs match a row's files case-sensitively here and in view.rs but request add folds case: a case-variant output is called missing, then denied as held"
+severity = "minor"
+failure_scenario = """Generator output `src/tokens.gen.ts`; a pending row holds `src/tokens.css` and `src/Tokens.gen.ts`. `plan check` warns generated-output-unheld and the worker view says the output is "not in this task's files: ask for it with a scope request"; the worker posts it and `plan request add` denies it "already held by this task" because it compares fold_key. Inputs are matched case-insensitively (GlobBuilder case_insensitive), so only outputs disagree."""
+fix = "Compare outputs by folded key in both sites: build `held` with holders::fold_key (or normal_path(..).to_lowercase()) and test `held.contains(&fold_key(output))`, in generated_outputs.rs and in view.rs generator_lines."
+effort = "trivial"
+counter = "If outputs and files are always spelled in the same case by convention (no row ever holds a case variant of a declared output), the mismatch never fires."
+grade = "medium"
+evidence = [
+    "tomlctl/src/plan/check/generated_outputs.rs:41 held = normal_path(f) (case kept); :46 !held.contains(*output)",
+    "tomlctl/src/plan/view.rs:757 and :770 same case-sensitive comparison, with the 'ask for it with a scope request' hint",
+    "tomlctl/src/plan/request.rs add: held = fold_key(f), outputs = fold_key(o), and rule_path denies a held fold_key as 'already held by this task'",
+    "tomlctl/src/generated.rs parse: inputs GlobBuilder .case_insensitive(true)",
+]
+fix_files = ["tomlctl/src/plan/view.rs"]
+same_as = "F68"
+anchor = "code|tomlctl/src/plan/check/generated_outputs.rs|generated_output_findings"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F68"
+
+[[findings]]
+id = "F48"
+run = "U3"
+cell = "C28"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 62
+symbol = "add"
+summary = "A malformed .claude/generated.toml refuses every `plan request add`, even a changes-only request, while plan check treats the same config as a warning"
+severity = "minor"
+failure_scenario = '`.claude/generated.toml` has a generator missing `check`. A running worker posts {"changes":[{"field":"accept",...}]} or a path unrelated to any generator: generated::load errors and add returns a Validation refusal naming the config, so the worker cannot post its one request at all mid-run; plan check only warned (generated-output-unheld) and the worker view printed a line, so nothing earlier stopped the run.'
+fix = "In add, on a generated::load error fall back to an empty generator list (no mechanical output grant, so every path that rule would have granted stays open for the orchestrator) and surface the config problem in the summary, e.g. a `warnings` entry; or load generators only when payload.paths is non-empty. Keep the refusal only if the run must fail closed, and then say so in the command help."
+effort = "small"
+counter = "If failing closed on a malformed generator config is a documented decision for the request verb, this is a challenge, not a defect."
+grade = "medium"
+evidence = [
+    "tomlctl/src/plan/request.rs:62 `generated::load(..).map_err(|err| refusal(..))?` runs before any payload item is considered",
+    "tomlctl/src/plan/check/generated_outputs.rs a load Err becomes one WARNING finding",
+    "tomlctl/src/plan/view.rs generator_lines: a load Err prints one line rather than failing the view",
+]
+anchor = "code|tomlctl/src/plan/request.rs|add"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F49"
+run = "U3"
+cell = "C18"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 349
+symbol = "rule"
+summary = "plan request rule dedups items by raw string, so `p1` and `p01` (or `p+1`) both rule the same item in one batch and the last silently wins"
+severity = "minor"
+failure_scenario = """An open request Q1 with one path item. `plan request rule Q1 --ndjson` with rows {"item":"p1","ruling":"granted",...} and {"item":"p01","ruling":"denied",...}: item_ref parses both to ItemRef::Path(0) (usize parse accepts `01` and `+1`), `named` holds the raw strings so the twice-ruled check passes, both see the pre-edit Open ruling, and the second edit overwrites the first. The call succeeds writing `denied` instead of refusing, against the documented 'an item is ruled once per call'."""
+fix = """In rule, key the duplicate check on the parsed item rather than the raw text: insert (kind, index) — e.g. derive PartialEq/Eq/Ord on ItemRef and use a BTreeSet<ItemRef>, or insert the canonical `format!("p{}", i + 1)` — and report the row's own text in the 'is ruled twice' message. Optionally make item_ref refuse a leading `0` or `+` so only canonical `p<n>`/`c<n>` parse, and add both aliases to item_refs_number_from_one."""
+effort = "trivial"
+counter = "Refuted if parse_rule_rows or row_string canonicalises `item` before rule sees it (it only trims), or if usize::from_str rejected `01` — a scratch rustc run printed Ok(1) for both `01` and `+1`."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/request.rs:349 `if !named.insert(row.item.clone())` dedups on the raw item string",
+    "tomlctl/src/plan/request.rs:404-412 item_ref parses the number with `number.parse::<usize>()` and maps to a zero-based index",
+    'scratch rustc: `"01".parse::<usize>()` and `"+1".parse::<usize>()` both print Ok(1)',
+    "claude/skills/tomlctl/references/plan-request.md (rule, `item` row): 'an item is ruled once per call and only while it is `open`'",
+    '''sweep -e 'split_at_checked\(1\)' -e 'named\.insert\(' -e 'fn item_ref': item-ref parsing exists only in plan/request.rs, complete''',
+]
+same_as = "F46"
+related = ["F46"]
+anchor = "code|tomlctl/src/plan/request.rs|rule"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F46"
+
+[[findings]]
+id = "F50"
+run = "U3"
+cell = "C21"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_request.rs"
+line = 291
+symbol = "rule_refuses_a_request_that_is_no_longer_open"
+summary = "No black-box test rules a change item (c<n>) or makes a partial rule call; the documented 'partial call leaves the request open' is unpinned"
+effort = "small"
+counter = """A test elsewhere (request.rs unit tests or output_options) that rules a c<n> item through the CLI and asserts the request stays open after a partial call would make this redundant; none found by grep for '"c1"' and 'partial'."""
+edit = 'Add a test `a_partial_rule_leaves_the_request_open_and_rules_a_change_item_by_index`: flow(&[row(1,&[],&["src/one.ts"])],&[1]); add(&root,1,&json!({"paths":[{"path":"src/new.ts","why":"w"}],"changes":[{"field":"means","what":"w","evidence":"e"}]})) and assert status "open" and item(&out,"c1")["ruling"]=="open" with by "". Then rule(&root,&id,&[json!({"item":"c1","ruling":"denied","reason":"r"})]) and assert the printed status is still "open"; list(&root)[0] has ruled_at "", changes[0].ruling "denied" and by "orchestrator", paths[0].ruling "open". Then rule p1 granted and assert status "ruled" and a non-empty ruled_at. Also assert rule naming "p2" on that request fails with "has no item". Each assertion fails if settle() marks a partial call ruled or ItemRef::Change writes the wrong slot.'
+direction = "add"
+old = "fn rule_refuses_a_request_that_is_no_longer_open() {"
+anchor = "code|tomlctl/tests/plan_request.rs|rule_refuses_a_request_that_is_no_longer_open"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+apply_task_id = 24
+
+[[findings]]
+id = "F51"
+run = "U3"
+cell = "C21"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_request.rs"
+line = 329
+symbol = "a_second_request_from_the_same_task_in_a_run_is_refused"
+summary = "The one-request limit is tested only within one run; nothing pins that a task may post again in a later run of its milestone"
+effort = "small"
+counter = "If the plan's design intends one request per task for the whole milestone rather than per run, the test would pin the wrong contract; plan-request.md and request.rs both say 'one request per run'."
+edit = 'Add a test `a_task_may_post_again_in_a_later_run`: flow(&[row(1,&[],&["src/one.ts"])],&[1]); add_paths(&root,1,&["src/a.ts"]).success(); close run wf_1 with `plan run finish --slug request-flow --step implement:A --run-id wf_1` plus whatever outcome flag the verb requires; start `plan run start --step implement:A --run-id wf_2 --tasks 1`; add_paths(&root,1,&["src/b.ts"]).success(). Assert list(&root) has two rows whose run_id values are "wf_1" and "wf_2" and whose milestone is "A". This fails if the duplicate check in request::add drops its run_id comparison and blocks a retried task forever.'
+direction = "add"
+old = "fn a_second_request_from_the_same_task_in_a_run_is_refused() {"
+anchor = "code|tomlctl/tests/plan_request.rs|a_second_request_from_the_same_task_in_a_run_is_refused"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+apply_task_id = 24
+
+[[findings]]
+id = "F52"
+run = "U3"
+cell = "C21"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_check.rs"
+line = 1599
+symbol = "no_generated_config_is_clean"
+summary = "plan/generated-output-unheld skips non-pending rows and deferred milestones, but no test drives either skip"
+effort = "small"
+counter = "If TASKS' row is not `pending` or a done row trips a different error that masks the finding, the swap needs adjusting; the check would still need these branches pinned."
+edit = """Add a test `a_generated_input_on_a_done_row_or_a_deferred_milestone_does_not_warn`: (1) Flow::with_tasks of TASKS with the row's `status = "pending"` swapped to `status = "done"`, write_generated_config(&flow, GENERATOR), and assert finding_ids(&flow, GENERATED_UNHELD) is empty; (2) TASKS swapped to `elaboration = "deferred"` with `defer_reason = "depends on the store"` (the swap a_deferred_milestone_needs_its_reason and an_accept_with_no_check_is_an_error_only_on_an_upfront_milestone already use), write_generated_config, assert finding_ids(&flow, GENERATED_UNHELD) is empty. Each case fails if the status filter or the is_deferred() skip in generated_outputs::generated_output_findings is dropped."""
+direction = "add"
+old = "fn no_generated_config_is_clean() {"
+anchor = "code|tomlctl/tests/plan_check.rs|no_generated_config_is_clean"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+apply_task_id = 25
+
+[[findings]]
+id = "F53"
+run = "U3"
+cell = "C21"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+route = "checker"
+file = "tomlctl/tests/output_options.rs"
+line = 1573
+symbol = "request_flow"
+summary = "The doc comment for plan_flows now sits above the new request_flow helper, so it documents the wrong function"
+effort = "trivial"
+counter = "Only wrong if the comment was meant for request_flow, but it names plan drift and PLAN_FILE, which request_flow never touches."
+edit = """Move the three `///` lines ("The `plan` group's flows, ... an affected task.") from above `fn request_flow` to directly above `fn plan_flows`, and give `fn request_flow` its own one-line doc: `/// A flow whose plan has an open `implement:A` run dispatching task 1.`"""
+direction = "change"
+old = """
+/// The `plan` group's flows, added to its fixture alone so that no other group
+/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
+/// `PLAN_FILE` is what gives `plan drift` an affected task.
+fn request_flow(root: &Path, slug: &str) {"""
+same_as = "F43"
+related = ["F43"]
+anchor = "code|tomlctl/tests/output_options.rs|request_flow"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F43"
+
+[[findings]]
+id = "F54"
+run = "U3"
+cell = "C29"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 37
+symbol = "The working tree"
+summary = "Pre-flight exempts unapplied granted request paths but names no command that lists them; the Re-entry list selects no paths"
+effort = "trivial"
+counter = "Another reference read before the pre-flight (SKILL.md Re-entry or requests.md) may already print the granted paths; I found only the id,run_id,milestone,task select at requests.md:162."
+edit = "Extend this bullet so the orchestrator can compute the exemption: append `, listed by `tomlctl plan request list --slug <slug> --where applied=false --select id,task,paths --lines`, taking each `paths` item whose `ruling` is `granted``. Without it the step's two commands (plan drift, tasks list) print no granted path, and the requests.md Re-entry list selects only id,run_id,milestone,task, so a literal reading stops the engine on a granted path as someone else's edit."
+direction = "add"
+old = """- the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry";"""
+anchor = "code|claude/skills/implement-v2-engine/references/run-milestone.md|The working tree"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+apply_task_id = 26
+
+[[findings]]
+id = "F55"
+run = "U3"
+cell = "C19"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 30
+symbol = "forbidden"
+summary = "forbidden and fold_key leave `.` and empty segments in place, so `docs/./flows/<slug>/x` or `src//a.rs` slips past the forbidden, held and holder rules"
+severity = "minor"
+failure_scenario = 'A worker posts `plan request add` with path `docs/./flows/demo/brief.md` (or `src/./a.rs` while task 4 holds `src/a.rs`). parse_payload only runs normal_path, which keeps mid-path `./` and `//`. fold_key yields `docs/./flows/demo/brief.md`, `under(key, "docs/flows/demo")` fails, and the held and holder comparisons by folded key miss too, so the item is left open (or auto-granted as a generated output) instead of denied; `rule` re-checks only holder() and grants it on the same miss.'
+fix = """Deny any path whose normalised form is not canonical: in forbidden(), after the `..` check, return Some("`{path}` has an empty or `.` segment; name the canonical repo-relative path") when `key.split('/').any(|s| s.is_empty() || s == ".")`. That denies trailing-slash, `//` and `/./` spellings before the held and holder rules run, so every later fold_key comparison sees canonical keys. Add cases to absolute_paths_and_parent_segments_are_forbidden for `docs/./flows/demo/x.md`, `src//a.rs` and `src/a.rs/`."""
+effort = "trivial"
+counter = "A layer before rule_path canonicalises `.`/empty segments or refuses them; I read parse_payload (normal_path only) and rule's re-check (holder only) and found none, but did not read every caller of request rows."
+grade = "high"
+evidence = [
+    'tomlctl/src/tasks/schema.rs:714 normal_path only swaps `\` for `/` and trims leading `./`',
+    "tomlctl/src/plan/holders.rs:38 only `..` segments are refused; under() at :56 is a plain prefix compare",
+    "tomlctl/src/plan/request.rs:222 parse_payload normalises the path with normal_path alone before rule_path at :156",
+]
+same_as = "F45"
+related = ["F44"]
+anchor = "code|tomlctl/src/plan/holders.rs|forbidden"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F45"
+
+[[findings]]
+id = "F56"
+run = "U3"
+cell = "C19"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 140
+symbol = "closure"
+summary = "holder() excludes coupling-related rows, but the Workflow gates only on needs and after, so a coupled row can run beside the requester"
+severity = "minor"
+failure_scenario = "Milestone A: task 1 and task 2 both pending, task 2 has `coupling = [1]` and no needs, files disjoint. emit launch-args passes `needs` from row.needs only, so the Workflow starts both at once. Task 1 requests task 2's `src/x.rs`: closure() walks needs ∪ coupling, puts task 2 in `related`, holder() returns None, and the path is left open or, as a declared generated output, auto-granted. Both workers then edit `src/x.rs` concurrently."
+fix = "Walk only `needs` in closure(): drop `.chain(row.coupling.iter())` from the edges closure and say in its doc comment that it mirrors the Workflow's `needs` gate, which ignores coupling (emit.rs Launch::build). Add a test in holders.rs where a pending row coupled to the requester holds the requested path."
+effort = "trivial"
+counter = "The Workflow or launch-args folds coupling into `needs` somewhere I did not read; Launch::build builds `needs` from row.needs alone and the Workflow's gates() reads needs and after only."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/holders.rs:144 closure edges chain row.coupling into needs",
+    "tomlctl/src/plan/emit.rs:666 Dispatched.needs is row.needs filtered to candidates, no coupling",
+    "claude/workflows/implement-v2-milestone.js:64 `gates = (t) => [...t.needs, ...(t.after || [])]`",
+]
+same_as = "F67"
+anchor = "code|tomlctl/src/plan/holders.rs|closure"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F67"
+
+[[findings]]
+id = "F57"
+run = "U3"
+cell = "C19"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 96
+symbol = "holder"
+summary = "holder() only looks in the requester's milestone, yet requests.md says add and rule should refuse a started, uncommitted holder in another milestone"
+severity = "minor"
+failure_scenario = "Milestone A's task 5 is parked with agent plan-worker-deep, no commit and partial edits to `src/x.rs` in the tree; the engine runs milestone B. B's task 9 requests `src/x.rs`. holder() filters to checkpoint B, finds no holder, and the item is open (or auto-granted as a generated output); rule's re-check passes too. Task 9 edits a file carrying A's uncommitted work, and the drain only then finds the case requests.md calls one `add` and `rule` should have refused."
+fix = "In holder(), also count a row of any other milestone whose status is in-progress, failed or parked, whose `agent` is a worker agent (emit::WORKER_AGENTS) and whose `commit` is blank — the same started-uncommitted test lane_paths uses — checking its files and its unapplied grants as for same-milestone rows. Update rule 3 in claude/skills/tomlctl/references/plan-request.md and the module doc to say so, and add a holders.rs test."
+effort = "small"
+counter = "The engine never launches a milestone while another milestone holds a started uncommitted row, which would make the case unreachable; the lane check's started-uncommitted clause and requests.md:137 both suggest it is reachable, but I did not trace the schedule."
+grade = "medium"
+evidence = [
+    "tomlctl/src/plan/holders.rs:96 candidates filtered to `row.checkpoint == own.checkpoint`",
+    "claude/skills/implement-v2-engine/references/requests.md:137 'A started holder with no commit in another milestone was a holder `add` and `rule` should have refused'",
+    "tomlctl/src/plan/lane.rs lane_paths treats any worker-started row with a blank commit as live work",
+]
+fix_files = ["claude/skills/tomlctl/references/plan-request.md"]
+anchor = "code|tomlctl/src/plan/holders.rs|holder"
+status = "refuted"
+first_seen = 2026-11-18
+
+[[findings]]
+id = "F58"
+run = "U3"
+cell = "C19"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/check/generated_outputs.rs"
+line = 41
+symbol = "generated_output_findings"
+summary = "check and worker view compare a row's files to generator outputs case-sensitively while request add folds case, so a case-variant output reads as unheld"
+severity = "minor"
+failure_scenario = "`.claude/generated.toml` declares output `src/tokens.gen.ts`; a pending row holds `src/tokens.css` and `src/Tokens.gen.ts`. plan check raises plan/generated-output-unheld, and the worker view's Generators line says the output is not in the task's files and to ask for it with a scope request. The worker asks, and request add denies it as 'already held by this task' because rule_path compares by fold_key."
+fix = "Build `held` with crate::plan::holders::fold_key in both generated_output_findings and view.rs generator_lines, and test membership with `fold_key(output)`, so check, view and request add agree on one key. Keep the printed output spelling unchanged."
+effort = "trivial"
+counter = "Task files are case-normalised on write so a case variant cannot reach a row; I found no such normalisation in tasks add/update, but did not read every writer."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/check/generated_outputs.rs:41 held built with normal_path, no case fold; inputs match case-insensitively (generated.rs case_insensitive(true))",
+    "tomlctl/src/plan/view.rs:757 same normal_path-only held set",
+    "tomlctl/src/plan/request.rs:85 request add builds held and outputs with fold_key",
+]
+fix_files = ["tomlctl/src/plan/view.rs"]
+same_as = "F68"
+related = ["F47"]
+anchor = "code|tomlctl/src/plan/check/generated_outputs.rs|generated_output_findings"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F68"
+
+[[findings]]
+id = "F59"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "verifier"
+file = "claude/skills/tomlctl/references/plan-store.md"
+line = 301
+symbol = "[[request]]"
+summary = """plan-store.md says a request item's `by` is absent while open, but insert_ruling always writes `by = ""` for an unruled item"""
+effort = "trivial"
+counter = 'Wrong if the writer skips empty strings at serialisation; request_to_toml inserts the key unconditionally, so a written store carries `by = ""`.'
+edit = """Replace with: "`by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and `""` while open." Checked against tomlctl/src/plan/schema_request.rs insert_ruling, which inserts `by` as RuledBy::as_str() on every item, and RuledBy::Unset maps to ""; plan-request.md's list and add output already say `""` while open."""
+direction = "change"
+old = "`by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and absent while open."
+anchor = "code|claude/skills/tomlctl/references/plan-store.md|[[request]]"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+apply_task_id = 27
+
+[[findings]]
+id = "F60"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 91
+symbol = "references list"
+summary = "SKILL.md's reference list links every references/*.md but the new generated.md, so the .claude/generated.toml reference is undiscoverable from the skill"
+effort = "trivial"
+counter = "Moot if the skill deliberately reaches generated.md only through plan.md and plan-engine.md links; no other reference file relies on that, so the list reads as exhaustive."
+edit = 'After the plan-store.md bullet add: "- [references/generated.md](references/generated.md) — the optional `.claude/generated.toml` generator map: its keys, what the loader refuses, and the readers (`plan check`, `plan emit gate-list`, the worker view and `plan request add`)." A loop over references/*.md counting `references/<name>` in SKILL.md finds 0 only for generated.md; every other file is linked at least once.'
+direction = "add"
+old = "- [references/plan-store.md](references/plan-store.md) — the `plan.toml` store shape: the sample, the key order, and each `[[decision]]`, `[[contract]]`, `[[approval]]`, `[[run]]`, `[[handover]]` and `[[request]]` key. The verbs that write it are [references/plan.md](references/plan.md)."
+anchor = "code|claude/skills/tomlctl/SKILL.md|references list"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+apply_task_id = 28
+
+[[findings]]
+id = "F61"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "tomlctl/README.md"
+line = 92
+symbol = "plan quick reference"
+summary = "README's plan verb line lists every PlanOp subcommand but the new `request` group"
+effort = "trivial"
+counter = "Not drift if the quick reference is meant to be a sample; but it otherwise names every plan subcommand, so a reader takes it as the full set."
+edit = "Insert `request` after `handover`: `tomlctl plan open|decide|contract|handover|request|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>`. tomlctl/src/cli/types/plan.rs PlanOp now carries `Request { op: PlanRequestOp }` between Handover and Run; every other subcommand but `emit` (on its own line) is listed."
+direction = "change"
+old = "tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>"
+anchor = "code|tomlctl/README.md|plan quick reference"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+apply_task_id = 29
+
+[[findings]]
+id = "F62"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "verifier"
+file = "claude/skills/tomlctl/references/generated.md"
+line = 32
+symbol = "What the loader enforces"
+summary = "generated.md says only plan check and gate-list react to a malformed config; plan request add also refuses, so no worker can post any request"
+effort = "trivial"
+counter = "Wrong if request add tolerated a malformed config; it maps the load error to a validation refusal before taking the lock, whatever the payload holds."
+edit = 'Replace the second sentence with: "`plan check` turns that into one warning naming no row; `plan emit gate-list` and `plan request add` refuse with it, so no request, even one holding only `changes`, can be posted until the file is fixed; the worker view prints one line naming the problem." Checked against tomlctl/src/plan/request.rs add (generated::load(...).map_err(refusal) before any payload ruling) and tomlctl/src/plan/view.rs generator_lines.'
+direction = "change"
+old = """
+- A malformed file is refused with an error naming the generator and the key. `plan check` turns that
+  into one warning naming no row; `plan emit gate-list` refuses with it."""
+anchor = "code|claude/skills/tomlctl/references/generated.md|What the loader enforces"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+apply_task_id = 30
+
+[[findings]]
+id = "F63"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 349
+symbol = "rule"
+summary = "rule's ruled-twice check keys on the raw item string, but item_ref accepts p01 and p+1, so one batch can rule one item twice and the last row wins"
+severity = "minor"
+failure_scenario = "Open request Q1 with one open path item. `plan request rule Q1 --ndjson` with rows {item:p1,ruling:granted,...} and {item:p01,ruling:denied,...}: item_ref maps both to Path(0) (usize parse accepts leading 0 and +), `named` holds the distinct strings p1 and p01, and the open-check reads the unedited request so both pass. Both edits apply in order; p1 is written denied, the grant silently dropped, though the reference says an item is ruled once per call."
+fix = """Key the duplicate check on the resolved item, not the raw text: insert the canonical name (format!("p{}", i + 1) / format!("c{}", i + 1)) or the (kind, index) pair into `named`, and report the row's own spelling in the refusal. Optionally make item_ref refuse a number with a leading `+` or `0` so only the printed form p<n>/c<n> is accepted. Add a unit test in the same file's tests module for p1 plus p01 in one batch."""
+effort = "trivial"
+counter = "If parse_ndjson_batch or row_string canonicalised `item` before rule saw it, the strings would collide; they do not (item is only trimmed at request.rs:450)."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/request.rs:349 `if !named.insert(row.item.clone())` dedups on the trimmed raw string",
+    "tomlctl/src/plan/request.rs:406 `let number: usize = number.parse().ok()?;` with no canonical-form check",
+    'rustc 2024 probe: "+1".parse::<usize>() = Ok(1), "01".parse::<usize>() = Ok(1)',
+    "tomlctl/src/plan/request.rs:355-359 reads `current` from the unmodified request, so a second row for the same item still sees Open; edits apply in order at 382-396",
+    'claude/skills/tomlctl/references/plan-request.md (plan request rule): "an item is ruled once per call and only while it is open"',
+]
+same_as = "F46"
+related = [
+    "F46",
+    "F49",
+]
+anchor = "code|tomlctl/src/plan/request.rs|rule"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F46"
+
+[[findings]]
+id = "F64"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/request.rs"
+line = 223
+symbol = "parse_payload"
+summary = "request paths keep empty and dot segments, so ./ becomes an empty path and src/./a.rs or src//a.rs escape the held and holder fold-key checks"
+severity = "minor"
+failure_scenario = """Tasks 3 and 4 share a milestone, unrelated by needs; task 4 (pending) holds src/a.rs. Task 3 posts paths [{path:"src/./a.rs"}]: fold_key gives src/./a.rs, which matches neither task 3's files nor task 4's, so add leaves it open; rule's grant re-check compares the same key and passes; the drain writes src/./a.rs into task 3's files and both tasks edit one file concurrently. A path of "./" passes the non-empty check and is stored as an empty path item."""
+fix = """In parse_payload, after normal_path, refuse a path that is empty or has an empty or `.` segment (key.split('/').any(|s| s.is_empty() || s == ".")), naming the item index, the same way a duplicate is refused; a trailing slash (a directory) falls under the empty-segment rule. Add a case to the tests module's refusal test for "./", "src/./a.rs" and "src//a.rs"."""
+effort = "trivial"
+counter = "If the engine's requests.md told the orchestrator to deny any non-canonical path, or holders::fold_key collapsed dot and empty segments, the alias could not be granted; fold_key is normal_path plus to_lowercase only."
+grade = "medium"
+evidence = [
+    'tomlctl/src/plan/request.rs:223 `let path = normal_path(&text(entry, "path", &at)?);` — text() checks non-empty before normalising',
+    'tomlctl/src/tasks/schema.rs:714-716 normal_path only replaces `\` and trims leading `./`; rustc probe: "./" normalises to ""',
+    "tomlctl/src/plan/holders.rs fold_key = normal_path(path).to_lowercase(); forbidden() checks only absolute, `..`, .claude/ and the flow dir",
+    "tomlctl/src/plan/holders.rs holder(): `row.files.iter().any(|file| fold_key(file) == key)` — a plain string compare of folded keys",
+]
+same_as = "F45"
+related = ["F45"]
+anchor = "code|tomlctl/src/plan/request.rs|parse_payload"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F45"
+
+[[findings]]
+id = "F65"
+run = "U3"
+cell = "C31"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 140
+symbol = "closure"
+summary = "holder() skips rows linked to the requester by coupling only, but the milestone Workflow runs coupled rows side by side, so a held path reads as free"
+severity = "minor"
+failure_scenario = "Milestone A has pending rows 1 (files src/tokens.css) and 2 (coupling=[1], files src/tokens.gen.ts, the declared output of tokens.css). Launch::build dispatches needs without coupling, so the Workflow runs 1 and 2 at once (disjoint files). Worker 1 posts `plan request add` for src/tokens.gen.ts: closure() puts row 2 in `related`, holder() returns None, and rule_path auto-grants it as a declared output. Two workers then edit src/tokens.gen.ts concurrently."
+fix = "Walk only `needs` in `closure`, the edges `Launch::build` passes to the Workflow as `needs` (emit.rs, the Dispatched builder) and that the Workflow's `gates` waits on, and say so in its doc comment and the module header. Add a holders test: row 2 with coupling=[1] holding the path is returned as the holder for requester 1."
+effort = "small"
+counter = "Refuted if the Workflow or Launch serialises coupled rows by another route (e.g. coupling folded into dispatched `needs` elsewhere), or if v2 stores can never carry a coupling edge; neither found in emit.rs or implement-v2-milestone.js."
+grade = "high"
+evidence = [
+    "holders.rs closure: `row.needs.iter().chain(row.coupling.iter())` builds both up and down walks; holder() filters `!related.contains(&row.id)`",
+    "emit.rs Launch::build Dispatched: `needs: row.needs.iter().copied().filter(|need| candidates.contains_key(need))` — coupling is never sent",
+    "claude/workflows/implement-v2-milestone.js: `const gates = (t) => [...t.needs, ...(t.after || [])]`; no `coupling` anywhere in the script",
+    "request.rs rule_path: holder() None then `outputs.contains(&key)` auto-grants with RuledBy::Tomlctl; holders.rs tests set coupling: Vec::new() only",
+]
+same_as = "F67"
+related = ["F56"]
+anchor = "code|tomlctl/src/plan/holders.rs|closure"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F67"
+
+[[findings]]
+id = "F66"
+run = "U3"
+cell = "C31"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+route = "verifier"
+file = "tomlctl/src/generated.rs"
+line = 3
+symbol = "Generator"
+summary = "module-wide #![allow(dead_code)] with no reason now only hides the never-read Generator.input_globs field"
+effort = "trivial"
+counter = "Wrong if a caller outside tomlctl/src reads input_globs (none: grep `input_globs` hits only generated.rs) or if another item in the module is still unused and the allow is load-bearing."
+edit = "Delete the `#![allow(dead_code)]` line, the `pub(crate) input_globs: Vec<String>,` field of `Generator`, and the `input_globs,` field initialiser in `parse` (keep the local `input_globs` used to build the GlobSet). Every other item is read by plan check, gate-list, the worker view or plan request."
+direction = "remove"
+old = "#![allow(dead_code)]"
+anchor = "code|tomlctl/src/generated.rs|Generator"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F67"
+run = "U3"
+cell = "C27"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "intent-fidelity"
+route = "verifier"
+file = "tomlctl/src/plan/holders.rs"
+line = 140
+symbol = "closure"
+summary = "holder() exempts rows linked to the requester only by coupling, but the Workflow runs those concurrently, so a path an in-flight row holds can be granted"
+severity = "major"
+failure_scenario = "Milestone A has task 5 (needs [], files [src/a.rs]) and task 6 (coupling [5], files [tests/a.rs]). launch-args sends 6 with needs [] and no coupling, so the Workflow starts both together. Task 5 requests tests/a.rs: holder() puts 6 in 5's closure via the coupling edge, skips it, and returns None, so `add` leaves it open and `rule` grants it (or `add` grants it at once if it is a declared output). Both workers then edit tests/a.rs at the same time. D1 requires that no concurrent row holds a granted path."
+fix = "In holders.rs `closure`, walk only the edges the milestone Workflow gates on: `needs`, plus, optionally, each row's spec `after:` premise targets, which is what `plan emit launch-args` sends as `needs` and `after`. Drop `coupling`. Fix the module header so it names the edges it really walks. Add a unit test showing that a pending row linked to the requester only by `coupling` and holding the path is returned as its holder. Do not add coupling to launch-args instead: the brief's Non-goals rule out changing how the Workflow chooses which task to start."
+effort = "small"
+counter = "If coupled rows are never dispatched in the same Workflow run (for example, launch-args filtered them out), they never run concurrently and the exemption is harmless. emit.rs Launch::build passes only `needs` (filtered to candidates) and `after`, so no such filter was found."
+grade = "high"
+evidence = [
+    "holders.rs closure: `row.needs.iter().chain(row.coupling.iter())` builds both up and down walks; holder() filters `!related.contains(&row.id)`",
+    "emit.rs Launch::build Dispatched: `needs: row.needs.iter().copied().filter(|need| candidates.contains_key(need))` — coupling is never sent",
+    "claude/workflows/implement-v2-milestone.js: `const gates = (t) => [...t.needs, ...(t.after || [])]`; no `coupling` anywhere in the script",
+    "request.rs rule_path: holder() None then `outputs.contains(&key)` auto-grants with RuledBy::Tomlctl; holders.rs tests set coupling: Vec::new() only",
+]
+related = [
+    "F56",
+    "F65",
+]
+anchor = "code|tomlctl/src/plan/holders.rs|closure"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F68"
+run = "U3"
+cell = "C27"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "architecture"
+route = "verifier"
+file = "tomlctl/src/plan/check/generated_outputs.rs"
+line = 41
+symbol = "generated_output_findings"
+summary = "Which generator outputs a row lacks is computed in three modules with two path rules: check and view compare case-sensitively, request add folds case"
+severity = "minor"
+failure_scenario = "generated.toml declares output src/tokens.gen.ts, and a row's files hold src/Tokens.gen.ts plus input src/tokens.css. The input glob matches case-insensitively, so the generator counts as touched. plan check then warns generated-output-unheld, and the worker view says the output is 'not in this task's files: ask for it with a scope request'. The worker spends its one request of the run on it, and `plan request add` denies it as 'already held by this task'."
+fix = "Give generated.rs one owner for this rule: `missing_outputs(generator, files)`, which compares outputs to files by normal_path then lowercase (fold_key's definition). Call it from generated_outputs.rs (the `held`/`missing` block) and view.rs `generator_lines` (lines 757-764). Have request.rs use the same folded comparison through outputs_of, so the plan check, the worker view and request add all agree on which output is unheld."
+effort = "small"
+counter = "If the stores never hold a case variant of a declared output (the case-collision check warns on new files), the disagreement can only trigger for a pre-existing file listed in a different case. The trigger is narrow, but the three copies still have to be kept in step."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/check/generated_outputs.rs:41 held built with normal_path, no case fold; inputs match case-insensitively (generated.rs case_insensitive(true))",
+    "tomlctl/src/plan/view.rs:757 same normal_path-only held set",
+    "tomlctl/src/plan/request.rs:85 request add builds held and outputs with fold_key",
+]
+fix_files = [
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/plan/request.rs",
+]
+related = [
+    "F47",
+    "F58",
+]
+anchor = "code|tomlctl/src/plan/check/generated_outputs.rs|generated_output_findings"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+apply_task_id = 23
+
+[[findings]]
+id = "F69"
+run = "U3"
+cell = "C27"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "hygiene"
+route = "verifier"
+file = "tomlctl/src/generated.rs"
+line = 3
+symbol = "Generator"
+summary = "Module-wide #![allow(dead_code)] hides that Generator::input_globs is written and never read; every other item now has a caller"
+effort = "trivial"
+counter = "rg 'input_globs' tomlctl/src finds only generated.rs:20, :62, :72 and :85, all inside parse or the struct, with no read of the field."
+edit = "Delete line 3, `#![allow(dead_code)]`. Remove the `input_globs: Vec<String>` field from `Generator` and the `input_globs,` initializer in `parse`. Keep the local `input_globs` variable, which the glob-building loop still reads. Callers of the remaining items: load (check/generated_outputs.rs, emit.rs, request.rs, view.rs), touched (check, emit, view), outputs_of (request.rs), and the fields id, outputs, regenerate (view.rs) and check (emit.rs)."
+direction = "remove"
+old = "#![allow(dead_code)]"
+same_as = "F66"
+related = ["F66"]
+anchor = "code|tomlctl/src/generated.rs|Generator"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F66"
+
+[[findings]]
+id = "F70"
+run = "U3"
+cell = "C27"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-consolidation"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/requests.md"
+line = 155
+symbol = "Report"
+summary = "requests.md restates the requests: report line shape and disagrees with report.md, which owns it and prefixes `task <n>`"
+effort = "trivial"
+counter = "If the two shapes are meant to differ (requests.md giving the record `text` without the `task` prefix that the `task` field carries), report.md:85's rule that `text` is the printed line without its `- ` contradicts that reading."
+edit = 'Replace the restated shape with a link to the owner: "Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`, in the line shape [report.md](report.md) lays out for its `requests:` section." report.md:44 (`- task <n> <request-id> <p|c><k> granted|denied|needs-user: <reason>`) stays the single home of the line shape.'
+direction = "change"
+old = "Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`: `<request-id> <item> <ruling>: <reason>`, as [report.md](report.md) lays out its `requests:` section."
+anchor = "code|claude/skills/implement-v2-engine/references/requests.md|Report"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+apply_task_id = 31
+
+[[findings]]
+id = "F71"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/agents/plan-worker-deep.md"
+line = 71
+symbol = "Asking the orchestrator"
+summary = "A granted accept change tells the worker to run the amended check even when it builds, contradicting Checks, which leaves writes-build checks to the gate"
+severity = "minor"
+failure_scenario = "Worker of task 7 posts c1 correcting a stale accept check `cargo nextest run ... -E 'test(/^output_options::/)'` (no writes_build=false, so gate-owned, as requests.md's own grant example is). The orchestrator grants it; step 4 says 'run any accept check it amends', so the worker compiles the crate under the shared build lock beside running siblings, while Checks says never run a gate-owned check. Two rules of one procedure disagree on the same check."
+fix = "In the plan-worker-procedure shared block (both worker agents), change the `granted` change bullet to: run an amended accept check only when the check it amends was marked `Run by: worker` in your view, or, for an added check, when it builds nothing; leave every other amended check to the gate, as Checks says. Keep both carriers byte-identical."
+effort = "trivial"
+counter = "If the view of a granted amend were re-rendered mid-run with a Run by line for the new check, or the drain audit's allowance for amended checks were meant to license worker builds, the bullet would be deliberate."
+grade = "high"
+evidence = [
+    "claude/agents/plan-worker-deep.md:71 '`granted` change: work to the amended spec as the item states it, and run any accept check it amends.'",
+    "claude/agents/plan-worker-deep.md:79 'run each of the task's accept checks the view marks `Run by: worker`, and never one marked `Run by: gate`'",
+    "claude/skills/implement-v2-engine/references/drain.md:265 'An `accept` entry without `writes_build = false` is not run by the worker'; requests.md:126 grant example amends an accept with no writes_build",
+]
+fix_files = ["claude/agents/plan-worker-lite.md"]
+anchor = "code|claude/agents/plan-worker-deep.md|Asking the orchestrator"
+status = "refuted"
+first_seen = 2026-11-18
+
+[[findings]]
+id = "F72"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/agents/plan-worker-deep.md"
+line = 67
+symbol = "Asking the orchestrator"
+summary = "A restarted worker re-posting its request gets kind=validation from plan request add, and the procedure gives no route to resume on the existing request"
+severity = "minor"
+failure_scenario = "Worker of task 5 posts Q2 and waits; the runtime restarts it (step 4 names this case). The restarted worker redoes step 7, posts again, and `plan request add` refuses: 'task 5 already posted request Q2 in run <id>; a task posts one request per run'. The procedure has no branch for this refusal, so the worker improvises or returns failed with needs_files although Q2 may already be ruled granted."
+fix = "In the plan-worker-procedure shared block (both worker agents), add to Asking the orchestrator step 2: when `add` is refused because your task already posted a request in this run, you are a restart: take the request id the refusal names, read it with step 4's `plan request list`, and go to step 3's wait when its `status` is `open` (without sending a second REQUEST message) or to step 4 when it is `ruled`."
+effort = "small"
+counter = "If a Workflow restart always replaces the run (new run_id), a second add in the new run would be accepted and no refusal arises; restarts inside one run are what step 4 of the procedure describes."
+grade = "medium"
+evidence = [
+    "tomlctl/src/plan/request.rs:75 'task {task} already posted request {} in run {run_id}; a task posts one request per run'",
+    "claude/agents/plan-worker-deep.md:29 'The runtime may have restarted you with an earlier attempt's edits in place.'",
+    "claude/agents/plan-worker-deep.md:67 step 2 handles only a successful add (status open or ruled)",
+]
+fix_files = ["claude/agents/plan-worker-lite.md"]
+anchor = "code|claude/agents/plan-worker-deep.md|Asking the orchestrator"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+apply_task_id = 32
+
+[[findings]]
+id = "F73"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "verifier"
+file = "claude/skills/implement-v2-engine/references/requests.md"
+line = 137
+symbol = "Order the holders"
+summary = "Claims add and rule should have refused a started holder in another milestone, but holders.rs only checks rows of the requester's milestone"
+effort = "trivial"
+counter = "If another check in request.rs (outside holders::holder) refuses a path held by a started row of another milestone, the claim holds."
+edit = "Replace with: 'A started holder with no commit in another milestone, which `add` and `rule` do not check since they compare only the rows of the requester's milestone, and which the schedule should never let run beside this one'. The rest of the bullet (grant nothing, park the granted row, name both rows) stays. Checked against tomlctl/src/plan/holders.rs `holder`, whose candidate filter is `row.checkpoint == own.checkpoint`."
+direction = "change"
+old = "A started holder with no commit in another milestone was a holder `add` and `rule` should have refused"
+anchor = "code|claude/skills/implement-v2-engine/references/requests.md|Order the holders"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "mid-run-requests requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more a44966328f877ada61ccf3516482faf258f5aca5"
+resolved = 2026-11-18
+apply_flow = "mid-run-requests"
+apply_task = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+apply_task_id = 31
+
+[[findings]]
+id = "F74"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/requests.md"
+line = 155
+symbol = "Report"
+summary = "The request report line shape here omits `task <n>`, while report.md, which it says it follows, prints `task <n> <request-id> <p|c><k> <ruling>: <reason>`"
+effort = "trivial"
+counter = "If the record's `task` field is meant to stand in for the `task <n>` prefix in `text`, report.md's line shape is the one to change instead."
+edit = "Change to `task <n> <request-id> <item> <ruling>: <reason>`, matching report.md's `requests:` line `- task <n> <request-id> <p|c><k> granted|denied|needs-user: <reason>`."
+direction = "change"
+old = "`<request-id> <item> <ruling>: <reason>`"
+same_as = "F70"
+related = ["F70"]
+anchor = "code|claude/skills/implement-v2-engine/references/requests.md|Report"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F70"
+
+[[findings]]
+id = "F75"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/run-milestone.md"
+line = 37
+symbol = "Pre-flight"
+summary = "The clean-tree exemption for granted, unapplied request paths names no read that lists them; the Re-entry list it points to selects no paths"
+effort = "trivial"
+counter = "If `plan drift --uncommitted` already left granted unapplied paths out of uncommitted_files, no read would be needed; drift.rs has no reference to requests."
+edit = "Append the read: 'listed by `tomlctl plan request list --slug <slug> --where applied=false --select task,paths --lines`, each path item whose `ruling` is `granted`;' so the exemption is computed from the store. requests.md's Re-entry list selects `id,run_id,milestone,task` only."
+direction = "change"
+old = """- the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry";"""
+same_as = "F54"
+anchor = "code|claude/skills/implement-v2-engine/references/run-milestone.md|Pre-flight"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F54"
+
 [[verdicts]]
 finding = "F6"
 run = "U1"
@@ -2995,3 +5210,538 @@ by = "audit"
 verdict = "confirmed"
 citation = "~/dev/reportdesignkit/scripts/boundaries/layer-rules.mjs:261"
 rationale = "Upheld: C43's own comment counts a group as a violation only when members spell the stem differently, so task 11's equal-key rule over-warns on one stem under two extensions, against brief criterion 7."
+
+[[verdicts]]
+finding = "F49"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:349"
+rationale = "Counter fails. parse_rule_rows stores the raw item string (request.rs:429), and rule dedups on it at :349 (`named.insert(row.item.clone())`), while item_ref (:404-412) maps `p1`, `p01` and `p+1` alike to Path(0): usize::from_str accepts leading zeros and a leading '+'. Edits are gathered against the pre-edit request (:355-359 sees Open for both), then applied in order (:382-396), so the last row wins silently. Dedup should key on the parsed ItemRef. Minor stands: needs a malformed ref from the orchestrator."
+
+[[verdicts]]
+finding = "F44"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/holders.rs:57-59; tomlctl/src/tasks/schema.rs:714-715"
+rationale = """Traced: normal_path only swaps backslashes and trims a leading ./, so fold_key("docs/./flows/demo/brief.md") keeps the ./ segment and under() strip_prefix("docs/flows/demo") misses; same for docs//flows and src/./x.rs vs a holder's src/x.rs (holders.rs:108 string equality). request.rs:166/176 then leaves the item open, and rule() at request.rs:369-377 rechecks holder() only. Counter fails: tasks/update.rs has no path validation, and requests.md step 2 has the orchestrator judge need, not form. Minor stands: needs a non-canonical path plus an orchestrator grant."""
+
+[[verdicts]]
+finding = "F45"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/schema.rs:715"
+rationale = "Counter fails: normal_path only swaps backslashes and trims leading ./, so fold_key(src/./shared.rs) != fold_key(src/shared.rs); holder() (holders.rs:108,123) and forbidden()'s under() prefix test (holders.rs:57) compare those strings, so both miss. Neither the worker body nor requests.md canonicalises paths; the drain's holder lookup is a --where-contains string match too, and plan-request.md:46 claims paths are normalised. C18's rule-out covers only ./ staying open, not the holder/forbidden bypass. Narrow trigger: minor stands."
+
+[[verdicts]]
+finding = "F46"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:349"
+rationale = "item_ref (request.rs:406) parses the number with usize::from_str, which accepts 01 (and a leading +), so p1 and p01 both map to Path(0); named keys on the raw row.item string, so the ruled-twice refusal misses; current is read from the unedited request so both pass the Open check; edits apply in order (request.rs:382-396) and the second overwrites the first silently. The tests (item_refs_number_from_one) pin no canonical-number rule. C18/C20 rule-outs concern needs-user and caller identity, not this. Minor."
+
+[[verdicts]]
+finding = "F47"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/check/generated_outputs.rs:41"
+rationale = "check (generated_outputs.rs:41,46) and the worker view (view.rs:757,770) build held from normal_path, case kept, and test outputs by exact match, while request add (request.rs:85,169) folds case and denies a held fold_key as already held. A row holding src/Tokens.gen.ts for output src/tokens.gen.ts gets the warning and the view's 'ask for it with a scope request' hint, then the request is denied, wasting its one request. generated.rs:1-2 states these readers must agree; inputs match case-insensitively (generated.rs:75). Minor."
+
+[[verdicts]]
+finding = "F48"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:62"
+rationale = "generated::load runs before the payload is considered and any Err becomes a Validation refusal, so a changes-only request, which never reads generators, is refused; check (generated_outputs.rs:14-23) and the view (view.rs:748-754) degrade to one warning line. No doc in plan-request.md, requests.md or generated.md records fail-closed for add; emit gate-list (emit.rs:239) also fails closed, but that is the gate, not a mid-run request. Fix: on load error, keep generators empty so output items stay open for rule. Minor."
+
+[[verdicts]]
+finding = "F63"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:349"
+rationale = 'Traced: item_ref (request.rs:404-406) parses the suffix with usize::parse, which accepts "01" and "+1" as 1, so p1 and p01 both map to Path(0). The dedup at :349 keys on the trimmed raw string, so both rows pass; the Open check at :355-359 reads the unedited request, and edits apply in order at :382-396, the last row winning. plan-request.md:104 says an item is ruled once per call. The C18/C20 rule-outs concern needs-user finality and caller identity, not this path. Minor: needs a malformed orchestrator batch.'
+
+[[verdicts]]
+finding = "F64"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/schema.rs:713-715"
+rationale = """normal_path only folds backslashes and trims a leading ./; fold_key (holders.rs:22) adds lowercase. text() checks non-empty before normal_path (request.rs:223, 292-296), so "./" stores an empty path that forbidden() passes. src/./a.rs and src//a.rs fold to keys unequal to src/a.rs, so holder() at holders.rs:108 misses the holder on add and on rule's grant re-check. plan-request.md:66 says variants of a held file count as the same file; dot aliases defeat that intent. C18's rule-out leans on the orchestrator noticing; nothing tells it to. Minor."""
+
+[[verdicts]]
+finding = "F55"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/tasks/schema.rs:714"
+rationale = 'normal_path only swaps backslashes and trims leading ./ (schema.rs:714), and fold_key adds only lowercasing (holders.rs:22). For docs/./flows/demo/brief.md the key keeps the ./ segment, so under(key, "docs/flows/demo") at holders.rs:57 is false and forbidden() returns None; src//a.rs likewise misses the fold_key equality in holder() and held. parse_payload (request.rs:223) normalises with normal_path alone and rule (request.rs:369-377) re-checks holder only, never forbidden, so the item stays open and can be granted. Narrow trigger: minor stands.'
+
+[[verdicts]]
+finding = "F56"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/emit.rs:666"
+rationale = "closure() walks needs and coupling (holders.rs:141-146), so a coupled row is in `related` and never a holder. Launch::build sends the Workflow needs from row.needs only (emit.rs:666-671), and the Workflow gates on needs and after alone (implement-v2-milestone.js:64), so a coupling-only pair with disjoint files runs concurrently. Coupling is a live v2 field (write-and-prove.md:105). The holders.rs module doc assumes the Workflow never co-runs a closure member, which fails for coupling. The C28 rule-out covers loop termination, not this. Minor stands."
+
+[[verdicts]]
+finding = "F57"
+run = "U3"
+by = "verifier"
+verdict = "refuted"
+citation = "tomlctl/src/tasks/milestones.rs:189"
+rationale = "The scenario cannot be reached. A row with a worker agent and an empty commit makes its milestone `started` (milestones.rs:243-255, is_started), and once any milestone is started, schedule picks only that one and holds every other runnable milestone (milestones.rs:189-197, hold). run-milestone.md says --milestone is refused unless the target is runnable or the pick. So B cannot launch while A's parked worker row sits uncommitted, and dispatching_run requires B's open run. requests.md:137 is a defensive drain rule, not a reachable case for holder()."
+
+[[verdicts]]
+finding = "F58"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/check/generated_outputs.rs:41"
+rationale = "generated_outputs.rs:41 and view.rs:757 build `held` with normal_path only and test outputs with a case-sensitive contains, while request add folds both held and outputs with fold_key (request.rs:85-89). A row holding src/Tokens.gen.ts against a declared output src/tokens.gen.ts gets the unheld warning and the view's 'ask for it with a scope request' hint, then rule_path denies the request as 'already held by this task' (request.rs:169). generated.rs:2 says these callers should agree. This only misleads, with a narrow trigger, so minor stands."
+
+[[verdicts]]
+finding = "F66"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/generated.rs:20"
+rationale = "Counter fails. `old` is at generated.rs:3. input_globs is read nowhere (grep: only generated.rs:20,62,72,85; 72 reads the local). Every other item is read in non-test code: id/outputs/inputs in check/generated_outputs.rs:42-63, check+id in emit.rs:241-245, regenerate in view.rs:765, outputs_of in request.rs:86, load/CONFIG in all four; mod is in lib.rs:19 only. Generator is built only in parse. No comment or doc pins the allow. Removal is unobservable."
+
+[[verdicts]]
+finding = "F69"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/generated.rs:20"
+rationale = "Counter holds: input_globs appears only at generated.rs:20 (field), :62/:72 (local, read by the glob loop) and :85 (initializer); no read of the field anywhere in tomlctl/src. Every other item is used outside tests: load/touched (check/generated_outputs.rs, emit.rs:239-241, view.rs:748-758, request.rs:62), outputs_of (request.rs:86), fields id/outputs/regenerate/check (view.rs:761-768, emit.rs:242-245, generated_outputs.rs:44,65). The allow arrived with edab9d9c as scaffolding; no comment, test or doc pins it. Edit is behaviour-neutral and stays in file."
+
+[[verdicts]]
+finding = "F68"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/check/generated_outputs.rs:41; tomlctl/src/plan/view.rs:757; tomlctl/src/plan/request.rs:85-89,169-174; tomlctl/src/plan/holders.rs:22-23"
+rationale = "Traced: check and view build held with normal_path (schema.rs:714, case kept) and test outputs by exact membership, while request.rs folds both sides with fold_key (lowercase), so a row holding src/Tokens.gen.ts is told by view to ask for src/tokens.gen.ts and rule_path then denies it 'already held by this task'. Rule-out does not defeat it: case_collision.rs skips a row file that exists on disk by exact name (listing.contains), so a generated.toml output spelled in another case than the on-disk file draws no collision warning. Minor stands."
+
+[[verdicts]]
+finding = "F65"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/emit.rs:666-671 (Dispatched.needs from row.needs only) vs tomlctl/src/plan/holders.rs:141-146 (closure chains coupling)"
+rationale = "Reproduced by trace. Launch::build sends only row.needs (emit.rs:666), and the Workflow gates on needs+after alone (implement-v2-milestone.js:64), so two coupled pending rows with disjoint files run together. closure() adds coupling edges (holders.rs:144), so holder() skips the coupled row and rule_path (request.rs:176-179) auto-grants a declared output it holds. v2 stores can carry coupling: write-and-prove.md:105 lets add-many batches name it. C28 rule-out is about cycles, not this. Minor stands."
+
+[[verdicts]]
+finding = "F67"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+citation = "tomlctl/src/plan/holders.rs:141-147; tomlctl/src/plan/emit.rs:663-674; claude/workflows/implement-v2-milestone.js:64"
+rationale = "Counter fails: emit.rs:663-674 Dispatched sends needs (filtered) and after, never coupling, and the Workflow's gates (implement-v2-milestone.js:64) and canStart (:268) ignore coupling, so coupled file-disjoint rows run together. holders.rs:141-147 still exempts coupling, so add (request.rs:176) and rule (:371) grant a path a running coupled row holds. The C28 rule-out covers termination only. Severity cut to minor: no v2 flow's tasks.toml has a non-empty coupling."
+
+[[verdicts]]
+finding = "F71"
+run = "U3"
+by = "verifier"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/drain.md:102"
+rationale = "The finder's own counter holds. drain.md:102 moves the agents audit after step 5a 'so a check a request amended reads as the row's own'; that audit reports only build or test-suite runs, so it deliberately licenses a worker running a building amended check. worker-protocol.md:173 records the design: the view is not re-rendered mid-run, so the worker runs an amended accept as granted. The amended check is absent from the view, so the Checks rule on 'Run by: gate' does not apply to it. Raise it as an advisory challenge if the shared build lock still matters."
+
+[[verdicts]]
+finding = "F72"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:69"
+rationale = "request.rs:69-79 refuses a second add for the same (run_id, task) with kind=validation. dispatching_run (request.rs:136) takes the open implement:<m> run, which a runtime restart inside the Workflow leaves unchanged. plan-worker-deep.md:29-30 names that restart case ('row already in-progress ... is a restart'), but steps 2-4 of Asking the orchestrator (lines 67-69) have no branch that reads the refusal's earlier id and goes on to wait or read rulings. The shared block is identical in plan-worker-lite. Minor stands."
+
+[[verdicts]]
+finding = "F43"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/output_options.rs:1573"
+rationale = "Target exists. Old text (3 doc lines 1573-1575 then fn request_flow at 1576) matches byte for byte. Edit names only the same file (plan_flows at 1632). Sweeper row, no dead-code claim, predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F50"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_request.rs:291"
+rationale = "Target exists. Add anchor 'fn rule_refuses_a_request_that_is_no_longer_open() {' occurs at line 291. Edit names only the same file. No dead-code claim. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F51"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_request.rs:329"
+rationale = "Target exists. Add anchor 'fn a_second_request_from_the_same_task_in_a_run_is_refused() {' occurs at line 329. Edit names only the same file. No dead-code claim. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F52"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_check.rs:1599"
+rationale = "Target exists. Add anchor 'fn no_generated_config_is_clean() {' occurs at line 1599. Edit names only the same file. No dead-code claim. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F53"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/output_options.rs:1573"
+rationale = "Target exists. Old text (3 doc lines from 1573 then fn request_flow at 1576) matches. Edit names only the same file. Mechanical hygiene lens, cleanup with exact old. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F54"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/run-milestone.md:37"
+rationale = "Target exists. Old bullet '- the paths granted by a request not yet applied...' occurs exactly at line 37. Edit names only the same file; the requests.md and tomlctl mentions are evidence, not edit targets. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F59"
+run = "U3"
+by = "checker"
+verdict = "unsettled"
+citation = "claude/skills/tomlctl/references/plan-store.md:301"
+rationale = "Target exists. Old sentence occurs at line 301. Predicates 1, 2 and 4 hold. The replacement rests on insert_ruling always writing by as RuledBy::as_str(), which grep shows only partly (schema_request.rs:124 maps None to RuledBy::Unset); whether the write path behaves as claimed needs reading the code, so the verifier decides."
+
+[[verdicts]]
+finding = "F60"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/SKILL.md:91"
+rationale = "Target exists. Add anchor '- [references/plan-store.md](references/plan-store.md)' occurs at line 91. Grep 'generated.md' in SKILL.md: no match, so the link is absent as the summary says. The edit only adds a link; it edits no other file. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F61"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/README.md:92"
+rationale = "Target exists. Old 'tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>' occurs at line 92. Grep of tomlctl/src/cli/types/plan.rs shows Request { at line 38 between Handover (31) and Run (44), as the edit says. Edit names only the same file. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F62"
+run = "U3"
+by = "checker"
+verdict = "unsettled"
+citation = "claude/skills/tomlctl/references/generated.md:33"
+rationale = "Target exists. Old two-line text occurs at lines 32-33. Predicates 1, 2 and 4 hold. The replacement rests on request.rs add refusing via generated::load before any payload ruling and on view.rs generator_lines, which needs reading the code order and behaviour; grep cannot settle that, so the verifier decides."
+
+[[verdicts]]
+finding = "F70"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/requests.md:155"
+rationale = "Target exists. Old sentence occurs at line 155. Grep of report.md:44 shows '- task <n> <request-id> <p|c><k> granted|denied|needs-user: <reason>', so the cited owner does prefix task n. Edit names only requests.md and report.md as a link. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F73"
+run = "U3"
+by = "checker"
+verdict = "unsettled"
+citation = "claude/skills/implement-v2-engine/references/requests.md:137"
+rationale = "Target exists. Old text 'A started holder with no commit in another milestone was a holder' occurs at line 137. Predicates 1, 2 and 4 hold. The replacement rests on holders.rs candidate filter (row.checkpoint == own.checkpoint) scoping checks to the requester's milestone, which needs reading the filter logic; grep cannot settle it, so the verifier decides."
+
+[[verdicts]]
+finding = "F74"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/requests.md:155"
+rationale = "Target exists. Old text '<request-id> <item> <ruling>: <reason>' occurs at line 155. Grep of report.md:44 shows the prefixed shape '<request-id>' after 'task <n>', matching the edit's target line. Edit names only the same file. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F75"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/run-milestone.md:37"
+rationale = "Target exists. Old bullet occurs exactly at line 37. Edit names only the same file; requests.md is evidence, not an edit target. Predicates 1, 2 and 4 hold."
+
+[[verdicts]]
+finding = "F59"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/schema_request.rs:254"
+rationale = 'Counter fails: insert_ruling (schema_request.rs:249-256) inserts `by` unconditionally as RuledBy::as_str(), and RuledBy::Unset maps to "" (schema_request.rs:47-53, doc comment "`\"\"` while it is open"); the key-order test (schema_request.rs:380-383) pins `by` on every path item. The reader treats an absent `by` as Unset (line 122-124), so "absent" is only tolerated, never written. plan-request.md:83 already says `""` while open. The `old` text is at plan-store.md:301; edit is prose-only.'
+
+[[verdicts]]
+finding = "F73"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/holders.rs:93"
+rationale = "The old text sits at requests.md:137. holders::holder filters candidates on row.checkpoint == own.checkpoint (holders.rs:93), and its module doc (holders.rs:4-6) says only the requester's milestone rows can collide by design. rule_path (request.rs:176) and the rule verb's grant check (request.rs:371) are the only holder checks, and both call holder(). No other check exists, so the counter fails. C29's rule-out says the case can't be reached. That supports the edit, which keeps the bullet but corrects what add and rule check. Doc-only change."
+
+[[verdicts]]
+finding = "F62"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/request.rs:62"
+rationale = "Counter fails: request.rs:62-63 calls generated::load unconditionally after parse_payload and before the store lock, mapping any load error to a Validation refusal, so a changes-only request is refused too. generated.md:32-33 still names only plan check and gate-list. The old text matches at the anchor; the edit is doc-only within file, and its worker-view clause matches view.rs:748-754 (one 'is malformed' line). No doc states the omission is deliberate."
+
+[[verdicts]]
+finding = "F47"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/check/generated_outputs.rs:41"
+rationale = "Upheld: :41 builds held with normal_path (case kept) and :46 tests outputs by exact membership while request add folds case, so the scenario follows."
+
+[[verdicts]]
+finding = "F65"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/emit.rs:666"
+rationale = "Upheld: Dispatched.needs carries row.needs only while holders.rs closure chains coupling, so a coupled running row is exempted from holder()."
+
+[[verdicts]]
+finding = "F57"
+run = "U3"
+by = "audit"
+verdict = "refuted"
+citation = "tomlctl/src/tasks/milestones.rs:189"
+rationale = "Upheld refutation: a started milestone holds every other runnable one, so milestone B cannot launch beside A's uncommitted worker row."
+
+[[verdicts]]
+finding = "F71"
+run = "U3"
+by = "audit"
+verdict = "refuted"
+citation = "claude/skills/implement-v2-engine/references/drain.md:102"
+rationale = "Upheld refutation: the drain deliberately runs the agents audit after 5a so an amended check reads as the row's own; the amended check is absent from the view, so the Run by: gate rule does not reach it."
+
+[[verdicts]]
+finding = "F43"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/tests/output_options.rs:1573"
+rationale = "Upheld: the old text is at the anchor and the edit stays within the file."
+
+[[verdicts]]
+finding = "F60"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/SKILL.md:91"
+rationale = "Upheld: the anchor line exists, generated.md is not linked from SKILL.md, and the edit only adds a line."
+
+[[reproductions]]
+finding = "F59"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+verdict = "gone"
+by = "verifier"
+citation = """claude/skills/tomlctl/references/plan-store.md:301 now reads 'and "" while open', matching tomlctl/src/plan/schema_request.rs:254 (by = RuledBy::as_str()) and :50 (Unset => "")"""
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F70"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/implement-v2-engine/references/requests.md:155 now defers to the line shape report.md lays out (no restated `<request-id> <item> <ruling>` shape remains, grep for it finds none); report.md:44 stays the single home"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F73"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/implement-v2-engine/references/requests.md:137 now says add and rule do not check another milestone's holder, matching tomlctl/src/plan/holders.rs:98 filter row.checkpoint == own.checkpoint"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F62"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/tomlctl/references/generated.md:32-36 now names plan request add's malformed-config behaviour, matching tomlctl/src/plan/request.rs:65-75 (generated::load unwrap_or_else falls back to no generators, pushes a warning) and :145-146 (warnings array in output)"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F61"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+verdict = "gone"
+by = "checker"
+citation = 'grep "tomlctl plan open\|decide\|contract\|handover\|run\|milestone\|check\|view\|probes\|stage\|gate\|approve\|drift --slug <s>" tomlctl/README.md: no match; line 92 now reads "tomlctl plan open|decide|contract|handover|request|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>"'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F60"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/tomlctl/SKILL.md:92 links references/generated.md; loop over references/*.md counting references/<name> in SKILL.md printed no MISSING line"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F72"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+verdict = "gone"
+by = "verifier"
+citation = "claude/agents/plan-worker-deep.md:67 and claude/agents/plan-worker-lite.md:67 now route the one-request-per-run refusal (tomlctl/src/plan/request.rs:87) as a restart: read the named request, wait at step 3 without a second REQUEST when open, step 4 when ruled; verify-shared-blocks.sh: shared-block parity: OK"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F50"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/plan_request.rs:291 a_partial_rule_leaves_the_request_open_and_rules_a_change_item_by_index rules c1 alone and asserts status open, ruled_at empty, changes[0] denied by orchestrator, paths[0] open (lines 310-323), p2 refused 'has no item' (325-326), then p1 grant gives status ruled (328-330)"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F51"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/plan_request.rs:384 a_task_may_post_again_in_a_later_run finishes wf_1, starts wf_2 with task 1, posts again and asserts two rows with run_id wf_1 and wf_2, milestone A; pins the run_id comparison at tomlctl/src/plan/request.rs:85"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F54"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/implement-v2-engine/references/run-milestone.md:37 now names `tomlctl plan request list --slug <slug> --where applied=false --select id,task,paths --lines` and the granted-ruling filter; tomlctl/src/plan/request.rs:503-507 list_row emits `applied` and each paths item's `ruling`; the command runs with exit 0"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F52"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/plan_check.rs:1599 a_generated_input_on_a_done_row_or_a_deferred_milestone_does_not_warn drives both skips (done row, deferred milestone) with assert_clean, while :1579 shows the same fixture warns on a pending row; cargo nextest -E 'test(/^plan_check::a_generated_input_on_a_done_row/) | test(/^plan_check::an_input_held_without/)' -> 2 tests run: 2 passed"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F43"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/output_options.rs:1629-1632 (the plan-group doc comment now sits directly above fn plan_flows; fn request_flow at :1573 carries no doc comment)"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F45"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/plan/request.rs:240-244 stores generated::canonical_path and refuses an empty result; tomlctl/src/plan/holders.rs:24-26 fold_key = generated::path_key (drops empty and . segments), used by forbidden (33), holder (92,110,125)"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F46"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/plan/request.rs:370-374 dedupes on the parsed (is_path, index) key; item_ref at request.rs:432 refuses a leading 0 or non-digit, so p01 and p+1 return None"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F48"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/plan/request.rs:65-76 skips generated::load for a changes-only payload and on a load error falls back to no generators with a warnings entry (request.rs:144-148) instead of refusing"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F66"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/generated.rs:1-24 has no #![allow(dead_code)] and Generator has no input_globs field; rg shows every remaining generated.rs item and field (id, inputs, outputs, regenerate, check) read in plan/view.rs, emit.rs, request.rs, holders.rs, check/generated_outputs.rs"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F67"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/plan/holders.rs:143 closure edges are row.needs only, coupling dropped; test a_row_coupled_to_the_requester_still_holds pins a coupled pending row as holder"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F68"
+flow = "mid-run-requests"
+milestone = "apply-1"
+round = 1
+task = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/generated.rs:137-145 missing_outputs compares by path_key, called from check/generated_outputs.rs:43 and view.rs:766; request.rs:98-102 folds held and outputs_of with fold_key = path_key, so all three agree"
+at = 2026-11-18

@@ -19,6 +19,10 @@ rationale = "Workers ask the orchestrator for files and spec corrections mid-run
 id = "B"
 rationale = "The implement-v2 engine and both plan workers use plan request: workers ask mid-run, the orchestrator rules, and the drain applies grants, running against a tomlctl that milestone A installed"
 
+[[checkpoints]]
+id = "apply-1"
+rationale = "Fix F43,F45,F46,F48,F50,F51,F52,F54,F59,F60,F61,F62,F66,F67,F68,F70,F72,F73 from .claude/flows/mid-run-requests/review-v2.toml"
+
 [[file_notes]]
 ref = "load-the-projects-generated-file-map-from-claudegeneratedtoml"
 file = "tomlctl/src/generated.rs"
@@ -73,6 +77,85 @@ note = "(new)"
 ref = "write-the-orchestrators-side-of-worker-requests"
 file = "claude/skills/implement-v2-engine/references/requests.md"
 note = "(new)"
+
+[[finding_links]]
+ref = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F43"]
+settles = []
+
+[[finding_links]]
+ref = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = [
+    "F45",
+    "F46",
+    "F48",
+    "F66",
+    "F67",
+    "F68",
+]
+settles = []
+
+[[finding_links]]
+ref = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = [
+    "F50",
+    "F51",
+]
+settles = []
+
+[[finding_links]]
+ref = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F52"]
+settles = []
+
+[[finding_links]]
+ref = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F54"]
+settles = []
+
+[[finding_links]]
+ref = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F59"]
+settles = []
+
+[[finding_links]]
+ref = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F60"]
+settles = []
+
+[[finding_links]]
+ref = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F61"]
+settles = []
+
+[[finding_links]]
+ref = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F62"]
+settles = []
+
+[[finding_links]]
+ref = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = [
+    "F70",
+    "F73",
+]
+settles = []
+
+[[finding_links]]
+ref = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+store = ".claude/flows/mid-run-requests/review-v2.toml"
+fixes = ["F72"]
+settles = []
 
 [[specs]]
 ref = "load-the-projects-generated-file-map-from-claudegeneratedtoml"
@@ -926,6 +1009,458 @@ text = 'Replace each `class: CLASS` with `class: "plan/generated-output-unheld"`
 binding = "suggested"
 detail = "case_collision.rs states its class as a literal at line 107, the shape the parser in finding_classes.rs reads"
 
+[[specs]]
+ref = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+outcome = "F43: the change is made: Doc comment for plan_flows now sits above request_flow; plan_flows is left undocumented"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F43's anchor holds"
+check = "tomlctl review anchor F43 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+outcome = """
+F45: the failure no longer happens: Task 1 posts {"paths":[{"path":"src/./shared.rs","why":"x"}]} while unrelated pending task 2 holds src/shared.rs. normal_path only trims a leading `./` and swaps slashes, so fold_key gives `src/./shared.rs` != `src/shared.rs`: holder() finds no holder, the item stays open, and `rule` grants it (its holder recheck misses too), so two tasks edit one file. `docs/./flows/<slug>/x.md` likewise escapes forbidden(); `./` normalises to an empty path that is accepted.
+F46: the failure no longer happens: An NDJSON batch {"item":"p1","ruling":"granted",...} then {"item":"p01","ruling":"denied",...}: item_ref parses both to Path(0) (usize::from_str accepts leading zeros and `+`), `named` holds the raw strings so the "ruled twice" refusal never fires, both pass the `current != Open` check (state is read before edits apply), and the second edit overwrites the first: the item ends denied with no error.
+F48: the failure no longer happens: `.claude/generated.toml` has a generator missing `check`. A running worker posts {"changes":[{"field":"accept",...}]} or a path unrelated to any generator: generated::load errors and add returns a Validation refusal naming the config, so the worker cannot post its one request at all mid-run; plan check only warned (generated-output-unheld) and the worker view printed a line, so nothing earlier stopped the run.
+F66: the change is made: module-wide #![allow(dead_code)] with no reason now only hides the never-read Generator.input_globs field
+F67: the failure no longer happens: Milestone A has task 5 (needs [], files [src/a.rs]) and task 6 (coupling [5], files [tests/a.rs]). launch-args sends 6 with needs [] and no coupling, so the Workflow starts both together. Task 5 requests tests/a.rs: holder() puts 6 in 5's closure via the coupling edge, skips it, and returns None, so `add` leaves it open and `rule` grants it (or `add` grants it at once if it is a declared output). Both workers then edit tests/a.rs at the same time. D1 requires that no concurrent row holds a granted path.
+F68: the failure no longer happens: generated.toml declares output src/tokens.gen.ts, and a row's files hold src/Tokens.gen.ts plus input src/tokens.css. The input glob matches case-insensitively, so the generator counts as touched. plan check then warns generated-output-unheld, and the worker view says the output is 'not in this task's files: ask for it with a scope request'. The worker spends its one request of the run on it, and `plan request add` denies it as 'already held by this task'."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.accept]]
+behaviour = "F66's removed text is gone from its edit target"
+check = "tomlctl review anchor F66 --slug mid-run-requests --gone"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.premises]]
+claim = "F45's anchor holds"
+check = "tomlctl review anchor F45 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F46's anchor holds"
+check = "tomlctl review anchor F46 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F48's anchor holds"
+check = "tomlctl review anchor F48 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F66's anchor holds"
+check = "tomlctl review anchor F66 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F67's anchor holds"
+check = "tomlctl review anchor F67 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F68's anchor holds"
+check = "tomlctl review anchor F68 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+outcome = """
+F50: the change is made: No black-box test rules a change item (c<n>) or makes a partial rule call; the documented 'partial call leaves the request open' is unpinned
+F51: the change is made: The one-request limit is tested only within one run; nothing pins that a task may post again in a later run of its milestone"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F50's anchor holds"
+check = "tomlctl review anchor F50 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F51's anchor holds"
+check = "tomlctl review anchor F51 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+outcome = "F52: the change is made: plan/generated-output-unheld skips non-pending rows and deferred milestones, but no test drives either skip"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F52's anchor holds"
+check = "tomlctl review anchor F52 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+outcome = "F54: the change is made: Pre-flight exempts unapplied granted request paths but names no command that lists them; the Re-entry list selects no paths"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F54's anchor holds"
+check = "tomlctl review anchor F54 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+outcome = """F59: the change is made: plan-store.md says a request item's `by` is absent while open, but insert_ruling always writes `by = ""` for an unruled item"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F59's anchor holds"
+check = "tomlctl review anchor F59 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+outcome = "F60: the change is made: SKILL.md's reference list links every references/*.md but the new generated.md, so the .claude/generated.toml reference is undiscoverable from the skill"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F60's anchor holds"
+check = "tomlctl review anchor F60 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+outcome = "F61: the change is made: README's plan verb line lists every PlanOp subcommand but the new `request` group"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F61's anchor holds"
+check = "tomlctl review anchor F61 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+outcome = "F62: the change is made: generated.md says only plan check and gate-list react to a malformed config; plan request add also refuses, so no worker can post any request"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F62's anchor holds"
+check = "tomlctl review anchor F62 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+outcome = """
+F70: the change is made: requests.md restates the requests: report line shape and disagrees with report.md, which owns it and prefixes `task <n>`
+F73: the change is made: Claims add and rule should have refused a started holder in another milestone, but holders.rs only checks rows of the requester's milestone"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F70's anchor holds"
+check = "tomlctl review anchor F70 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F73's anchor holds"
+check = "tomlctl review anchor F73 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+outcome = "F72: the failure no longer happens: Worker of task 5 posts Q2 and waits; the runtime restarts it (step 4 names this case). The restarted worker redoes step 7, posts again, and `plan request add` refuses: 'task 5 already posted request Q2 in run <id>; a task posts one request per run'. The procedure has no branch for this refusal, so the worker improvises or returns failed with needs_files although Q2 may already be ruled granted."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow mid-run-requests --milestone apply-1 --slug mid-run-requests --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F72's anchor holds"
+check = "tomlctl review anchor F72 --slug mid-run-requests"
+at = "base"
+
+[specs.premises.probe]
+at = "970978deeb9dc4809d8e77a7e99dbd46b735818a"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "bring-the-plan-request-and-generated-map-references-in-line-with-task-23s-behaviour"
+outcome = "generated.md and plan-request.md describe plan request add, the folded key and rule's item refs as tomlctl/src/plan/request.rs, holders.rs and generated.rs now implement them"
+constraints = [
+    "Change only these two files; the code is settled and is the source of truth",
+    "Read tomlctl/src/plan/request.rs (add, parse_payload, item_ref), tomlctl/src/plan/holders.rs (fold_key) and tomlctl/src/generated.rs (canonical_path, path_key) before writing",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "generated.md no longer says plan request add refuses on a malformed map, and plan-request.md documents add's warnings key"
+check = "! grep -qF 'and `plan request add` refuse' claude/skills/tomlctl/references/generated.md && grep -qF '`warnings`' claude/skills/tomlctl/references/plan-request.md"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "worker"
+
+[[specs.means]]
+text = "In generated.md, say plan check warns, plan emit gate-list refuses, and plan request add (only for a payload with paths) falls back to no generators and reports the problem in a `warnings` array, so no output is granted mechanically"
+binding = "required"
+detail = "Replaces the sentence task 30 wrote under the loader rules"
+
+[[specs.means]]
+text = "In plan-request.md's add section: document the optional `warnings` key in the output table (present only when the generated map failed to load); say paths are canonicalised (slashes normalised, empty and `.` segments dropped, a leading `./` dropped) and a path that canonicalises to nothing is refused; restate the folded key as that canonical form with case folded"
+binding = "required"
+detail = "The folded-key paragraph at 'Paths are compared by a folded key' predates the canonicalisation"
+
+[[specs.means]]
+text = "In plan-request.md's rule section: say an item ref is `p<n>` or `c<n>` with plain digits and no leading zero or sign, and that ruling one item twice in a batch is refused by its parsed ref"
+binding = "required"
+detail = "item_ref now refuses p01 and p+1"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -949,6 +1484,18 @@ elaboration = "upfront"
 defer_reason = ""
 after = ["A"]
 
+[[milestones]]
+id = "apply-1"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets",
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+]
+elaboration = "upfront"
+defer_reason = ""
+
 [[changes]]
 at = 2026-11-18T14:31:53Z
 ref = "state-the-generated-output-unheld-class-as-a-literal-at-each-finding-site"
@@ -957,6 +1504,123 @@ old = ""
 new = "State the generated-output-unheld class as a literal at each finding site"
 actor = "orchestrator"
 reason = "task 14's note and task 13's check: cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source fails because generated_outputs.rs builds findings with `class: CLASS` (a const), which the finding-class parser does not read, so plan/generated-output-unheld reads as documented but never emitted"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "milestone:apply-1"
+field = "*"
+old = ""
+new = "Fix F43,F45,F46,F48,F50,F51,F52,F54,F59,F60,F61,F62,F66,F67,F68,F70,F72,F73 from .claude/flows/mid-run-requests/review-v2.toml"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F43,F45,F46,F48,F50,F51,F52,F54,F59,F60,F61,F62,F66,F67,F68,F70,F72,F73"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+field = "*"
+old = ""
+new = "Doc comment for plan_flows now sits above request_flow; plan_flows is left undocumented"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F43"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+field = "*"
+old = ""
+new = "Request paths are not canonicalised: `a/./b`, `a//b` and `./` (empty) pass and fold_key compares them unequal, bypassing holder, held and forbidden checks (and 5 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F45, F46, F48, F66, F67, F68"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+field = "*"
+old = ""
+new = "No black-box test rules a change item (c<n>) or makes a partial rule call; the documented 'partial call leaves the request open' is unpinned (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F50, F51"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+field = "*"
+old = ""
+new = "plan/generated-output-unheld skips non-pending rows and deferred milestones, but no test drives either skip"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F52"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+field = "*"
+old = ""
+new = "Pre-flight exempts unapplied granted request paths but names no command that lists them; the Re-entry list selects no paths"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F54"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+field = "*"
+old = ""
+new = """plan-store.md says a request item's `by` is absent while open, but insert_ruling always writes `by = ""` for an unruled item"""
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F59"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+field = "*"
+old = ""
+new = "SKILL.md's reference list links every references/*.md but the new generated.md, so the .claude/generated.toml reference is undiscoverable from the skill"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F60"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+field = "*"
+old = ""
+new = "README's plan verb line lists every PlanOp subcommand but the new `request` group"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F61"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+field = "*"
+old = ""
+new = "generated.md says only plan check and gate-list react to a malformed config; plan request add also refuses, so no worker can post any request"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F62"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+field = "*"
+old = ""
+new = "requests.md restates the requests: report line shape and disagrees with report.md, which owns it and prefixes `task <n>` (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F70, F73"
+
+[[changes]]
+at = 2026-11-18T15:44:30Z
+ref = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+field = "*"
+old = ""
+new = "A restarted worker re-posting its request gets kind=validation from plan request add, and the procedure gives no route to resume on the existing request"
+actor = "orchestrator"
+reason = "apply .claude/flows/mid-run-requests/review-v2.toml: F72"
+
+[[changes]]
+at = 2026-11-18T15:50:57Z
+ref = "bring-the-plan-request-and-generated-map-references-in-line-with-task-23s-behaviour"
+field = "*"
+old = ""
+new = "Bring the plan request and generated-map references in line with task 23's behaviour"
+actor = "orchestrator"
+reason = "task-23.md reports a behaviour change the milestone's docs contradict: plan request add no longer refuses on a malformed .claude/generated.toml (it loads generators only for a payload with paths, falls back to none and adds a `warnings` array), yet task 30 rewrote generated.md to say add refuses; plan-request.md still describes the old folded key and item refs"
 
 [[items]]
 id = 1
@@ -1546,3 +2210,330 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "edab9d9c1ab25f339dfaf26c4fad4d62594a38ae"
+
+[[items]]
+id = 22
+ref = "doc-comment-for-plan_flows-now-sits-above-request_flow-plan_flows-is-left-undocumented"
+title = "Doc comment for plan_flows now sits above request_flow; plan_flows is left undocumented"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/output_options.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F43: Doc comment for plan_flows now sits above request_flow; plan_flows is left undocumented"
+detail = """
+F43:
+Edit (change): Delete the three-line doc comment and the fn line from the anchor, keep `fn request_flow(root: &Path, slug: &str) {` alone, and place the doc comment immediately above `fn plan_flows(root: &Path) {`.
+Old text: /// The `plan` group's flows, added to its fixture alone so that no other group
+/// sees them in `flow list` or `flow resolve`. Approving a plan then committing
+/// `PLAN_FILE` is what gives `plan drift` an affected task.
+fn request_flow(root: &Path, slug: &str) {"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 23
+ref = "request-paths-are-not-canonicalised-ab-ab-and-empty-pass-and-fold_key-compares-them-unequal-bypassing-holder-held-and-forbidden-checks-and-5-more"
+title = "Request paths are not canonicalised: `a/./b`, `a//b` and `./` (empty) pass and fold_key compares them unequal, bypassing holder, held and forbidden checks (and 5 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/view.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F45: Request paths are not canonicalised: `a/./b`, `a//b` and `./` (empty) pass and fold_key compares them unequal, bypassing holder, held and forbidden checks
+F46: `rule` dedupes rows by raw item text, so `p1` and `p01` (or `p+1`) both rule the same item and the last silently overwrites the first
+F48: A malformed .claude/generated.toml refuses every `plan request add`, even a changes-only request, while plan check treats the same config as a warning
+F66: module-wide #![allow(dead_code)] with no reason now only hides the never-read Generator.input_globs field
+F67: holder() exempts rows linked to the requester only by coupling, but the Workflow runs those concurrently, so a path an in-flight row holds can be granted
+F68: Which generator outputs a row lacks is computed in three modules with two path rules: check and view compare case-sensitively, request add folds case"""
+detail = """
+F45:
+Fix: In parse_payload, canonicalise each path before use: split on `/`, drop empty and `.` segments, rejoin; refuse the item when the result is empty. Store the canonical form so fold_key, forbidden and holder all compare it. Alternatively make fold_key (holders.rs) collapse `.` and empty segments so every comparison site agrees, and add a test for `src/./a.rs` and `src//a.rs` against a held `src/a.rs`.
+Failure scenario: Task 1 posts {"paths":[{"path":"src/./shared.rs","why":"x"}]} while unrelated pending task 2 holds src/shared.rs. normal_path only trims a leading `./` and swaps slashes, so fold_key gives `src/./shared.rs` != `src/shared.rs`: holder() finds no holder, the item stays open, and `rule` grants it (its holder recheck misses too), so two tasks edit one file. `docs/./flows/<slug>/x.md` likewise escapes forbidden(); `./` normalises to an empty path that is accepted.
+
+F46:
+Fix: Key the duplicate check on the parsed reference rather than the raw string: insert (is_path, index) into `named` after item_ref succeeds. Optionally make item_ref refuse a number with a leading `0` or `+` so only the canonical `p<n>`/`c<n>` form is accepted, and extend item_refs_number_from_one with `p01` and `p+1`.
+Failure scenario: An NDJSON batch {"item":"p1","ruling":"granted",...} then {"item":"p01","ruling":"denied",...}: item_ref parses both to Path(0) (usize::from_str accepts leading zeros and `+`), `named` holds the raw strings so the "ruled twice" refusal never fires, both pass the `current != Open` check (state is read before edits apply), and the second edit overwrites the first: the item ends denied with no error.
+
+F48:
+Fix: In add, on a generated::load error fall back to an empty generator list (no mechanical output grant, so every path that rule would have granted stays open for the orchestrator) and surface the config problem in the summary, e.g. a `warnings` entry; or load generators only when payload.paths is non-empty. Keep the refusal only if the run must fail closed, and then say so in the command help.
+Failure scenario: `.claude/generated.toml` has a generator missing `check`. A running worker posts {"changes":[{"field":"accept",...}]} or a path unrelated to any generator: generated::load errors and add returns a Validation refusal naming the config, so the worker cannot post its one request at all mid-run; plan check only warned (generated-output-unheld) and the worker view printed a line, so nothing earlier stopped the run.
+
+F66:
+Edit (remove): Delete the `#![allow(dead_code)]` line, the `pub(crate) input_globs: Vec<String>,` field of `Generator`, and the `input_globs,` field initialiser in `parse` (keep the local `input_globs` used to build the GlobSet). Every other item is read by plan check, gate-list, the worker view or plan request.
+Old text: #![allow(dead_code)]
+
+F67:
+Fix: In holders.rs `closure`, walk only the edges the milestone Workflow gates on: `needs`, plus, optionally, each row's spec `after:` premise targets, which is what `plan emit launch-args` sends as `needs` and `after`. Drop `coupling`. Fix the module header so it names the edges it really walks. Add a unit test showing that a pending row linked to the requester only by `coupling` and holding the path is returned as its holder. Do not add coupling to launch-args instead: the brief's Non-goals rule out changing how the Workflow chooses which task to start.
+Failure scenario: Milestone A has task 5 (needs [], files [src/a.rs]) and task 6 (coupling [5], files [tests/a.rs]). launch-args sends 6 with needs [] and no coupling, so the Workflow starts both together. Task 5 requests tests/a.rs: holder() puts 6 in 5's closure via the coupling edge, skips it, and returns None, so `add` leaves it open and `rule` grants it (or `add` grants it at once if it is a declared output). Both workers then edit tests/a.rs at the same time. D1 requires that no concurrent row holds a granted path.
+
+F68:
+Fix: Give generated.rs one owner for this rule: `missing_outputs(generator, files)`, which compares outputs to files by normal_path then lowercase (fold_key's definition). Call it from generated_outputs.rs (the `held`/`missing` block) and view.rs `generator_lines` (lines 757-764). Have request.rs use the same folded comparison through outputs_of, so the plan check, the worker view and request add all agree on which output is unheld.
+Failure scenario: generated.toml declares output src/tokens.gen.ts, and a row's files hold src/Tokens.gen.ts plus input src/tokens.css. The input glob matches case-insensitively, so the generator counts as touched. plan check then warns generated-output-unheld, and the worker view says the output is 'not in this task's files: ask for it with a scope request'. The worker spends its one request of the run on it, and `plan request add` denies it as 'already held by this task'."""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 24
+ref = "no-black-box-test-rules-a-change-item-cn-or-makes-a-partial-rule-call-the-documented-partial-call-leaves-the-request-open-is-unpinned-and-1-more"
+title = "No black-box test rules a change item (c<n>) or makes a partial rule call; the documented 'partial call leaves the request open' is unpinned (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_request.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F50: No black-box test rules a change item (c<n>) or makes a partial rule call; the documented 'partial call leaves the request open' is unpinned
+F51: The one-request limit is tested only within one run; nothing pins that a task may post again in a later run of its milestone"""
+detail = """
+F50:
+Edit (add): Add a test `a_partial_rule_leaves_the_request_open_and_rules_a_change_item_by_index`: flow(&[row(1,&[],&["src/one.ts"])],&[1]); add(&root,1,&json!({"paths":[{"path":"src/new.ts","why":"w"}],"changes":[{"field":"means","what":"w","evidence":"e"}]})) and assert status "open" and item(&out,"c1")["ruling"]=="open" with by "". Then rule(&root,&id,&[json!({"item":"c1","ruling":"denied","reason":"r"})]) and assert the printed status is still "open"; list(&root)[0] has ruled_at "", changes[0].ruling "denied" and by "orchestrator", paths[0].ruling "open". Then rule p1 granted and assert status "ruled" and a non-empty ruled_at. Also assert rule naming "p2" on that request fails with "has no item". Each assertion fails if settle() marks a partial call ruled or ItemRef::Change writes the wrong slot.
+Old text: fn rule_refuses_a_request_that_is_no_longer_open() {
+
+F51:
+Edit (add): Add a test `a_task_may_post_again_in_a_later_run`: flow(&[row(1,&[],&["src/one.ts"])],&[1]); add_paths(&root,1,&["src/a.ts"]).success(); close run wf_1 with `plan run finish --slug request-flow --step implement:A --run-id wf_1` plus whatever outcome flag the verb requires; start `plan run start --step implement:A --run-id wf_2 --tasks 1`; add_paths(&root,1,&["src/b.ts"]).success(). Assert list(&root) has two rows whose run_id values are "wf_1" and "wf_2" and whose milestone is "A". This fails if the duplicate check in request::add drops its run_id comparison and blocks a retried task forever.
+Old text: fn a_second_request_from_the_same_task_in_a_run_is_refused() {"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 25
+ref = "plangenerated-output-unheld-skips-non-pending-rows-and-deferred-milestones-but-no-test-drives-either-skip"
+title = "plan/generated-output-unheld skips non-pending rows and deferred milestones, but no test drives either skip"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_check.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F52: plan/generated-output-unheld skips non-pending rows and deferred milestones, but no test drives either skip"
+detail = """
+F52:
+Edit (add): Add a test `a_generated_input_on_a_done_row_or_a_deferred_milestone_does_not_warn`: (1) Flow::with_tasks of TASKS with the row's `status = "pending"` swapped to `status = "done"`, write_generated_config(&flow, GENERATOR), and assert finding_ids(&flow, GENERATED_UNHELD) is empty; (2) TASKS swapped to `elaboration = "deferred"` with `defer_reason = "depends on the store"` (the swap a_deferred_milestone_needs_its_reason and an_accept_with_no_check_is_an_error_only_on_an_upfront_milestone already use), write_generated_config, assert finding_ids(&flow, GENERATED_UNHELD) is empty. Each case fails if the status filter or the is_deferred() skip in generated_outputs::generated_output_findings is dropped.
+Old text: fn no_generated_config_is_clean() {"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 26
+ref = "pre-flight-exempts-unapplied-granted-request-paths-but-names-no-command-that-lists-them-the-re-entry-list-selects-no-paths"
+title = "Pre-flight exempts unapplied granted request paths but names no command that lists them; the Re-entry list selects no paths"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F54: Pre-flight exempts unapplied granted request paths but names no command that lists them; the Re-entry list selects no paths"
+detail = """
+F54:
+Edit (add): Extend this bullet so the orchestrator can compute the exemption: append `, listed by `tomlctl plan request list --slug <slug> --where applied=false --select id,task,paths --lines`, taking each `paths` item whose `ruling` is `granted``. Without it the step's two commands (plan drift, tasks list) print no granted path, and the requests.md Re-entry list selects only id,run_id,milestone,task, so a literal reading stops the engine on a granted path as someone else's edit.
+Old text: - the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry";"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 27
+ref = "plan-storemd-says-a-request-items-by-is-absent-while-open-but-insert_ruling-always-writes-by-for-an-unruled-item"
+title = """plan-store.md says a request item's `by` is absent while open, but insert_ruling always writes `by = ""` for an unruled item"""
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/plan-store.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """F59: plan-store.md says a request item's `by` is absent while open, but insert_ruling always writes `by = ""` for an unruled item"""
+detail = """
+F59:
+Edit (change): Replace with: "`by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and `""` while open." Checked against tomlctl/src/plan/schema_request.rs insert_ruling, which inserts `by` as RuledBy::as_str() on every item, and RuledBy::Unset maps to ""; plan-request.md's list and add output already say `""` while open.
+Old text: `by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and absent while open."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 28
+ref = "skillmds-reference-list-links-every-referencesmd-but-the-new-generatedmd-so-the-claudegeneratedtoml-reference-is-undiscoverable-from-the-skill"
+title = "SKILL.md's reference list links every references/*.md but the new generated.md, so the .claude/generated.toml reference is undiscoverable from the skill"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F60: SKILL.md's reference list links every references/*.md but the new generated.md, so the .claude/generated.toml reference is undiscoverable from the skill"
+detail = """
+F60:
+Edit (add): After the plan-store.md bullet add: "- [references/generated.md](references/generated.md) — the optional `.claude/generated.toml` generator map: its keys, what the loader refuses, and the readers (`plan check`, `plan emit gate-list`, the worker view and `plan request add`)." A loop over references/*.md counting `references/<name>` in SKILL.md finds 0 only for generated.md; every other file is linked at least once.
+Old text: - [references/plan-store.md](references/plan-store.md) — the `plan.toml` store shape: the sample, the key order, and each `[[decision]]`, `[[contract]]`, `[[approval]]`, `[[run]]`, `[[handover]]` and `[[request]]` key. The verbs that write it are [references/plan.md](references/plan.md)."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 29
+ref = "readmes-plan-verb-line-lists-every-planop-subcommand-but-the-new-request-group"
+title = "README's plan verb line lists every PlanOp subcommand but the new `request` group"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/README.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F61: README's plan verb line lists every PlanOp subcommand but the new `request` group"
+detail = """
+F61:
+Edit (change): Insert `request` after `handover`: `tomlctl plan open|decide|contract|handover|request|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>`. tomlctl/src/cli/types/plan.rs PlanOp now carries `Request { op: PlanRequestOp }` between Handover and Run; every other subcommand but `emit` (on its own line) is listed.
+Old text: tomlctl plan open|decide|contract|handover|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 30
+ref = "generatedmd-says-only-plan-check-and-gate-list-react-to-a-malformed-config-plan-request-add-also-refuses-so-no-worker-can-post-any-request"
+title = "generated.md says only plan check and gate-list react to a malformed config; plan request add also refuses, so no worker can post any request"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/generated.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F62: generated.md says only plan check and gate-list react to a malformed config; plan request add also refuses, so no worker can post any request"
+detail = """
+F62:
+Edit (change): Replace the second sentence with: "`plan check` turns that into one warning naming no row; `plan emit gate-list` and `plan request add` refuse with it, so no request, even one holding only `changes`, can be posted until the file is fixed; the worker view prints one line naming the problem." Checked against tomlctl/src/plan/request.rs add (generated::load(...).map_err(refusal) before any payload ruling) and tomlctl/src/plan/view.rs generator_lines.
+Old text: - A malformed file is refused with an error naming the generator and the key. `plan check` turns that
+  into one warning naming no row; `plan emit gate-list` refuses with it."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 31
+ref = "requestsmd-restates-the-requests-report-line-shape-and-disagrees-with-reportmd-which-owns-it-and-prefixes-task-n-and-1-more"
+title = "requests.md restates the requests: report line shape and disagrees with report.md, which owns it and prefixes `task <n>` (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/requests.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F70: requests.md restates the requests: report line shape and disagrees with report.md, which owns it and prefixes `task <n>`
+F73: Claims add and rule should have refused a started holder in another milestone, but holders.rs only checks rows of the requester's milestone"""
+detail = """
+F70:
+Edit (change): Replace the restated shape with a link to the owner: "Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`, in the line shape [report.md](report.md) lays out for its `requests:` section." report.md:44 (`- task <n> <request-id> <p|c><k> granted|denied|needs-user: <reason>`) stays the single home of the line shape.
+Old text: Each ruled item becomes one `request` entry of the milestone report, with `task` the requesting task and `needs_person` `false`: `<request-id> <item> <ruling>: <reason>`, as [report.md](report.md) lays out its `requests:` section.
+
+F73:
+Edit (change): Replace with: 'A started holder with no commit in another milestone, which `add` and `rule` do not check since they compare only the rows of the requester's milestone, and which the schedule should never let run beside this one'. The rest of the bullet (grant nothing, park the granted row, name both rows) stays. Checked against tomlctl/src/plan/holders.rs `holder`, whose candidate filter is `row.checkpoint == own.checkpoint`.
+Old text: A started holder with no commit in another milestone was a holder `add` and `rule` should have refused"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 32
+ref = "a-restarted-worker-re-posting-its-request-gets-kindvalidation-from-plan-request-add-and-the-procedure-gives-no-route-to-resume-on-the-existing-request"
+title = "A restarted worker re-posting its request gets kind=validation from plan request add, and the procedure gives no route to resume on the existing request"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F72: A restarted worker re-posting its request gets kind=validation from plan request add, and the procedure gives no route to resume on the existing request"
+detail = """
+F72:
+Fix: In the plan-worker-procedure shared block (both worker agents), add to Asking the orchestrator step 2: when `add` is refused because your task already posted a request in this run, you are a restart: take the request id the refusal names, read it with step 4's `plan request list`, and go to step 3's wait when its `status` is `open` (without sending a second REQUEST message) or to step 4 when it is `ruled`.
+Failure scenario: Worker of task 5 posts Q2 and waits; the runtime restarts it (step 4 names this case). The restarted worker redoes step 7, posts again, and `plan request add` refuses: 'task 5 already posted request Q2 in run <id>; a task posts one request per run'. The procedure has no branch for this refusal, so the worker improvises or returns failed with needs_files although Q2 may already be ruled granted."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
+
+[[items]]
+id = 33
+ref = "bring-the-plan-request-and-generated-map-references-in-line-with-task-23s-behaviour"
+title = "Bring the plan request and generated-map references in line with task 23's behaviour"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan-request.md",
+]
+needs = [30]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "a44966328f877ada61ccf3516482faf258f5aca5"
