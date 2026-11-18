@@ -13507,3 +13507,112 @@ context = "A control exists to prove the inspector is looking. ui-layout.md step
 base_sha = "a5451c561586370d04e4211cecd95208ca1af5f6"
 evidence = ["claude/skills/plan-v2-engine/references/ui-layout.md:79"]
 related = ["B-7106068f"]
+
+[[backlog]]
+id = "B-9ad269e4"
+kind = "bug"
+summary = "review-sweeper ripple sweeps over the whole tree time out, leaving the cell thin with names unswept"
+area = "claude/agents/review-sweeper.md"
+tags = ["review-v2"]
+status = "resolved"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "9ad269e48ec6ea4a"
+origin = "review-v2"
+flow = "mid-run-requests"
+context = "Run U3 (2026-11-18): ripple cell C24 sealed thin because its repo-wide greps for two removed names timed out, so it searched only claude/ and tomlctl/. The orchestrator closed the gap by hand with one rg excluding target/. The sweeper should sweep through tomlctl sweep or rg (both honour .gitignore) rather than a recursive grep, which walks target/ and node_modules/; CLAUDE.md already records that cost."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+related = ["B-d9cfd36e"]
+resolved = 2026-11-18
+resolution = "review-sweeper.md step 7 now searches the whole tree only with tomlctl sweep (about 7 s over 1581 tracked files) and forbids whole-tree Grep or recursive grep, keeping the Grep tool for reading around a hit."
+
+[[backlog]]
+id = "B-abc59fb3"
+kind = "debt"
+summary = "review plan --propose bundles correctness, security and test-gaps over mixed rule-sliced slices and spends the ceiling on repeat passes before candidate lenses"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "open"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "abc59fb313af9bfb"
+origin = "review-v2"
+flow = "mid-run-requests"
+context = "Run U3 (46 files, 3907 lines, standard): the 14-cell proposal put correctness+security+test-gaps on slices mixing Cargo.lock, agent prose and test files, spread security over prose despite the trust-boundary signal naming one Rust file, and gave 7 cells to pass-2 repeats while cutting hygiene and doc-drift for ceiling. The orchestrator rewrote the map by subsystem. Outcome evidence: 13 of 31 findings were duplicates, and the two repeat cells plus the context-free cells found almost nothing the first-pass cells had not. Slice security by the trust-boundary roots, keep test-gaps on test files, and rank candidate lenses ahead of repeat passes."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+related = ["B-39b9e713"]
+
+[[backlog]]
+id = "B-0a796f50"
+kind = "bug"
+summary = "verification agent returns no log path for some passing commands, so a green baseline has no log to record"
+area = "claude/agents/verification.md"
+tags = ["review-v2"]
+status = "resolved"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "0a796f50a6d1b6d7"
+origin = "review-v2"
+flow = "mid-run-requests"
+context = "Run U3 baseline dispatch: the passing clippy command came back with a log path and the passing cargo test command with none, so the harness-gates baseline was recorded as a 'none — pass' text and finders had no log to read. survey.md section 6 expects a path per baseline. Either always return the log path or have survey.md say what to record for a pass without one."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+related = ["B-3b1f4f14"]
+resolved = 2026-11-18
+resolution = "verification.md: every pass line now ends with its log: path, so a green baseline has a log to record."
+
+[[backlog]]
+id = "B-72ddccc2"
+kind = "annoyance"
+summary = "review digest ruled_out_hits match rule-outs by file and symbol, not claim, so unrelated rule-outs demand re-verification"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "resolved"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "72ddccc2d4e79086"
+origin = "review-v2"
+flow = "mid-run-requests"
+context = "Run U3: 21 ruled_out_hits for 33 findings. Most paired a finding with a rule-out about a different claim at the same symbol, e.g. a config-load finding in request.rs add matched against a rule-out about tasks.toml lock order. compose.md says to re-verify whenever the verifier rationale does not mention the rule-out, which would spend a verifier on noise. Matching on place is fine for a candidate; the orchestrator rule should let it judge relevance first, or the finder should name the claim a rule-out covers."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+related = ["B-33070446"]
+resolved = 2026-11-18
+resolution = "compose.md Rule-out hits now has the orchestrator first judge whether a rule-out's reason speaks to the finding's claim; one about a different claim at the same place is noted in the duplicates file and needs no re-verification."
+
+[[backlog]]
+id = "B-39afc937"
+kind = "bug"
+summary = "implement-v2 drain audit counts a worker's cargo clippy as a breach when clippy is a milestone gate, though build discipline allows it"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = ["implement-v2"]
+status = "resolved"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "39afc9372a9e6ede"
+origin = "implement-v2"
+flow = "mid-run-requests"
+context = "mid-run-requests apply-1: tomlctl agents audit reported a worker's cargo clippy because the milestone gates include the same clippy command, and drain.md step 3's allowed list names only accept checks and the dispatch-tests subset. CLAUDE.md's build discipline explicitly permits workers clippy, and the verb skips compile checks unless they match a gate. Add 'a compile check the build discipline permits' to the allowed list, or have the verb skip clippy even when it matches a gate."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+resolved = 2026-11-18
+resolution = "drain.md step 3's allowed list now admits a compile check the build discipline permits (cargo clippy, bun run type-check) when it is reported only because a gate holds the same command."
+
+[[backlog]]
+id = "B-62be032f"
+kind = "debt"
+summary = "review schedule mints independent fix tasks for findings whose fixes interact, so a doc fix can describe behaviour another task changes"
+area = "tomlctl/src/review"
+tags = ["apply-v2"]
+status = "open"
+created = 2026-11-18T16:21:40Z
+last_seen = 2026-11-18T16:21:40Z
+seen_count = 1
+dedup_id = "62be032fcdad8b2b"
+origin = "apply-v2"
+flow = "mid-run-requests"
+context = "mid-run-requests apply-1: F48 (code: plan request add refuses on a malformed generated map) and F62 (doc: generated.md omits that refusal) were scheduled as separate tasks. The F48 fix switched to a warning, while F62's task wrote the refusal into the doc, so the two contradicted and an extra task (33) and launch were needed. Triage had judged the pair distinct. When one finding's fix changes the behaviour another finding's doc fix describes, schedule should order them (needs) or merge them, or triage should link them."
+base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
+related = ["B-7b9d8057"]
