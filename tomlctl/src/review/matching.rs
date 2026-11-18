@@ -76,17 +76,28 @@ impl<'a> Place<'a> {
 /// Whether two places name the same site: the same file, and the same symbol
 /// when both carry one, or lines within [`LINE_WINDOW`] otherwise. Symmetric,
 /// unlike [`candidates`], which keys on whichever the new row carries.
+/// Symbols compare by [`symbol_key`], since agents spell one symbol with
+/// different separators.
 pub(crate) fn same_place(a: &Place<'_>, b: &Place<'_>) -> bool {
     if a.file != b.file {
         return false;
     }
     if !a.symbol.is_empty() && !b.symbol.is_empty() {
-        return a.symbol == b.symbol;
+        return symbol_key(a.symbol).eq(symbol_key(b.symbol));
     }
     match (a.line, b.line) {
         (Some(x), Some(y)) => x.abs_diff(y) <= LINE_WINDOW,
         _ => false,
     }
+}
+
+/// A symbol's letters, digits and underscores, lowercased: `routes.DELETE`,
+/// `routes DELETE` and `routes::delete` share one key.
+fn symbol_key(symbol: &str) -> impl Iterator<Item = char> + '_ {
+    symbol
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .flat_map(char::to_lowercase)
 }
 
 /// The rule-outs other cells of `finding`'s run recorded at its place, in
@@ -220,6 +231,16 @@ mod tests {
                 place("a.rs", "a::run", None),
                 place("b.rs", "a::run", None),
                 false,
+            ),
+            (
+                place("a.ts", "routes.DELETE", Some(194)),
+                place("a.ts", "routes DELETE", Some(194)),
+                true,
+            ),
+            (
+                place("a.ts", "routes::delete", None),
+                place("a.ts", "routes.DELETE", None),
+                true,
             ),
         ];
         for (a, b, want) in cases {
