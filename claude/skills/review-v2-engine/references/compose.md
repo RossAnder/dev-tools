@@ -166,7 +166,7 @@ Each `ruled_out_hits` row is a finding whose place another cell recorded as deli
 tomlctl review show <finding> --slug <slug> --for audit
 ```
 
-When the latest verifier rationale addresses the rule-out — says why the ruling cell's reason does not hold, or refutes the finding on it — the verdict stands. When it does not mention it, re-verify: dispatch one `review-verifier` for the finding with the Verifier prompt (`agent-waves.md`); its projection carries the rule-out, and its verdict replaces the earlier one. Each re-verification is one of your own dispatches and counts in the run's `agents`, as the engine's stage 4 defines that total. A finding refuted on the rule-out needs nothing further.
+A hit matches on place, not on claim, so first ask whether the rule-out's reason speaks to the finding's claim at all. One that rules out a different claim at the same place, such as a lock-order rule-out beside a finding about how a config load fails, needs nothing: write one line for it, `<finding>: rule-out by <cell> is about <its claim>, not this finding`, in `<run-dir>/payloads/duplicates-w<wave>.md`. For a rule-out that does speak to the claim: when the latest verifier rationale addresses it — says why the ruling cell's reason does not hold, or refutes the finding on it — the verdict stands. When it does not mention it, re-verify: dispatch one `review-verifier` for the finding with the Verifier prompt (`agent-waves.md`); its projection carries the rule-out, and its verdict replaces the earlier one. Each re-verification is one of your own dispatches and counts in the run's `agents`, as the engine's stage 4 defines that total. A finding refuted on the rule-out needs nothing further.
 
 ### Escalations
 

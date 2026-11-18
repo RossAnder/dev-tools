@@ -148,10 +148,10 @@ One entry per attempted command, in list order. `command:` is the command as sup
 A `pass` is one line:
 
 ```
-outcome: pass | command: <command> | duration: <the DUR= value> | summary: <the SUMMARY: value>
+outcome: pass | command: <command> | duration: <the DUR= value> | summary: <the SUMMARY: value> | log: <D>/cN.log
 ```
 
-When the `SUMMARY:` value is `none`, ` | log: <D>/cN.log` follows it, so the reader can find the runner's own count line. After a Step 3.4.1 retry that passed, the line ends ` | retried: transient`.
+Every pass line ends with its `log:`, so a caller that records each command's log, such as a review baseline, has one for a green command too. After a Step 3.4.1 retry that passed, the line ends ` | retried: transient`, and its `log:` is the `cNt` log.
 
 A `fail`, `timeout` or `flaky` is a block, fields in this order:
 
