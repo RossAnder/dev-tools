@@ -13476,7 +13476,7 @@ tags = [
     "ui-capture",
     "line-endings",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-18T09:20:33Z
 last_seen = 2026-11-18T09:20:33Z
 seen_count = 1
@@ -13486,6 +13486,8 @@ flow = "v2-ui-fidelity"
 context = "The .gitattributes pin `claude/skills/*/scripts/** text eol=lf` covers render.sh but not claude/skills/ui-capture/fixtures/**; `git check-attr eol` reports `unspecified` for fixtures/capture.sh, and the milestone B commit warned LF->CRLF on every fixture. Git Bash tolerates CRLF, so nothing fails here, but a CRLF capture.sh breaks under Linux bash and a CRLF tui grid may skew column widths. Fix: add `claude/skills/*/fixtures/** text eol=lf` beside the scripts pin, then remove and re-check out the fixtures (the remedy stanza in .gitattributes)."
 base_sha = "01a5de120799b978629c05e9476200f1c5579489"
 evidence = [".gitattributes:43"]
+resolved = 2026-11-18
+resolution = ".gitattributes now pins claude/skills/*/fixtures/** to text=auto eol=lf beside the scripts pin; git check-attr reports eol lf for fixtures/capture.sh and the tui grids, whose working copies were already LF."
 
 [[backlog]]
 id = "B-01668bbe"
@@ -13496,7 +13498,7 @@ tags = [
     "contrarian",
     "ui-capture",
 ]
-status = "open"
+status = "resolved"
 created = 2026-11-18T09:46:11Z
 last_seen = 2026-11-18T09:46:11Z
 seen_count = 1
@@ -13507,6 +13509,8 @@ context = "A control exists to prove the inspector is looking. ui-layout.md step
 base_sha = "a5451c561586370d04e4211cecd95208ca1af5f6"
 evidence = ["claude/skills/plan-v2-engine/references/ui-layout.md:79"]
 related = ["B-7106068f"]
+resolved = 2026-11-18
+resolution = "ui-layout.md step 5 and defects.md Controls now require at least one control in a class geometry.json does not measure (1, 2, 3, 6, 7, 9 or 10) and drop the clipped-label example. The optional plan check warning was not built: it needs a control's class recorded in the store."
 
 [[backlog]]
 id = "B-9ad269e4"
@@ -13616,3 +13620,94 @@ flow = "mid-run-requests"
 context = "mid-run-requests apply-1: F48 (code: plan request add refuses on a malformed generated map) and F62 (doc: generated.md omits that refusal) were scheduled as separate tasks. The F48 fix switched to a warning, while F62's task wrote the refusal into the doc, so the two contradicted and an extra task (33) and launch were needed. Triage had judged the pair distinct. When one finding's fix changes the behaviour another finding's doc fix describes, schedule should order them (needs) or merge them, or triage should link them."
 base_sha = "d4fc6f684790cb3b8982e670e666b55ebcd7c82e"
 related = ["B-7b9d8057"]
+
+[[backlog]]
+id = "B-4e15b9fa"
+kind = "debt"
+summary = "review plan --propose spends a large diff's ceiling on 40-file ripple sweeper splits while its judgement cells get 100 to 180 file slices"
+area = "tomlctl/src/review/cells.rs"
+tags = [
+    "review-v2",
+    "propose",
+]
+status = "open"
+created = 2026-11-18T16:32:33Z
+last_seen = 2026-11-18T16:32:33Z
+seen_count = 1
+dedup_id = "4e15b9fae741697b"
+origin = "review-v2"
+context = "reportdesignkit run U5 (422 files, 30619 changed lines, standard, ceiling 16): the proposal gave 11 cells to ripple sweepers split at 40 files, 4 correctness+domain-model+interaction cells over 75 to 180 files each, and one pass-2 repeat over 100 files, cutting intent-fidelity, security, contrarian, doc-drift and 7 more for ceiling. Ripple's work grows with the names a diff removes or renames, not with slice size, so the 40-file split is the wrong unit once the diff is large. The orchestrator rewrote the map by subsystem: 6 judgement cells, 3 context-free cells, 3 ripple+hygiene sweepers over 71, 133 and 218 files (all sealed thin but found the escalations), plus intent-fidelity, contrarian, doc-drift and a 9-file hotspot repeat. Consider capping sweeper cells per lens (merge past the 40-file split before cutting judgement lenses) and splitting judgement slices by subsystem rather than by rule."
+base_sha = "2e56908a2a9377bbeadbeec61bc45353df6450f6"
+evidence = ["tomlctl/src/review/cells.rs:144"]
+related = [
+    "B-abc59fb3",
+    "B-39b9e713",
+]
+
+[[backlog]]
+id = "B-4e8de7c0"
+kind = "bug"
+summary = "Duplicate candidates miss two findings at the same file and line when their symbols differ only in spelling, because same_place compares symbols exactly"
+area = "tomlctl/src/review/matching.rs"
+tags = [
+    "review-v2",
+    "duplicates",
+]
+status = "resolved"
+created = 2026-11-18T16:32:33Z
+last_seen = 2026-11-18T16:32:33Z
+seen_count = 1
+dedup_id = "4e8de7c08481b288"
+origin = "review-v2"
+context = "reportdesignkit run U5: F142 (context-free cell) and F153 (sidecar cell) are one defect at apps/server/theme-packages.ts:194, symbols 'themePackageRoutes.DELETE' and 'themePackageRoutes DELETE'. same_place returns a.symbol == b.symbol whenever both are non-empty, so a same-line pair never reaches duplicate_candidates; the orchestrator linked it by reading summaries. Normalise symbols (separators, case) before comparing, or fall back to the line window when the symbols differ but the lines are within LINE_WINDOW."
+base_sha = "2e56908a2a9377bbeadbeec61bc45353df6450f6"
+evidence = ["tomlctl/src/review/matching.rs:83"]
+related = ["B-5d5bf09e"]
+resolved = 2026-11-18
+resolution = "matching::same_place compares symbols by a key of their letters, digits and underscores, lowercased, so routes.DELETE, routes DELETE and routes::delete match; unit cases added, review.md's place rule updated, and the 73 duplicate, rule-out and same_as tests pass."
+
+[[backlog]]
+id = "B-f00449a1"
+kind = "debt"
+summary = "review plan appends cells past the depth ceiling without a refusal, and triage has no disposition for an escalation the user wants fixed"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "ceiling",
+    "escalations",
+]
+status = "open"
+created = 2026-11-18T16:32:33Z
+last_seen = 2026-11-18T16:32:33Z
+seen_count = 1
+dedup_id = "f00449a1830eb6c2"
+origin = "review-v2"
+context = "reportdesignkit run U5: wave 1 filled the 16-cell standard ceiling; at triage the user said four sweeper escalations should be fixed in the apply. compose.md says added cells must stay within the ceiling and the escalation then goes to the close summary or the backlog, but the user wanted a fix, not a capture, and the triage grammar has no such disposition. The only route into /apply-v2 was a 17th cell (C62, a probe), which review plan --ndjson accepted silently: the ceiling is computed only in --propose (cells.rs ceiling/budget), never on append. Either enforce it on append with an explicit user-directed override recorded on the run, or add a triage disposition that turns an escalation into a follow-up cell outside the ceiling."
+base_sha = "2e56908a2a9377bbeadbeec61bc45353df6450f6"
+evidence = [
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+]
+related = ["B-6f17f239"]
+
+[[backlog]]
+id = "B-8bd7a593"
+kind = "debt"
+summary = "Converting an advisory must reuse its cell's lens, which triage-and-close.md never says, and a multi-file type cleanup fits only --convert defect, which verifiers refute"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "convert",
+]
+status = "open"
+created = 2026-11-18T16:32:33Z
+last_seen = 2026-11-18T16:32:33Z
+seen_count = 1
+dedup_id = "8bd7a593f44d6e65"
+origin = "review-v2"
+context = """reportdesignkit run U5: converting contrarian advisory F164 (switchDocuments takes kind beside a SwitchTarget carrying its own kind) with lens type-design was refused with '`lens` is "type-design"; cell C59 covers contrarian' (add.rs). The lens rule is now documented in triage-and-close.md's Convert section (2026-11-18). Still open: the fix is a signature change across six files, which a cleanup row cannot express (one exact old text), so it went in as --convert defect; the verifier then refuted it (no reachable wrong output, 'a cleanup, not a defect'), and the user's convert pick landed nowhere. Give convert a shape for a multi-file cleanup (fix prose plus fix_files), or let the verifier downgrade a defect to cleanup rather than refute it."""
+base_sha = "2e56908a2a9377bbeadbeec61bc45353df6450f6"
+evidence = [
+    "tomlctl/src/review/add.rs:411",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+]
