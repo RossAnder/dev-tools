@@ -13466,3 +13466,23 @@ flow = "v2-ui-fidelity"
 context = "Headless Chrome's --dump-dom window never lays out narrower than 500 px, so render.sh's geometry pass widens the window three times, still reads a 500 px viewport, and exits 1 with 'could not size the probe's viewport'. The --screenshot pass does honour the width (a 480x360 PNG comes out 480 wide), so only the geometry key is missing. Measured 2026-11-18: --size 480x360 and 320x360 fail; 500x360 and 600x400 pass. Workaround: render mocks and fixture states at 500 px wide or more (v2-ui-fidelity decision D38). A fix probably lays the probe page out inside a fixed-size iframe, which needs --allow-file-access-from-files for a file:// child. Only mocks and fixtures go through render.sh; a project's own capture command drives its own browser."
 base_sha = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
 evidence = ["claude/skills/ui-capture/scripts/render.sh:276"]
+
+[[backlog]]
+id = "B-2e0dc127"
+kind = "bug"
+summary = "ui-capture fixtures (capture.sh, tui grids) are not pinned to LF in .gitattributes, so a Windows autocrlf checkout writes CRLF and a Linux-linked skill dir would run capture.sh with CR line ends"
+area = "skills"
+tags = [
+    "ui-capture",
+    "line-endings",
+]
+status = "open"
+created = 2026-11-18T09:20:33Z
+last_seen = 2026-11-18T09:20:33Z
+seen_count = 1
+dedup_id = "2e0dc1277e1eb1b0"
+origin = "implement-v2"
+flow = "v2-ui-fidelity"
+context = "The .gitattributes pin `claude/skills/*/scripts/** text eol=lf` covers render.sh but not claude/skills/ui-capture/fixtures/**; `git check-attr eol` reports `unspecified` for fixtures/capture.sh, and the milestone B commit warned LF->CRLF on every fixture. Git Bash tolerates CRLF, so nothing fails here, but a CRLF capture.sh breaks under Linux bash and a CRLF tui grid may skew column widths. Fix: add `claude/skills/*/fixtures/** text eol=lf` beside the scripts pin, then remove and re-check out the fixtures (the remedy stanza in .gitattributes)."
+base_sha = "01a5de120799b978629c05e9476200f1c5579489"
+evidence = [".gitattributes:43"]

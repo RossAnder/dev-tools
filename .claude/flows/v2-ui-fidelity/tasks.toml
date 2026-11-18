@@ -1165,7 +1165,7 @@ check = 'grep -qF "s/#/%23/g" claude/skills/ui-capture/scripts/render.sh'
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1175,7 +1175,7 @@ check = "test -f docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.html"
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1239,7 +1239,7 @@ check = "test -f docs/flows/v2-ui-fidelity/design/ui-B/single-table.txt"
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1300,7 +1300,7 @@ check = "grep -qF 'render.sh [--size WxH] <html> <out-dir> <state>' claude/skill
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1394,7 +1394,7 @@ check = "grep -qF '(control: ${u.control})' claude/workflows/implement-v2-visual
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1404,7 +1404,7 @@ check = """grep -qF "required: ['state', 'control', 'verdict', 'defects', 'note'
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1450,7 +1450,7 @@ check = "grep -qF 'each with `control` true or false' claude/agents/ui-inspector
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1460,7 +1460,7 @@ check = "grep -qF 'the judge says so' claude/skills/ui-capture/references/defect
 at = "base"
 
 [specs.premises.probe]
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
@@ -1526,13 +1526,13 @@ ui_controls = [
 gate = "bash claude/skills/ui-capture/fixtures/capture.sh --list"
 probe = "bash claude/skills/ui-capture/scripts/render.sh --self-test"
 verdict = "holds"
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 
 [[milestones.gate_probes]]
 gate = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
 probe = "node --version"
 verdict = "holds"
-at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+at = "c604b9be1a6c513292cbea75d1830eea92507367"
 
 [[changes]]
 at = 2026-11-18T07:14:05Z
@@ -2774,7 +2774,7 @@ id = 32
 ref = "build-the-web-fixture-panel"
 title = "Build the web fixture panel"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2812,15 +2812,15 @@ Every clean state follows design/ui-B.md#web-panel exactly, and so does every pl
 
 states.txt holds one line per state, in the table's order: the state's name, one space, its window as `<width>x<height>`, such as `web-04 640x560`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "01a5de120799b978629c05e9476200f1c5579489"
 
 [[items]]
 id = 33
 ref = "build-the-terminal-fixture-panel"
 title = "Build the terminal fixture panel"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2859,15 +2859,15 @@ The state names are neutral on purpose: no grid's visible text, and no file name
 
 Every clean grid follows design/ui-B.md#terminal-panel cell for cell, and every planted grid does too apart from its one planted defect. design/ui-B/single-table.txt beside design/ui-B.md is the model: copy its border, header, separator and hint line, and its column cells. Task ids, titles, statuses and file counts are yours to choose. A small throwaway script may draw the grids, but only the nine `.txt` files are committed."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "01a5de120799b978629c05e9476200f1c5579489"
 
 [[items]]
 id = 34
 ref = "declare-the-fixtures-capture-command"
 title = "Declare the fixtures' capture command"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2905,8 +2905,8 @@ tomlctl set-json .claude/ui-capture.toml paths --json '["claude/skills/ui-captur
 
 Add `/.ui-capture/` to `.gitignore`, under a one-line comment saying it is the UI capture command's output."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "01a5de120799b978629c05e9476200f1c5579489"
 
 [[items]]
 id = 35
@@ -2936,7 +2936,7 @@ id = 36
 ref = "stop-telling-inspectors-which-states-are-controls"
 title = "Stop telling inspectors which states are controls"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -2973,15 +2973,15 @@ Keep everything else as it is: the args checks and their refusal messages, `GROU
 
 In visual.test.mjs, change `statesOf` and the `judging` helper to parse the new `states:` lines, and decide each state's verdict from the test's own args (a test knows its controls), not from the prompt. Fix the existing tests to the new shape without weakening what they assert, and add one test named exactly `implement-v2-visual: a control carries every look and no prompt says which states are controls`, for a launch with clean states `web-01`, `web-03`, `tui-01`, controls `web-02`, `tui-02` and `odd`, one look naming `web-01` and `web-03` and one naming `tui-01`. It asserts: no prompt contains `control`; each prompt's states are in name order; `web-02` carries the web look only, `tui-02` the terminal look only, `odd` both; each clean state carries only its own look; and no prompt's looks block contains `"states"`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "01a5de120799b978629c05e9476200f1c5579489"
 
 [[items]]
 id = 37
 ref = "tell-the-inspector-it-is-not-told-which-states-are-planted"
 title = "Tell the inspector it is not told which states are planted"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -3022,5 +3022,5 @@ In claude/skills/ui-capture/SKILL.md, `## Controls`, add two sentences: the judg
 
 After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which gates every `claude/**/*.md` file."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "01a5de120799b978629c05e9476200f1c5579489"
