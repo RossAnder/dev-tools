@@ -1,0 +1,1494 @@
+schema_version = 2
+last_updated = 2026-11-18
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Workers ask the orchestrator for files and spec corrections mid-run through plan request records, grants reach the store at the drain, and plan check flags unheld generated outputs and case-colliding new files"
+
+[[checkpoints]]
+id = "B"
+rationale = "The implement-v2 engine and both plan workers use plan request: workers ask mid-run, the orchestrator rules, and the drain applies grants, running against a tomlctl that milestone A installed"
+
+[[file_notes]]
+ref = "load-the-projects-generated-file-map-from-claudegeneratedtoml"
+file = "tomlctl/src/generated.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-request-record-and-the-request-report-kind-to-the-plan-store"
+file = "tomlctl/src/plan/schema_request.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "compute-which-rows-could-edit-a-requested-path-alongside-the-requester"
+file = "tomlctl/src/plan/holders.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-request-verbs-a-worker-posts-with-and-the-orchestrator-rules-with"
+file = "tomlctl/src/plan/request.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "test-the-plan-request-verbs-end-to-end"
+file = "tomlctl/tests/plan_request.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "warn-on-a-planned-new-file-whose-stem-differs-from-a-neighbour-only-by-case"
+file = "tomlctl/src/plan/check/case_collision.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "warn-on-a-task-that-edits-a-generator-input-without-holding-its-outputs"
+file = "tomlctl/src/plan/check/generated_outputs.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "document-the-plan-request-group-the-request-record-and-the-request-report-kind"
+file = "claude/skills/tomlctl/references/plan-request.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "document-generatedtoml-the-two-new-check-classes-the-generated-gate-source-and-the-lane-checks-grants"
+file = "claude/skills/tomlctl/references/generated.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "move-the-needs_human-report-out-of-drainmd-into-its-own-reference"
+file = "claude/skills/implement-v2-engine/references/report.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-orchestrators-side-of-worker-requests"
+file = "claude/skills/implement-v2-engine/references/requests.md"
+note = "(new)"
+
+[[specs]]
+ref = "load-the-projects-generated-file-map-from-claudegeneratedtoml"
+outcome = "tomlctl can read a project's .claude/generated.toml and say which declared generators a set of task files touches and which outputs those generators produce."
+constraints = [
+    "A missing file loads as no generators; it is never an error.",
+    "Every [[generators]] table needs id, inputs, outputs, regenerate and check; a missing or blank key, a duplicate id, an unknown key, or an output containing a glob character (*, ?, [, {) is an Err naming the generator id and the key.",
+    "Input globs are compiled as ui_capture.rs compiles them: leading ./ trimmed, GlobBuilder literal_separator(true).",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/ui_capture.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the generated module exists and is declared in lib.rs"
+check = "grep -q '^mod generated;' tomlctl/src/lib.rs && grep -q 'pub(crate) fn outputs_of' tomlctl/src/generated.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a declared generator's outputs are returned for a file matching its inputs, a missing config is empty, and a malformed config (missing key, duplicate id, glob output, unknown key) is refused with the generator id named"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/generated::tests::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the generated module carries unit tests for the listed cases"
+check = '''test "$(grep -c '#\[test\]' tomlctl/src/generated.rs)" -ge 3'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "ui_capture.rs holds the loader pattern this module copies"
+check = "grep -q 'pub(crate) fn load_paths' tomlctl/src/ui_capture.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-request-record-and-the-request-report-kind-to-the-plan-store"
+outcome = "plan.toml can hold worker requests with per-item rulings, round-trips them byte-stably, mints their ids as Q1, Q2, and is stamped schema_version 5 only when it holds one."
+constraints = [
+    "A store holding no request is written exactly as today, at its current tier.",
+    "Unknown keys inside a stored request, path item or change item are dropped on read, as every plan record drops them (schema.rs module doc, test unknown_keys_are_dropped); an unknown ruling, by or field value is refused, naming the vocabulary.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = [
+    "design/direction.md#overarching",
+    "design/direction.md#milestone-a",
+]
+precedent = ["tomlctl/src/plan/schema.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the request record and its report kind are declared"
+check = """grep -q 'struct Request' tomlctl/src/plan/schema_request.rs && grep -q 'Request => "request"' tomlctl/src/plan/schema.rs && grep -q 'mod schema_request' tomlctl/src/plan/mod.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a store with a request round-trips unchanged and stamps version 5; a store without one keeps its old tier; ids mint as Q1 then Q2"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::schema/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "a schema test exercises a stored request"
+check = '''grep -A1 '#\[test\]' tomlctl/src/plan/schema.rs tomlctl/src/plan/schema_request.rs | grep -q 'fn [a-z_0-9]*request''''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the plan store's newest tier is 4 and the report kinds are a closed vocabulary"
+check = """grep -q 'pub(crate) const SCHEMA_VERSION: i64 = 4' tomlctl/src/plan/schema.rs && grep -q 'Reconcile => "reconcile"' tomlctl/src/plan/schema.rs"""
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "compute-which-rows-could-edit-a-requested-path-alongside-the-requester"
+outcome = "Given a requester task and a path, tomlctl can say whether another row could edit that path at the same time, which row, and whether the path is forbidden outright."
+constraints = [
+    "A done row, and any row in the requester's needs closure up or down, is never a holder.",
+    "Paths compare by fold_key only; normal_path itself is not changed.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#overarching"]
+precedent = ["tomlctl/src/tasks/closure.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the holders module and its folded key exist"
+check = "grep -q 'pub(crate) fn fold_key' tomlctl/src/plan/holders.rs && grep -q 'mod holders' tomlctl/src/plan/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a pending unrelated row holding src/Foo.ts holds a request for src/foo.ts; a dependent of the requester holding the path does not; a done row does not; an earlier unapplied grant to an unrelated pending row holds; a path under .claude/ or docs/flows/<slug>/ is forbidden"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::holders::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the holders module carries a test for each listed holder case"
+check = '''test "$(grep -c '#\[test\]' tomlctl/src/plan/holders.rs)" -ge 5'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the task graph exposes needs closures in both directions"
+check = "grep -q 'pub(crate) fn closure_down' tomlctl/src/tasks/graph.rs && grep -q 'pub(crate) fn closure_up' tomlctl/src/tasks/graph.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-plan-request-verbs-a-worker-posts-with-and-the-orchestrator-rules-with"
+outcome = "A worker can post a scope and amend request for its own task during a live milestone run, get mechanical rulings at once, and the orchestrator can rule the rest, list requests and mark them applied, all through tomlctl."
+constraints = [
+    "Every mechanical rule runs inside the plan.toml write lock, so two concurrent posts cannot both be granted one path.",
+    "rule never grants a path holders::holder reports held at the moment of the write.",
+    "add refuses an unknown key in its payload, in a path item or in a change item, naming the key; rule refuses an unknown key in a row.",
+    "Ids are minted with PlanStore::mint_request_id from task 2.",
+    "Nothing writes tasks.toml.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#overarching",
+    "design/direction.md#milestone-a",
+]
+precedent = [
+    "tomlctl/src/plan/run_report.rs",
+    "tomlctl/src/plan/records.rs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan request group is declared and dispatched"
+check = "grep -q 'PlanRequestOp' tomlctl/src/cli/types/plan.rs && grep -q 'PlanOp::Request' tomlctl/src/plan/dispatch.rs && test -f tomlctl/src/plan/request.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a request for an unheld declared generated output is granted by tomlctl at once; an unrelated pending holder or a forbidden path is denied by tomlctl; an ordinary path waits open for the orchestrator's rule; a second request for the same task in one run is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_request::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "test-the-plan-request-verbs-end-to-end"
+outcome = "The plan request verbs' rules are pinned by integration tests, including the dependent-holder case from package-design-tools task 130."
+constraints = [
+    "Test behaviour through the CLI, not private functions.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/tests/plan_run_records.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the plan_request test module is registered"
+check = "grep -q '^mod plan_request;' tomlctl/tests/it.rs && test -f tomlctl/tests/plan_request.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every listed plan request case passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_request::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "each plan request leaf honours the global output options"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "bump-tomlctl-to-0250"
+outcome = "tomlctl reports version 0.25.0 and the workspace lockfile agrees."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "tomlctl's manifest is at 0.25.0"
+check = """grep -q '^version = "0.25.0"' tomlctl/Cargo.toml"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "tomlctl is at 0.24.0"
+check = """grep -q '^version = "0.24.0"' tomlctl/Cargo.toml"""
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "advertise-plan_request-and-generated_config-and-require-plan_request-in-the-implement-v2-pre-flight"
+outcome = "tomlctl capabilities lists plan_request and generated_config, and /implement-v2 refuses an installed binary without plan_request."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "both features are registered and the carrier requires plan_request"
+check = """grep -q '"plan_request"' tomlctl/src/cli/types/mod.rs && grep -q '"generated_config"' tomlctl/src/cli/types/mod.rs && grep -q 'plan_request' claude/commands/implement-v2.md"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the capabilities test pins both features"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "let-the-lane-check-count-granted-unapplied-request-paths-as-in-lane"
+outcome = "A file a worker edited under a granted request is not reported out of lane at the drain, before the drain has written the grant into the row's files."
+constraints = [
+    "The store digest and the trail check do not change.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#overarching"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "out_of_lane reads granted request paths"
+check = "grep -q 'granted' tomlctl/src/plan/lane.rs && grep -q 'requests' tomlctl/src/plan/lane.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a granted unapplied path is in lane, a denied path is out of lane"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::lane::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "lane.rs carries a test for a granted request path"
+check = '''grep -A1 '#\[test\]' tomlctl/src/plan/lane.rs | grep -q 'fn [a-z_0-9]*grant''''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "out_of_lane builds the lane from row files plus the exempt stores"
+check = '''grep -q 'fn out_of_lane' tomlctl/src/plan/lane.rs && grep -q 'let exempt = \[BACKLOG_STORE, INPUTS_STORE\]' tomlctl/src/plan/lane.rs'''
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "put-each-touched-generators-check-command-on-the-gate-list"
+outcome = "A milestone whose rows edit a declared generator input has that generator's check command run by its gate."
+constraints = [
+    "The gate-list arguments do not change.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "gate_list reads the generated map"
+check = "grep -q 'generated::' tomlctl/src/plan/emit.rs && grep -q 'generated:' tomlctl/tests/plan_emit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a touched generator's check is listed once, after gates and accept checks, with source generated:<id>"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_emit::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "name-each-held-generator-and-its-regenerate-command-in-the-worker-view"
+outcome = "A worker whose task edits a declared generator input sees the generator's outputs and regenerate command, and is told when it must request an output it does not hold."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the worker view prints a Generators section"
+check = "grep -q 'Generators' tomlctl/src/plan/view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a task holding a generator input sees its outputs, its regenerate command and the not-held note"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_view::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "a plan_view test writes a generator config"
+check = "grep -q 'generated.toml' tomlctl/tests/plan_view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "warn-on-a-planned-new-file-whose-stem-differs-from-a-neighbour-only-by-case"
+outcome = "tomlctl plan check warns, in every project, when a task creates a file whose name without its last extension equals a different existing or planned file's in the same directory, ignoring case."
+constraints = [
+    "The class is a warning and never moves the exit code.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/plan/check.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the class is registered"
+check = "grep -q 'plan/file-case-collision' tomlctl/src/plan/check/case_collision.rs && grep -q 'mod case_collision' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the ColourField.tsx and colourField.ts pair is reported; a .test sibling is not"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "a plan_check test asserts the case-collision warning"
+check = "grep -q 'plan/file-case-collision' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "warn-on-a-task-that-edits-a-generator-input-without-holding-its-outputs"
+outcome = "tomlctl plan check warns when a pending task edits a declared generator input but does not hold every output that generator writes."
+constraints = [
+    "The class is a warning and never moves the exit code.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/plan/check.rs"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the class is registered"
+check = "grep -q 'plan/generated-output-unheld' tomlctl/src/plan/check/generated_outputs.rs && grep -q 'mod generated_outputs' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a task holding tokens.css without canvas.generated.css is warned; one holding both is not"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "a plan_check test asserts the generated-output warning"
+check = "grep -q 'plan/generated-output-unheld' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "document-the-plan-request-group-the-request-record-and-the-request-report-kind"
+outcome = "The tomlctl skill documents every plan request verb, the request record's shape and version tier, and the request report kind."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["claude/skills/tomlctl/references/plan-run.md"]
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the reference exists and is linked from the skill"
+check = "test -f claude/skills/tomlctl/references/plan-request.md && grep -q 'references/plan-request.md' claude/skills/tomlctl/SKILL.md && grep -q 'request' claude/skills/tomlctl/references/plan-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every fenced tomlctl command in the new docs names flags that exist, and every skill link resolves"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "document-generatedtoml-the-two-new-check-classes-the-generated-gate-source-and-the-lane-checks-grants"
+outcome = "A project author can write .claude/generated.toml from the tomlctl skill alone, and the plan check classes, gate-list sources and lane-check rules are documented as the code behaves."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the generated reference exists and both classes are in the class table"
+check = "test -f claude/skills/tomlctl/references/generated.md && grep -q 'plan/file-case-collision' claude/skills/tomlctl/references/plan.md && grep -q 'plan/generated-output-unheld' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the documented plan classes match the classes the source emits"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "move-the-needs_human-report-out-of-drainmd-into-its-own-reference"
+outcome = "drain.md has room under its line ceiling, and the needs_human report's rules live in references/report.md with every link still resolving."
+constraints = [
+    "The moved text is unchanged apart from link targets.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the report section lives in report.md and drain.md points at it"
+check = "test -f claude/skills/implement-v2-engine/references/report.md && grep -q '### Record the report' claude/skills/implement-v2-engine/references/report.md && ! grep -q '### Record the report' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every skill link resolves and every reference stays under its line ceiling"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "drain.md still holds the needs_human report section"
+check = "grep -q '^## 11. The `needs_human` report' claude/skills/implement-v2-engine/references/drain.md"
+at = "base"
+
+[specs.premises.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "write-the-orchestrators-side-of-worker-requests"
+outcome = "The orchestrator has one procedure for ruling worker requests during a live run, applying grants at the drain and picking up outstanding grants at re-entry, and never answers a question record itself."
+constraints = [
+    "questions.md's rule that only the user answers a question is untouched.",
+    "Every fenced tomlctl command uses flags task 4 defines and single-token placeholders.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#overarching",
+    "design/direction.md#milestone-b",
+]
+precedent = ["claude/skills/implement-v2-engine/references/questions.md"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "requests.md exists, names the REQUEST literal and is linked from SKILL.md and run-milestone.md"
+check = "grep -q 'REQUEST <request-id> task <n>' claude/skills/implement-v2-engine/references/requests.md && grep -q 'requests.md' claude/skills/implement-v2-engine/SKILL.md && grep -q 'requests.md' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every fenced command and link in the engine skill passes the dispatch gates"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "wire-the-granted-requests-step-and-the-requests-report-section-into-the-drain"
+outcome = "The drain applies every granted request before the replan and the gate, the lane check and agents audit accept work done under a grant, and the milestone report lists each grant and denial."
+constraints = [
+    "drain.md stays within the 600-line reference ceiling.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the drain has a Granted requests step and the report a requests section"
+check = "grep -q 'Granted requests' claude/skills/implement-v2-engine/references/drain.md && grep -q 'requests:' claude/skills/implement-v2-engine/references/report.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "drain.md stays under its line ceiling and every link resolves"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "teach-both-plan-workers-to-ask-the-orchestrator-for-files-and-spec-corrections"
+outcome = "A plan worker that needs a file or a spec correction asks the orchestrator through one plan request, finishes on a grant, and falls back to today's failed or parked path on a denial."
+constraints = [
+    "The two shared blocks stay byte-identical across both files.",
+    "The return object and the Asking the user steps do not change.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#overarching",
+    "design/direction.md#milestone-b",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "both workers carry the new section and the REQUEST literal"
+check = "grep -q 'Asking the orchestrator' claude/agents/plan-worker-lite.md && grep -q 'Asking the orchestrator' claude/agents/plan-worker-deep.md && grep -q 'REQUEST <request-id> task <n>' claude/agents/plan-worker-deep.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared blocks stay in parity"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the agent files pass the dispatch gates"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "fit-requests-into-the-apply-row-rules-the-task-store-writer-rule-and-the-question-loop"
+outcome = "Fix rows, the task-store contract and the question loop agree with the request procedure: a denied fix row is widened rather than escalated, the worker's request is a stated exception, and requests are answered before a question picker opens."
+constraints = [
+    "The question loop's own steps and its never-answer rule are unchanged.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the three documents name the request procedure"
+check = "grep -q 'requests.md' claude/skills/implement-v2-engine/references/apply-rows.md && grep -q 'plan request add' claude/skills/flow-contract-task-store/SKILL.md && grep -q 'requests.md' claude/skills/implement-v2-engine/references/questions.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the edited skills pass the dispatch gates"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "handle-the-two-new-plan-check-warnings-in-plan-v2s-write-and-prove-steps"
+outcome = "A plan author meets the generated-output and case-collision gaps while writing and proving the plan, not when a worker fails on them."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "write-and-prove names both warnings and the generator rule"
+check = "grep -q 'plan/generated-output-unheld' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'plan/file-case-collision' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'generated.toml' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "51fd3b2b88fa092fea7bfc510421e2a6c78f72b7"
+neg_rc = 1
+verdict = "healthy"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --workspace --locked --all-targets",
+    "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl --locked",
+    "cargo install --path glimpse --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "bash scripts/verify-shared-blocks.sh",
+]
+elaboration = "upfront"
+defer_reason = ""
+after = ["A"]
+
+[[items]]
+id = 1
+ref = "load-the-projects-generated-file-map-from-claudegeneratedtoml"
+title = "Load the project's generated-file map from .claude/generated.toml"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a crate-level generated module, built like ui_capture.rs, that loads the [[generators]] tables and answers which generators a set of files touches and which outputs they declare."
+detail = """
+Model the module on tomlctl/src/ui_capture.rs (CONFIG const, NotFound reads as empty, Err(String) names the problem on one line). Public surface, all pub(crate):
+- const CONFIG: &str = ".claude/generated.toml";
+- struct Generator { id: String, inputs: GlobSet plus the raw input strings, outputs: Vec<String>, regenerate: String, check: String }
+- fn load(root: &Path) -> Result<Vec<Generator>, String>
+- fn touched<'a>(generators: &'a [Generator], files: &[String]) -> Vec<&'a Generator>: the generators with an input glob matching any file, the file taken through crate::tasks::schema::normal_path.
+- fn outputs_of(generators: &[Generator], files: &[String]) -> BTreeSet<String>: the outputs of every touched generator, each through normal_path.
+Build every input glob with GlobBuilder case_insensitive(true) as well as literal_separator(true), so `src/Tokens.css` matches an input written `src/tokens.css`: every other path comparison in this change folds case, and a case-sensitive input match would miss a generator on Windows and macOS. Callers compare an output against a requested path with the folded key, not here.
+Add `mod generated;` beside `mod ui_capture;` in lib.rs. Unit tests live in the module, one #[test] per case: a matching input returns its outputs, a case-variant input still matches, a missing config is empty, and each malformed config (missing key, duplicate id, glob output, unknown key) is refused naming the generator id."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "add-the-request-record-and-the-request-report-kind-to-the-plan-store"
+title = "Add the request record and the request report kind to the plan store"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a [[request]] array to PlanStore, minted under prefix Q, stamped at schema_version 5, plus ReportKind `request`."
+detail = """
+Put the Request types, their from/to TOML functions and the id minting in a new tomlctl/src/plan/schema_request.rs (declared `pub(crate) mod schema_request;` in plan/mod.rs). schema.rs gains the PlanStore `requests` field, the calls in from_toml/to_toml (TOML key "request", after "report"), the write_version tier and ReportKind::Request => "request". It may also widen the visibility of exactly what schema_request.rs uses: make the vocabulary! macro usable from the sibling module (#[macro_export] is not wanted; declare it with `macro_rules!` before `pub(super) use vocabulary;` or move the use behind `pub(crate) use`), and make the record read and write helpers it calls (the `records`/`insert_records` pair, the string, bool and datetime readers) pub(super). Also bring the module doc (its record list and the sentence naming which content stamps which version) and the version consts' doc comments in line with the new tier; change nothing else in schema.rs.
+Minting: do NOT add a RecordKind variant; RecordKind is matched exhaustively in plan/records.rs and plan/target.rs, which this task does not hold. Add `impl PlanStore { pub(crate) fn mint_request_id(&mut self) -> String }` in schema_request.rs, following mint_id's rule (the highest Q<n> among stored requests and id_high_water["Q"], plus one, recording the new mark in id_high_water under "Q").
+Record shape (TOML keys in this order):
+  id, run_id, milestone, task (u32), at (datetime), status ("open" | "ruled"), ruled_at (datetime, omitted while open), applied (bool, false until the drain applies it),
+  [[request.paths]] path, why, ruling, by, reason
+  [[request.changes]] field, what, evidence, ruling, by, reason
+`ruling` is a vocabulary: "open", "granted", "denied", "needs-user". `by` is "", "tomlctl" or "orchestrator". `field` is a vocabulary: "accept", "means", "constraints", "detail", "files". Use the vocabulary! macro.
+Version: SCHEMA_VERSION stays the name of the newest tier and becomes 5; the decision-class tier keeps 4 under a new name such as CLASS_SCHEMA_VERSION. write_version returns SCHEMA_VERSION when requests is non-empty, otherwise today's rule with the renamed const. Keep the const asserts ordering the tiers. store.rs's tests use SCHEMA_VERSION + 1 as "newer than newest" and need no change.
+Update the existing schema.rs tests that pin the class tier to the renamed const, and add round-trip and minting tests for a request with both item kinds, each test fn named with `request` in it."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "compute-which-rows-could-edit-a-requested-path-alongside-the-requester"
+title = "Compute which rows could edit a requested path alongside the requester"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Add a holders module with the folded path key, the forbidden-path test and the concurrent-holder test the request verbs and the case-collision check share."
+detail = """
+pub(crate) items, unit-tested in the module:
+- fn fold_key(path: &str) -> String: crate::tasks::schema::normal_path, then to_lowercase. It is stricter than the milestone Workflow's fileKey (claude/workflows/implement-v2-milestone.js:157), which keeps a leading ./.
+- fn forbidden(slug: &str, path: &str) -> Option<String>: a reason when the path is absolute, has a `..` segment, or sits under `.claude/` or `docs/flows/<slug>/` (folded comparison).
+- struct Holder { task: u32, status: String, grant: Option<String> } and fn holder(tasks: &Store, plan: &PlanStore, requester: u32, path: &str) -> Result<Option<Holder>>.
+Holder rule (decision D6): consider every row of the requester's checkpoint other than the requester whose status is pending, in-progress, failed or parked and which is outside the requester's needs closure up and down (Graph::build over crate::tasks nodes, closure_up and closure_down, as tasks/closure.rs builds it). Such a row holds the path when one of its files has the same fold_key, or when an unapplied request for that row has a path item ruled granted with the same fold_key (grant = Some(request id)). Return the lowest-id holder. Declare `mod holders;` in plan/mod.rs."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "add-the-plan-request-verbs-a-worker-posts-with-and-the-orchestrator-rules-with"
+title = "Add the plan request verbs a worker posts with and the orchestrator rules with"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+needs = [
+    1,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Add a `plan request` group with leaves add, rule, list and applied, wired like `plan handover`."
+detail = """
+CLI (cli/types/plan.rs): PlanOp::Request { op: PlanRequestOp } with leaves, each taking PlanTarget (--slug) and the integrity flags the other plan writers take:
+- add --task <N> --json <SRC>: SRC is `@path`, `-` or inline JSON, a `.toml` path read as a record file the way other --json flags read one. Payload {"paths":[{"path","why"}], "changes":[{"field","what","evidence"}]}; at least one item; at most 16 paths. Refuse unless an open `implement:<milestone>` run (crate::plan::store::open_runs) lists the task in its tasks, and unless the task has no earlier request in that run. Inside the plan.toml write lock: mint Q<n>, record run_id, milestone, task, at; rule each path item mechanically — forbidden (holders::forbidden) -> denied by tomlctl; already in the task's files (fold_key) -> denied by tomlctl, reason "already held by this task"; held (holders::holder) -> denied by tomlctl naming the holder and, for a grant, the request id; a declared output of an input the task holds (generated::load at the repo root, outputs_of over the row's files, fold_key comparison) -> granted by tomlctl; otherwise open. Change items stay open. When no item is open, status is ruled and ruled_at is stamped. Prints {"ok":true,"id","status","items":[{"item","ruling","by","reason"}]} where item is p1, p2... for paths and c1, c2... for changes.
+- rule <ID> --ndjson <SRC>: rows {"item","ruling","reason"}, ruling granted, denied or needs-user, reason non-blank. All-or-nothing: refuse an unknown item, an item already ruled, a request not open, or a grant of a path that holders::holder now finds held (naming the holder). Writes by = "orchestrator"; when no item is left open, status becomes ruled and ruled_at is stamped. Prints the same shape as add.
+- list: every request as a row report, newest last, each row the record's fields with items flattened as `paths` and `changes` arrays; the global --where/--get options filter and shape it (a worker polls `--where id=<id> --where status=ruled --get id`).
+- applied <ID>[,<ID>...]: set applied = true; refuse an open request or an unknown id.
+Put all four in tomlctl/src/plan/request.rs; dispatch.rs gains one arm; plan/mod.rs one `mod request;`. Doc comments on the clap variants are the verbs' help text."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "test-the-plan-request-verbs-end-to-end"
+title = "Test the plan request verbs end to end"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Add an integration test module for plan request and an output-options case for each of its four leaves."
+detail = """
+tomlctl/tests/plan_request.rs, registered as `mod plan_request;` in tests/it.rs in sorted position. Seed flows with the helpers tests/plan_run_records.rs and tests/plan_check.rs use (an open implement:A run via plan run start --tasks). Cases, each a separate #[test]:
+- the reportdesignkit task-130 shape: .claude/generated.toml maps packages/x/tokens.css to packages/x/canvas.generated.css; task 1 holds tokens.css; task 2 needs task 1 and also holds canvas.generated.css; a request from task 1 for the output is granted by tomlctl and the request is ruled at once;
+- the same generator, but the output is also held by an unrelated pending row of the milestone: the request is denied by tomlctl naming that row, not granted;
+- an unrelated pending row holding src/Foo.ts denies a request for src/foo.ts, naming that row;
+- a path under .claude/ is denied as forbidden;
+- a path already in the requester's files, in another case, is denied with reason "already held by this task";
+- an ordinary path stays open; rule grants it; list shows ruling granted by orchestrator; a second task's later request for the same path is denied naming the grant's request id;
+- rule refuses a grant after the path became held, and refuses an item already ruled;
+- applied refuses an open request and marks a ruled one;
+- a second add for the same task in the run is refused;
+- add is refused for a task no open implement run lists, and for a payload, path item or change item carrying an unknown key, naming the key;
+- the store reads schema_version 5 after the first request.
+tests/output_options.rs: one case per leaf (add, rule, list, applied) following the file's existing pattern. Each case seeds a flow with an open implement:A run (plan run start --tasks) and reaches the state its leaf needs through the verbs themselves: list and add need only the open run; rule runs after an add that left an ordinary path open; applied runs after that rule. Never write plan.toml by hand."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "bump-tomlctl-to-0250"
+title = "Bump tomlctl to 0.25.0"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Set tomlctl's version to 0.25.0 and refresh its entry in the root Cargo.lock."
+detail = """Edit the version line in tomlctl/Cargo.toml and the matching `name = "tomlctl"` package entry's version in the root Cargo.lock by hand; change nothing else in the lockfile."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "advertise-plan_request-and-generated_config-and-require-plan_request-in-the-implement-v2-pre-flight"
+title = "Advertise plan_request and generated_config and require plan_request in the implement-v2 pre-flight"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Add the two feature strings to FEATURES, pin them in the capabilities test and the README feature table, and add plan_request to the implement-v2 carrier's pre-flight feature list."
+detail = "plan_request covers the plan request group and the lane check reading grants; generated_config covers .claude/generated.toml in plan check, plan emit gate-list and the worker view. Add each where the existing list orders entries, follow tests/capabilities.rs's existing assertions, add a row each to tomlctl/README.md's feature table and sample block, and add `plan_request` to the backticked list in step 2 of claude/commands/implement-v2.md's pre-flight. Task 6 bumps the crate to 0.25.0, so also set the expected literal and its message in capabilities_version_matches_cargo_toml, and the `version` in README.md's capabilities sample block, to 0.25.0; both pin the version and fail the gate otherwise."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "let-the-lane-check-count-granted-unapplied-request-paths-as-in-lane"
+title = "Let the lane check count granted, unapplied request paths as in lane"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/lane.rs"]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "In out_of_lane, add every path item ruled granted on an unapplied request of a row in the lane to the lane set."
+detail = "out_of_lane (tomlctl/src/plan/lane.rs:423) builds `lane` from the rows in run.tasks and the started uncommitted rows. lane_check already loads plan.toml; pass the PlanStore (or its requests) into out_of_lane and insert normal_path(path) for each path item with ruling granted on a request whose applied is false and whose task is one of those rows. Update the doc comment above out_of_lane to name grants. Add unit tests in lane.rs's tests module: a granted unapplied path is not out of lane, a denied one is, and an applied one is judged by the row's files alone."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "put-each-touched-generators-check-command-on-the-gate-list"
+title = "Put each touched generator's check command on the gate list"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "After the accept-check loop in gate_list, append each generator's check for any generator whose inputs a milestone row's files touch."
+detail = """In gate_list (tomlctl/src/plan/emit.rs:172) resolve the repo root with crate::io::repo_or_cwd_root (already imported at emit.rs:22), load generated::load, call generated::touched over the union of the milestone rows' files, and push {"command": check, "source": "generated:<id>"} through the existing `listed` set so a command already listed is not repeated. A malformed config is an error naming the config, as other emit refusals are. Add tests to tomlctl/tests/plan_emit.rs beside gate_list_orders_gates_then_gate_owned_checks: a touched generator's check is appended after gates and accept checks; an untouched one is not; one equal to a gate is not repeated."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "name-each-held-generator-and-its-regenerate-command-in-the-worker-view"
+title = "Name each held generator and its regenerate command in the worker view"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "In the worker view, after the files lines, print one Generators line per generator whose input the task holds."
+detail = """In tomlctl/src/plan/view.rs's worker view (fn worker, near file_lines at :723), load generated::load at the repo root and, for each generator generated::touched returns for the row's files, print a bullet under a `Generators:` heading: `<id>`: outputs <each output in code>, regenerate with <regenerate in code>, and a note when an output is not among the task's files: "not in this task's files: ask for it with a scope request". Print nothing when the config is absent or no generator is touched; on a malformed config print one line naming the problem rather than failing the view. Add tests in tomlctl/tests/plan_view.rs: a touched generator prints its line with the not-held note; an untouched one prints nothing; a malformed .claude/generated.toml leaves the view exiting 0 with one line naming the problem and the task's Files lines still printed."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "warn-on-a-planned-new-file-whose-stem-differs-from-a-neighbour-only-by-case"
+title = "Warn on a planned new file whose stem differs from a neighbour only by case"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Add a plan/file-case-collision warning class, built in a child module of check.rs and registered in findings() outside the before-approval block."
+detail = """
+Create tomlctl/src/plan/check/case_collision.rs, declared `mod case_collision;` inside check.rs. A row creates a file when Store::file_note(ref, file) reads FileKind::New, or when the file's exact name is absent from fs::read_dir of its parent (never Path::exists, which folds case on Windows and macOS). For each created file of a pending row, take its stem, the path without its last extension, and compare it against (a) the stems of the exact names in the same directory and (b) the stems of every other row's planned files in that directory. A collision is a stem equal ignoring case but spelled differently (ColourField vs colourField); one stem under two extensions (Button.tsx beside Button.css) is not a collision, nor is an identical stem. An existing file marked (delete) by some row is ignored. Skip entries ending in `/`. Emit one Finding { class: "plan/file-case-collision", severity: WARNING, ids: the creating row and any planned row it collides with, detail naming both paths }. Call it from findings() beside ui_scope_findings, outside the plan.approvals.is_empty() block. Add the class to check.rs's header comment list of warning classes.
+The finding-class gate: documented_plan_classes_match_the_source (tomlctl/src/cli/dispatch/tests/finding_classes.rs) builds its bodies with source_bodies(&plan_dir()), which reads only the top-level *.rs files of src/plan. Make that test also read the *.rs files of src/plan/check/ (append them to the bodies, sorted), leaving source_bodies and the tasks test unchanged, so classes built in check's child modules count as emitted.
+Tests in tomlctl/tests/plan_check.rs with assert_reports_warning: ColourField.tsx on disk plus a (new) colourField.ts collides; an unannotated planned src/foo.ts beside an on-disk src/Foo.ts collides (it fails if creation is read through Path::exists on a case-insensitive filesystem); two rows planning Foo.ts and foo.tsx collide; Button.tsx on disk plus a (new) Button.css does not; colourField.test.ts beside ColourField.tsx does not; ColourField.tsx on disk marked (delete) by some row plus a (new) colourField.ts does not; the base fixture stays clean."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "warn-on-a-task-that-edits-a-generator-input-without-holding-its-outputs"
+title = "Warn on a task that edits a generator input without holding its outputs"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [
+    1,
+    11,
+]
+coupling = []
+deps_note = ""
+action = "Add a plan/generated-output-unheld warning class in a child module of check.rs, registered beside ui_scope_findings."
+detail = """Create tomlctl/src/plan/check/generated_outputs.rs, declared `mod generated_outputs;` in check.rs. For each pending row of a non-deferred milestone, for each generator generated::touched returns for its files, report every output not among the row's files (normal_path comparison): Finding { class: "plan/generated-output-unheld", severity: WARNING, ids: [row], detail naming the generator id, the input matched and the missing outputs }. A malformed config is one warning naming no row, as ui_scope_findings reports a malformed ui-capture config. Register it in findings() beside ui_scope_findings, outside the before-approval block, and add it to check.rs's header list. Tests in tomlctl/tests/plan_check.rs, writing .claude/generated.toml with the fixture-writer pattern used for ui-capture: input held without output warns; input and output held is clean; no config is clean; a malformed config warns once."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "document-the-plan-request-group-the-request-record-and-the-request-report-kind"
+title = "Document the plan request group, the request record and the request report kind"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+needs = [
+    2,
+    4,
+]
+coupling = []
+deps_note = ""
+action = "Write the plan request flag tables and output shapes in a new reference, add the [[request]] shape and schema_version 5 to plan-store.md, add the request report kind to plan-run.md, and list the new reference in SKILL.md."
+detail = "plan-request.md opens with a `## Contents` list like its siblings and covers add, rule, list and applied: each flag table, the payload and NDJSON row shapes, the mechanical rulings add makes and in what order (forbidden, already held, held by another row or an earlier grant, declared generated output, otherwise open), the item ids p<n> and c<n>, and the output shape. Bash fences use single-token placeholders (<request-id>, never <request id>). SKILL.md gains a quick-reference row and a References bullet. Take every flag from tomlctl/src/cli/types/plan.rs as task 4 wrote it."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "document-generatedtoml-the-two-new-check-classes-the-generated-gate-source-and-the-lane-checks-grants"
+title = "Document generated.toml, the two new check classes, the generated gate source and the lane check's grants"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+needs = [
+    1,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Write the .claude/generated.toml reference, add the two warning classes to plan.md's class table, and document the generated:<id> gate-list source and granted paths in the lane check in plan-engine.md."
+detail = "generated.md: the file's purpose, one full [[generators]] example, each key with whether it is required, the rules the loader enforces (literal outputs, unique id, unknown keys refused), and the three readers: plan check, plan emit gate-list and the worker view, plus plan request add's grant of a declared output. plan.md: one class-table row each for plan/file-case-collision and plan/generated-output-unheld with severity warning, matching the source exactly (documented_plan_classes_match_the_source compares them), and a pointer to plan-request.md beside the verb list. plan-engine.md: the new `source` value in gate-list's output and the lane-check sentence about granted, unapplied request paths. Link generated.md from no file other than these three; tomlctl SKILL.md is task 13's."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "move-the-needs_human-report-out-of-drainmd-into-its-own-reference"
+title = "Move the needs_human report out of drain.md into its own reference"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Cut drain.md's `## 11. The needs_human report` section, with its subsections, into a new references/report.md, and repoint every link to it."
+detail = """Move drain.md from the heading `## 11. The `needs_human` report` up to, not including, `## Parked rows at the next invocation`, verbatim, into report.md under a one-line intro saying what the file holds and a back-link to drain.md. In drain.md leave `## 11. The needs_human report` with one sentence pointing at report.md, so step numbers stay stable. Repoint every "step 11" or "step 11's" mention inside drain.md, SKILL.md's step-table row and references list (add a report.md bullet), and questions.md:33, to report.md. Sweep with `rg -n "step 11" claude/skills/implement-v2-engine` and leave no stale pointer. The moved text has no markdown links, but it cites drain.md steps as bare prose: "the stop rule of step 6" (drain.md:492) and "step 10's Next rule" and "step 10's flow-store commit" (drain.md:531). In report.md write each as "[drain.md](drain.md), step 6" or "step 10", so no bare step number is left pointing into report.md, which has no steps; "Record the report, below" moves with its subsection and stays as it is."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "write-the-orchestrators-side-of-worker-requests"
+title = "Write the orchestrator's side of worker requests"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/requests.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+]
+needs = [
+    4,
+    15,
+]
+coupling = []
+deps_note = ""
+action = "Write references/requests.md: how the orchestrator answers a REQUEST message during a live run, how the drain applies grants, and re-entry with grants outstanding; route REQUEST messages from run-milestone.md and link the reference from SKILL.md."
+detail = '''
+requests.md, modelled on questions.md's layout:
+1. What a worker sends: one `plan request add`, then a SendMessage to main whose first line is `REQUEST <request-id> task <n>` (that literal). Only the first line is read; the record is the content.
+2. Answer during the live run: read the record with `tomlctl plan request list --slug <slug> --where id=<request-id>`; check it belongs to the running milestone and the open run. Answer every pending REQUEST before opening any question picker (D10). For each open path item, grant when its `why` shows the task needs the file and the brief's Non-goals and the row's constraints do not rule it out; deny otherwise. For each change item, read the code its evidence cites first; grant within D11's limits (accept dropped or loosened only with cited code showing it wrong and its behaviour still holding; a means, constraint, detail, or a file the spec names with its file note); rule needs-user when granting would change the outcome, a success criterion or a decision. A `files` change that renames or adds a file is granted only together with a path item for its new path in the same request; deny a `files` change whose new path is not granted as a path item. Never rule on a question record. Stage rows in <scratch> and run `tomlctl plan request rule <request-id> --slug <slug> --ndjson <path>`; a refusal naming a holder means deny that item. End the turn; the worker polls.
+3. The drain's Granted requests step (called from drain.md after step 5): first audit the run's worker transcripts with `tomlctl agents audit --transcripts <dir> --pattern 'plan\s+request\s+(rule|applied)'`, using the transcript directory drain step 3 already audits; every request a worker ruled or marked applied itself is treated as denied, never applied, and listed under audit: as a breach. A run with no kept transcript directory applies only items ruled by tomlctl, and says so in the report. Then list ruled, unapplied requests of the run; for each, build one audited `tasks update --ndjson` row per task (one row per task even with several requests, update.rs:232) with reason `granted <scope|amend> <request-id>: <why>`: granted paths appended to `files`, re-issued whole; granted changes applied to the spec fields they name, re-issuing each list whole after `tasks show <n> --with spec`; a renamed file moves in `files` and `file_notes`. A pending holder in a later milestone gains the granted row in its needs; a done holder of this milestone is needed by the granted row. Then `tomlctl plan request applied <ids> --slug <slug>`. For drain.md's relaunch-or-stop rule, a grant write on a done row is not a moved field; one on a failed or parked row is, so that row is relaunched once on its widened files or amended spec.
+4. Report: each ruled item becomes a `request` report entry with needs_person false.
+5. Re-entry: ruled, unapplied requests left by an ended session are applied by step 3 before the pick.
+run-milestone.md: beside the QUESTION routing paragraph (near :252), route a first line opening `REQUEST ` to requests.md; add a clean-tree exemption bullet in the pre-flight (near :32) for paths of granted, unapplied requests.
+SKILL.md: name requests.md (a) in the role rule bullet that says every user question comes from this conversation, adding that a worker's request is ruled by the orchestrator under requests.md and never put to the user unless ruled needs-user; (b) in the Reference column of the drain-and-replan row of the step table, for the Granted requests step; (c) in the Re-entry section beside the parked-rows paragraph, for ruled, unapplied requests; and (d) in the references list.'''
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "wire-the-granted-requests-step-and-the-requests-report-section-into-the-drain"
+title = "Wire the Granted requests step and the requests report section into the drain"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+needs = [
+    15,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Add a Granted requests step to drain.md between steps 5 and 6 that defers to requests.md, move the step-3 agents audit after it, and add a requests section and the request kind to report.md."
+detail = """
+drain.md:
+- New `## 5a. Granted requests` after step 5, keeping every existing step number so inbound citations in other files stay valid: run requests.md's drain procedure, its transcript audit of worker self-rulings first, before any step-6 row.
+- Step 2's table: a `done` row that holds a granted request is read and handled by 5a.
+- The step-3 "What the run's agents ran" audit runs after 5a, so an amended accept check a worker ran under a grant is allowed; say where it now runs and keep its rules.
+- Step 3's lane check text: granted, unapplied request paths are in lane; a path a worker self-ruled is not, since 5a treats that request as denied.
+- Relaunch or stop: a grant write on a done row is not a moved field; on a failed or parked row it is, so that row relaunches once.
+- Keep drain.md at or under 600 lines.
+report.md: a `requests:` section in the report shape listing each grant and denial (`- task <n> <request-id> <p|c><k> granted|denied|needs-user: <reason>`), and a row for kind `request` in the section-to-kind table, needs_person false; a worker self-ruling goes under `audit:` as a breach."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "teach-both-plan-workers-to-ask-the-orchestrator-for-files-and-spec-corrections"
+title = "Teach both plan workers to ask the orchestrator for files and spec corrections"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+needs = [
+    4,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Add an Asking the orchestrator section to the plan-worker-procedure shared block, widen the forbidden-ops block to allow one request, and change the tier sections so a needed file or a wrong spec detail is requested before the task fails."
+detail = """
+Both files carry the two shared blocks byte-identically (scripts/shared-blocks.toml); edit both in this one task and run `bash scripts/verify-shared-blocks.sh`. New section after **Asking the user**, inside plan-worker-procedure:
+1. When to ask: a file outside the task's files the work needs (including a generated output the view's Generators line says to request), or a spec point the code shows wrong: an accept clause, a file name a project rule rejects, a stale detail. Do every edit inside the task's files first, then post once, batching every path and change. A `files` change that renames or adds a file also lists the new path as a path item in the same request. At most one request per run, separate from the one question.
+2. Post: stage the JSON payload in the session scratchpad with the Write tool (paths with a one-line why each; changes with field, what, and evidence citing file:line), then `tomlctl plan request add --slug <slug> --task <n> --json @<path>`. Read the printed status: ruled means skip to step 4.
+3. Tell and wait: SendMessage to main, first line `REQUEST <request-id> task <n>`; wait with the same until-loop as Asking the user, polling `tomlctl plan request list --slug <slug> --where id=<request-id> --where status=ruled --get id`.
+4. Read the rulings once: `tomlctl plan request list --slug <slug> --where id=<request-id> --select paths,changes --lines`. Branch per item: granted path -> check its own diff state, then edit it and list it in files_touched; granted change -> work to the amended spec and run any amended accept check; denied or still open at the deadline -> today's path (a path goes in needs_files with its reason line and the task is failed; a change falls to the tier rules); needs-user -> post it as the one question under Asking the user when unused, else park. Write the request id and each item's ruling in the note. Never run `plan request rule` or `plan request applied`.
+forbidden-ops ("One row and one question"): also allow one `tomlctl plan request add` per run. Its "No edits outside your task's files" bullet also excepts a path granted to this run's request, and its "A change that needs another file" sentence says to request the file first and return failed only after the request is denied or unanswered.
+Tier sections, outside parity: lite's When to return failed and deep's Judgement bullets on stale details and the file boundary each say "after a request for it is denied". Step 7's "When the task cannot be completed inside its files" says to request first."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "fit-requests-into-the-apply-row-rules-the-task-store-writer-rule-and-the-question-loop"
+title = "Fit requests into the apply-row rules, the task-store writer rule and the question loop"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+]
+needs = [
+    15,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "In apply-rows.md, send a fix row's denied scope request through drain.md's needs_files widening and bound what an amend may change on a fix row; in the task-store contract, add the worker's one plan request to its writer exception; in questions.md, say the question loop shares the live run with requests.md and that pending requests are answered before a picker opens."
+detail = """apply-rows.md "Failure on an apply row" (near :225): a fix row returning failed with needs_files is widened by drain.md's "Widening a row from needs_files" and its park rules, not the tier table (decision D2); a granted request never counts toward `apply failure <n>`; an amend on a fix row may not touch the reproduce-status accept or the finding-gone outcome, and such a change item is denied. flow-contract-task-store/SKILL.md (near :436): the v2 worker exception also covers one `plan request add` per run, written to plan.toml. questions.md: "The writes during a live run" names requests.md's writes to plan.toml too, and step 2 says to answer pending REQUEST messages (requests.md) before opening the picker."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "handle-the-two-new-plan-check-warnings-in-plan-v2s-write-and-prove-steps"
+title = "Handle the two new plan check warnings in plan-v2's Write and Prove steps"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [
+    11,
+    12,
+]
+coupling = []
+deps_note = ""
+action = "Add a spec rule to Write that a row editing a declared generator input holds its outputs, and say in Prove 4a what to do with plan/generated-output-unheld and plan/file-case-collision."
+detail = """Write's spec rules (the bullet list after "The spec rules."): a row whose files match a .claude/generated.toml input holds each output that generator writes, and its detail names the regenerate command, unless a dependent row holds the output and regenerates. Prove 4a (the paragraph listing warnings): plan/generated-output-unheld -> add the output to the row's files, or confirm a dependent holds it; plan/file-case-collision -> rename the planned file so its name without its last extension differs by more than case, unless the collision is intended and the project has no rule against it. Keep the file under its line ceiling."""
+acceptance = ""
+agent = ""
+commit = ""

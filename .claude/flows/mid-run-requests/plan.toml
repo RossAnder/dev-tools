@@ -1,0 +1,505 @@
+schema_version = 4
+last_updated = 2026-11-18
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 3
+D = 19
+H = 1
+
+[[decision]]
+id = "D1"
+decision = "A scope request for a path that .claude/generated.toml declares as an output of an input the task holds is granted by tomlctl the moment the worker posts it, when no concurrent row holds the path; every other scope request and every amend waits for the orchestrator's ruling"
+why = "the generated-output rule is fully mechanical, so an orchestrator turn and a worker wait add nothing but latency"
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "4",
+    "18",
+]
+rejected = []
+evidence = "docs/flows/mid-run-requests/notes/generated-map.md (the outputs_of rule is a pure function of the config and the row's files); notes/live-run-holders.md (the holder test is computable from plan.toml and tasks.toml alone)"
+if_false = "every generated-output request waits up to a full orchestrator turn, or, if all mechanical scope requests are self-granted, the orchestrator no longer judges whether a requested file is justified"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "When an /apply-v2 fix row's scope request is denied and the worker returns failed with needs_files, the drain widens the row by drain.md's needs_files rules instead of apply-rows.md's lite-to-deep tier move"
+why = "the tier move keeps the row's files unchanged, so the row fails again for the same missing file"
+provenance = "user-confirmed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "19",
+]
+rejected = []
+evidence = "claude/skills/implement-v2-engine/references/apply-rows.md:225-242 replaces drain step 6 for failed apply rows, needs_files widening included; notes/drain-integration.md"
+if_false = "a denied fix row keeps today's apply path: it moves lite to deep with unchanged files and fails again, costing an extra round"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "Build worker requests as a store-backed tomlctl group: `plan request` writes a [[request]] record in the flow's plan.toml, settles the mechanical half of each rule itself, and takes the orchestrator's ruling through its own verb; the lane check reads grants and the drain applies them"
+why = "every rule a command can settle is settled by one, and each grant is an auditable record beside the run record"
+provenance = "user-stated"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/lane.rs",
+    "2",
+    "4",
+    "8",
+    "16",
+]
+evidence = "docs/flows/mid-run-requests/notes/request-record.md, live-run-holders.md, drain-integration.md, structure-challenge.md (no restructure; a plan run leaf is the existing seam)"
+if_false = "the holder and case-fold rule moves into the orchestrator's prose reading and grants are recorded as plan decide rows"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Prose loop on existing stores"
+because = "the case-folded holder rule would live in the orchestrator's reading, the message text is untrusted, and the lane check needs new code to see grants either way"
+
+[[decision.rejected]]
+option = "Reserve files at launch"
+because = "wider lanes cut the pool's parallelism and it cannot catch an arbitrary missing file such as task 6's README line"
+
+[[decision]]
+id = "D4"
+decision = "Store worker requests as a [[request]] array in .claude/flows/<slug>/plan.toml, minted under prefix Q, never in .claude/inputs.toml"
+why = "plan.toml is already writable during a live run and sits outside the lane and clean-tree checks; inputs.toml encodes user authority and glimpse shows its pending records live"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "2",
+    "4",
+]
+evidence = "notes/request-record.md; tomlctl/src/plan/drift.rs:197 skips the flow dirs; tomlctl/src/plan/lane.rs:47 digests tasks.toml only; flow-contract-user-inputs/SKILL.md:111 forbids a record widening scope"
+if_false = "requests become a new inputs kind, with a new verdict verb, a trust-boundary carve-out and a glimpse filter"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A new inputs.toml kind"
+because = "the inputs answer verb stamps the user as author, the contract forbids a record widening scope, and glimpse would show pending requests live"
+
+[[decision.rejected]]
+option = "A separate requests.toml"
+because = "it needs its own store-guard class and a second reader in plan run report for no gain over a plan.toml array"
+
+[[decision]]
+id = "D5"
+decision = "Stamp plan.toml schema_version 5 when it holds any request, keeping 4, 3 and 2 by content as today"
+why = "an older binary drops unknown arrays on rewrite, so a store holding requests must make it refuse"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "2",
+]
+rejected = []
+evidence = "tomlctl/src/plan/schema.rs:33-43 version tiers and write_version; schema.rs unknown_keys_are_dropped test"
+if_false = "a stale tomlctl rewriting the store would silently delete every request"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D6"
+decision = "A scope request is denied when any other row of the requester's milestone holds the path, or was granted it in a still-unapplied request, compared by the folded key (slashes normalised, leading ./ dropped, case folded), and that row is pending, in-progress, failed or parked and outside the requester's needs closure up and down"
+why = "the Workflow never runs a row of the requester's closure beside it and has released every done row's files, so only the remaining rows can edit the path at the same time; the folded key is the Workflow's fileKey with a leading ./ also dropped"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/workflows/implement-v2-milestone.js",
+    "3",
+    "4",
+]
+rejected = []
+evidence = "claude/workflows/implement-v2-milestone.js:157 fileKey folds case, :269 canStart waits for every need to return done; notes/live-run-holders.md (a second grant and a case variant are the two holes); reportdesignkit package-design-tools rows 130/131 and 6/7, where the only other holder depends on the requester"
+if_false = "a grant can put two in-flight workers on one file, or a dependent holder needlessly blocks the grant the brief's evidence needs"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D7"
+decision = "A worker posts at most one request per run, separate from its one question, batching every path and amendment it needs; it posts once every edit inside its own files is done and edits no requested path before the grant"
+why = "the wait is one blocking Bash call, so posting late lets one request cover everything at no cost"
+provenance = "agent-assumed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "4",
+    "18",
+]
+rejected = []
+evidence = "notes/worker-protocol.md; claude/agents/plan-worker-lite.md:55 one question per run"
+if_false = "a worker could post several requests, each costing an orchestrator turn and a wait"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "A request still open when the worker's 590 s wait ends counts as denied: the worker takes today's path and never parks for it"
+why = "a request can sit behind another worker's open question picker for the whole wait, and parking would turn a file grant into a user decision"
+provenance = "agent-assumed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "18",
+]
+rejected = []
+evidence = "notes/worker-protocol.md; claude/skills/implement-v2-engine/references/questions.md:48 nothing times out while the picker is open"
+if_false = "a late ruling would park rows that the drain could have widened mechanically"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D9"
+decision = "The orchestrator rules a request needs-user when granting it would change a task's outcome, a success criterion or a decision; the worker then asks the user through its own one question when unused, and otherwise parks"
+why = "the question loop stays unchanged and the worker holds the options and their costs"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "16",
+    "18",
+]
+rejected = []
+evidence = "notes/structure-challenge.md claim 5; notes/worker-protocol.md denial branch; questions.md:50 never answer a worker's question yourself"
+if_false = "the orchestrator would author the question itself from the request's text"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "The orchestrator answers every pending REQUEST message before it opens a question picker"
+why = "requests are ruled within a turn, and an open picker blocks every later turn until the user answers"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "16",
+    "19",
+]
+rejected = []
+evidence = "notes/worker-protocol.md; claude/skills/implement-v2-engine/references/run-milestone.md:252 a message arrives as a new turn"
+if_false = "requests posted while a question waits would time out as denials"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D11"
+decision = "An amend may change a task's accept entries (drop or loosen one only with a cited file:line showing it wrong and its behaviour still holding), a means, a constraint, the detail, or a file the spec names together with its file note; it never changes outcome or a behaviour's meaning, and on an /apply-v2 fix row it never touches the reproduce-status accept or the finding-gone outcome. The orchestrator reads the cited code before granting"
+why = "these are the corrections the drain already makes without the user, and the user allowed evidence-backed loosening"
+provenance = "user-confirmed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "16",
+    "19",
+]
+rejected = []
+evidence = 'interview answer "Yes, with evidence"; drain.md step 6 replan table; apply-rows.md:157-165 and :229; notes/drain-integration.md'
+if_false = "amends would be limited to renames and stale details, or every accept change would go to the user"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D12"
+decision = "Apply grants at a new drain step, Granted requests, after step 5 and before step 6's other rows, through the audited tasks update with a reason opening `granted <scope|amend> <request id>:`, ordering a pending holder after the granted row, then mark the requests applied; the step-3 agents audit moves after it"
+why = "the lane check forbids any earlier store write, step 5 diffs the dispatched rows, and step 6 re-issues spec lists whole"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "16",
+    "17",
+]
+rejected = []
+evidence = "notes/drain-integration.md; drain.md:63, :136, :195; tomlctl/src/tasks/update.rs:232 one row per task"
+if_false = "a granted amend could be overwritten by a re-spec, or the lane check would flag the drain's own write"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D13"
+decision = "Move drain.md's section 11, the needs_human report, into its own references/report.md before adding the Granted requests step and the report's requests section"
+why = "drain.md is 594 lines against the 600-line reference ceiling"
+provenance = "agent-assumed"
+door = "two-way"
+class = "structure"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "15",
+]
+rejected = []
+evidence = "wc -l drain.md = 594; tomlctl/src/cli/dispatch/tests/skills.rs:933 CEILING = 600"
+if_false = "the new step and section would break the line-ceiling gate"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "Add report kind `request` with needs_person false; the milestone report lists each grant and denial under a `requests:` section"
+why = "the user asked to see grants and denials in the milestone report only, and ReportKind is a closed vocabulary"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "2",
+    "17",
+]
+rejected = []
+evidence = "tomlctl/src/plan/schema.rs:191 ReportKind; tomlctl/src/plan/run_report.rs:79; glimpse/src/model/plan.rs:347 reads kind as a free string"
+if_false = "grants would be reported under a mislabelled existing kind"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D15"
+decision = ".claude/generated.toml is an array of [[generators]] tables with id, inputs (globs), outputs (literal repo-relative paths), regenerate and check, all required; a missing file means no generators and a malformed one gives one warning"
+why = "outputs must be concrete paths a row can hold, and the ui-capture loader is the precedent"
+provenance = "agent-assumed"
+door = "two-way"
+class = "vocabulary"
+binds = [
+    "tomlctl/src/ui_capture.rs",
+    "1",
+    "14",
+]
+rejected = []
+evidence = "notes/generated-map.md; tomlctl/src/ui_capture.rs:15 load_paths"
+if_false = "glob outputs would leave the grant rule unable to name the path to add"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D16"
+decision = "plan check reports plan/generated-output-unheld as a warning on a pending row of a non-deferred milestone that holds a generator input without all its outputs"
+why = "a row may legitimately leave regeneration to a dependent that holds the output, and approval blocks only on errors"
+provenance = "agent-assumed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "12",
+    "20",
+]
+rejected = []
+evidence = "tomlctl/src/plan/check.rs:887 ui_scope_findings precedent; tomlctl/src/plan/approve.rs:347"
+if_false = "the class blocks approval and forces every input row to hold the output"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D17"
+decision = "plan check reports plan/file-case-collision as a warning, before and after approval, when a row creates a file (a (new) note, or a path absent from its directory's listing) whose stem, the name without its last extension, equals ignoring case but is spelled differently from the stem of an existing or planned file in the same directory; one stem under two extensions is not a collision; existence is read from the directory listing by exact name, never exists()"
+why = "this is reportdesignkit's C43 rule, which flags a group under one lowercased stem only when its members spell the stem differently; exists() folds case on Windows and macOS"
+provenance = "user-stated"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "11",
+    "20",
+]
+rejected = []
+evidence = "notes/case-collision.md; reportdesignkit scripts/boundaries/layer-rules.mjs:261-272 caseOnlyPathCollisions filters groups whose stems differ in spelling; plan review U2 F33, F38, F40"
+if_false = "the check either misses unannotated new files or misreads a case variant as existing"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D18"
+decision = "plan emit gate-list appends each generator's check command, source generated:<id>, when any row of the milestone holds one of its inputs, deduplicated with the existing commands"
+why = "holding an input is what the store records; the gate then catches a stale output"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/emit.rs",
+    "9",
+]
+rejected = []
+evidence = "notes/generated-map.md; tomlctl/src/plan/emit.rs:172 gate_list"
+if_false = "a stale generated file reaches the commit unnoticed"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D19"
+decision = "The worker view prints one Generators line per generator whose input the task holds, naming its outputs and its regenerate command"
+why = "the worker that edits an input must know to regenerate and to request the output it does not hold"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "tomlctl/src/plan/view.rs",
+    "10",
+]
+rejected = []
+evidence = "tomlctl/src/plan/view.rs:723 file_lines; notes/generated-map.md last line"
+if_false = "a worker edits tokens.css and never regenerates its sheet, as task 130's first attempt did"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "The request record is declared once in plan/schema_request.rs with path items and change items, and the holders, request verbs and lane check read it from there."
+check = "grep -q 'struct Request' tomlctl/src/plan/schema_request.rs && grep -q 'schema_request' tomlctl/src/plan/holders.rs tomlctl/src/plan/request.rs"
+tasks = [
+    2,
+    3,
+    4,
+    8,
+]
+provides = "plan::schema_request::Request"
+consumes = "plan::holders, plan::request, plan::lane"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "The worker's message and the orchestrator's routing use the one literal REQUEST <request-id> task <n>."
+check = "grep -q 'REQUEST <request-id> task <n>' claude/agents/plan-worker-lite.md && grep -q 'REQUEST <request-id> task <n>' claude/skills/implement-v2-engine/references/requests.md"
+tasks = [
+    16,
+    18,
+]
+provides = "REQUEST message header"
+consumes = "requests.md routing"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "The generated module's touched and outputs_of functions are the one generator lookup that plan check, gate-list, the worker view and plan request add call."
+check = "grep -q 'generated::' tomlctl/src/plan/emit.rs && grep -q 'generated::' tomlctl/src/plan/view.rs && grep -q 'generated::' tomlctl/src/plan/request.rs && grep -q 'generated::' tomlctl/src/plan/check/generated_outputs.rs"
+tasks = [
+    1,
+    4,
+    9,
+    10,
+    12,
+]
+provides = "generated::touched, generated::outputs_of"
+consumes = "plan check, plan emit gate-list, plan view, plan request add"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = '\8164c72f03f3397b15bc7596c62ddb06ec2635c6beda4469d77e14e8adb10007'
+run_id = "wf_f12ad87a-8fd"
+session = "f6fc2649-2266-410c-85ae-16dc13399eea"
+started = 2026-11-18T12:39:38Z
+finished = 2026-11-18T12:45:03Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "f6fc2649-2266-410c-85ae-16dc13399eea"
+started = 2026-11-18T12:45:29Z
+finished = 2026-11-18T12:50:34Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "f6fc2649-2266-410c-85ae-16dc13399eea"
+started = 2026-11-18T12:52:34Z
+finished = 2026-11-18T12:52:35Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = '\1935ba156196f03d8b8063efc2c43ddab377ef619e6fc87d5874eda7fa2ad0ca'
+run_id = "wf_0c78347d-3b9"
+session = "f6fc2649-2266-410c-85ae-16dc13399eea"
+started = 2026-11-18T13:02:52Z
+finished = 2026-11-18T13:08:34Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_5233a33e-6d3"
+session = "f6fc2649-2266-410c-85ae-16dc13399eea"
+started = 2026-11-18T13:12:44Z
+finished = 2026-11-18T14:01:22Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "restart"
+action = "Restart the glimpse pane so it runs the glimpse milestone A's gate reinstalled, which reads a schema-5 plan.toml."
+when = "After milestone A's commit, before the first /implement-v2 run that posts a plan request."
+done_when = "glimpse shows the mid-run-requests flow without a parse error."
+source_task = 2
+done = false
