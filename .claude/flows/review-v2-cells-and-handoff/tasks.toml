@@ -190,7 +190,7 @@ check = "grep -q 'fn propose(' tomlctl/src/review/cells.rs && grep -q 'fn append
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -267,7 +267,7 @@ check = '''grep -q 'const FIX_FILES: \[Vis; 8\] = \[R, R, N,' tomlctl/src/review
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -314,7 +314,7 @@ check = '''grep -q 'f.only(&\["executable", "tests"\]' tomlctl/src/review/catalo
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -569,7 +569,7 @@ check = "grep -q 'fn finish_row' tomlctl/src/review/triage.rs && grep -q 'fn rep
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -678,7 +678,7 @@ check = "grep -q 'for dep in &f.depends_on' tomlctl/src/review/schedule.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -803,7 +803,7 @@ check = "test -f C:/Users/rossa/dev/reportdesignkit/.claude/flows/package-design
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -813,7 +813,7 @@ check = """grep -q 'id = "U3"' .claude/flows/mid-run-requests/review-v2.toml && 
 at = "base"
 
 [specs.premises.probe]
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 neg_rc = 0
 verdict = "holds"
 
@@ -1025,14 +1025,23 @@ defer_reason = ""
 gate = "cargo install --path tomlctl --locked"
 probe = "cargo metadata --manifest-path tomlctl/Cargo.toml --no-deps --format-version 1 --locked -q"
 verdict = "holds"
-at = "00ff2113dbfab0b7db0b98df71442194340b81c6"
+at = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
+
+[[changes]]
+at = 2026-11-18T21:18:02Z
+ref = "replay-runs-u3-and-u5-through-the-reworked-proposal"
+field = "files"
+old = '["tomlctl/tests/review_replay.rs","tomlctl/tests/fixtures/review_replay/u3/run.toml","tomlctl/tests/fixtures/review_replay/u3/tracked.txt","tomlctl/tests/fixtures/review_replay/u5/run.toml","tomlctl/tests/fixtures/review_replay/u5/tracked.txt"]'
+new = '["tomlctl/tests/review_replay.rs","tomlctl/tests/fixtures/review_replay/u3/run.toml","tomlctl/tests/fixtures/review_replay/u3/tracked.txt","tomlctl/tests/fixtures/review_replay/u5/run.toml","tomlctl/tests/fixtures/review_replay/u5/tracked.txt","tomlctl/src/review/cells/slicing.rs","tomlctl/src/review/cells/propose.rs"]'
+actor = "orchestrator"
+reason = "granted scope Q1: merge_step's non-adjacent rules only join consecutive slices, so on U5 correctness, a floor lens, is cut for the ceiling; security is cut on U5 because three other judgement lenses take every judgement cell before it"
 
 [[items]]
 id = 1
 ref = "split-review-cellsrs-into-a-cells-module"
 title = "Split review cells.rs into a cells module"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1059,15 +1068,15 @@ Boundaries, by item as named in today's cells.rs:
 Re-export from cells/mod.rs whatever other review modules import today (cover.rs: PathSet, find_run, read_args; digest.rs and runs.rs: coverage_accounting, Accounting; stats.rs: PathSet; mod.rs: ReviewPlanArgs) so no file outside cells/ changes. Widen visibility only as far as the split needs (pub(super) inside cells/).
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_cells::/)'`, which must pass unchanged."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 2
 ref = "share-the-review-cells-test-harness-and-register-new-test-modules"
 title = "Share the review cells test harness and register new test modules"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1091,15 +1100,15 @@ Move to tomlctl/tests/review_harness.rs as pub(crate): the constants SCOPE, VOCA
 Create review_propose_slices.rs, review_propose_admission.rs, review_replay.rs, review_ceiling.rs and review_escalations.rs, each holding only a `//!` line naming what it tests (kind-aware slicing; phased admission; the U3 and U5 replays; the ceiling on append; escalations), and add a `mod` line for each, and for review_harness, to tests/it.rs in its alphabetical place.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_cells::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 3
 ref = "register-the-ceiling-override-escalation-and-fix_files-store-fields"
 title = "Register the ceiling override, escalation and fix_files store fields"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1119,15 +1128,15 @@ In store.rs: the Run keeps ceiling_overrides in its rest table (no struct field)
 Add to tests/review_store_v2.rs a round-trip test: a store whose cell carries two escalations and whose run carries one ceiling_overrides entry `{wave, ceiling, planned, added, reason}` loads and writes back byte-identical through a no-op mutation.
 A review.md field-catalogue drift test may fail until the documentation task lands; do not edit review.md."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 4
 ref = "add-file-kinds-lens-kinds-and-two-slice-rules-to-the-review-catalogue"
 title = "Add file kinds, lens kinds and two slice rules to the review catalogue"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1149,15 +1158,15 @@ detail = """
 - tests/review_vocabulary.rs: the lockfiles key parses and an unknown routing key is still refused; `kinds = ["code", "other"]` parses and `kinds = ["lockfile"]` is refused; a lens with `slice = "signal-evidence"` or `"changed-with-tests"` validates.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_vocabulary::/)'`, and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` for the catalogue gate."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 5
 ref = "set-the-slice-rules-and-kinds-on-the-security-test-gaps-correctness-doc-drift-and-test-pruning-lenses"
 title = "Set the slice rules and kinds on the security, test-gaps, correctness, doc-drift and test-pruning lenses"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1184,15 +1193,15 @@ Frontmatter only, no question text:
 SKILL.md: add the two rules to the slice table (signal-evidence: the roots and evidence files of the lens's matched signals, per-subsystem when none carry files; changed-with-tests: changed code files plus the tracked test files under the same subsystem); document the lens `kinds` key (values code, test, other; absent means code for a per-subsystem or per-file judgement lens; mechanical and whole-scope lenses ignore it; lockfiles never reach a judgement lens's slices); and document the `[routing]` lockfiles key beside executable and tests.
 Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` (catalogue_validates)."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 6
 ref = "slice-judgement-lenses-by-subsystem-and-file-kind"
 title = "Slice judgement lenses by subsystem and file kind"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1220,15 +1229,15 @@ detail = """
 - tests/review_propose_slices.rs, on the shared harness with a catalogue carrying a `[routing]` table: a scope mixing src code, tests, a Cargo.lock and markdown gives correctness separate code and other slices and no slice holding Cargo.lock, with no `dir/**` entry covering a file of another kind; security under signal-evidence slices to the trust-boundary evidence file only, and to per-subsystem slices when the signal has no files; test-gaps under changed-with-tests holds the changed code and the subsystem's tests and no markdown; a lens with kinds = ["test"] is unmatched on a scope with no tests and absent from accounting's unselected; a catalogue with no [routing] table proposes the same cells as today; a plan-family run whose scope is markdown still proposes security and test-gaps cells over it.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_propose_slices::/) | test(/^review_cells::/) | test(/^review_digest::/)'`. With the routing-less fallback, existing review_cells and review_digest fixtures must pass unchanged; a test that breaks means the fallback is wrong, not the fixture. The admission task owns review_cells.rs's ceiling and repeat tests."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 7
 ref = "admit-proposal-cells-in-phases-with-a-sweeper-pool-context-free-cells-and-a-reserve"
 title = "Admit proposal cells in phases with a sweeper pool, context-free cells and a reserve"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1255,15 +1264,15 @@ Flags on ReviewPlanArgs, conflicting with --ndjson: `--context-free` (bool) and 
 Tests in review_propose_admission.rs: at standard with ceiling 16 and a 400-file scope, mechanical cells (pass 1 and 2 alike) are at most 4, no mechanical cell has pass 2, and a matched signal lens is never cut for `ceiling` while a pass-2 repeat is present; --reserve 2 leaves 2 cells unused; --context-free emits cf cells within ceil(16/6) and is refused at quick; repeats keep hotspot cells first; a signal lens needing more new cells than the room left is merged down and admitted when one cell fits, and when even one cell cannot fit it is cut and no pass-2 cell is proposed; when a judgement lens is cut, each mechanical lens holds exactly one cell. Update review_cells.rs's ceiling, merge, repeat and sweeper-cap tests (propose_caps_sweeper_slice_by_file_count, propose_merges_small_floor_slices_before_cutting_signal_lenses, propose_adds_reverse_order_repeat_cells_at_standard, propose_reports_over_cap_cells_at_a_small_ceiling and any other the change breaks) to assert the new rules, naming each changed test in the run note.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_propose_admission::/) | test(/^review_cells::/) | test(/^review_propose_slices::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 8
 ref = "refuse-appended-cells-past-the-runs-ceiling-unless-the-user-overrides"
 title = "Refuse appended cells past the run's ceiling unless the user overrides"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1288,15 +1297,15 @@ In append's mutate_minting mint closure, after its replayed_wave check and again
 Tests in review_ceiling.rs: an over-ceiling wave is refused, its error names the ceiling and the resulting count, and the store is byte-identical; the same wave with --over-ceiling-file writes and records the entry with the staged reason; a fitting wave with the flag records nothing; plan-executor rows are not counted; a review-finder-cf row is counted; a second wave counts the first; a replay of an overridden wave reports unchanged.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_ceiling::/) | test(/^review_cells::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 9
 ref = "add-review-escalation-record-to-store-a-waves-escalations"
 title = "Add review escalation record to store a wave's escalations"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1320,15 +1329,15 @@ Put the clap args, the Verb impl and the logic in tomlctl/src/review/escalation.
 Tests in review_escalations.rs: record two escalations on a sealed sweeper cell and read them back with `review show <cell>`; a replay records nothing; an unknown cell is refused.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_escalations::/) | test(/^output_options::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 10
 ref = "add-review-escalation-fix-to-mint-a-blocked-finding-from-an-escalation"
 title = "Add review escalation fix to mint a blocked finding from an escalation"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1349,15 +1358,15 @@ Generalise triage.rs's replacement_row and finish_row so convert and this leaf s
 Tests in review_escalations.rs: fixing C:1 mints an unverified blocked finding in that cell with a verifier route and marks the escalation fixed; a second fix is refused; a lens outside the cell's concerns is refused; after a verifier confirms it, `review schedule <id> --dry-run` lists it under `settle` (a dry run lists an evidence-blocked finding there without --settle-checkpoint, which takes a checkpoint id).
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_escalations::/) | test(/^review_triage::/) | test(/^output_options::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 11
 ref = "show-ceiling-overrides-and-escalations-in-the-review-report"
 title = "Show ceiling overrides and escalations in the review report"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1379,15 +1388,15 @@ In digest.rs coverage(): after the Waivers section, `## Ceiling overrides` lists
 Tests in review_digest.rs: a run with one override and one open and one fixed escalation renders both sections; a run with neither renders neither heading.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_digest::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 12
 ref = "route-and-bound-multi-file-cleanups-by-their-fix_files"
 title = "Route and bound multi-file cleanups by their fix_files"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1406,15 +1415,15 @@ fields.rs route(): add a `fix_files: &[String]` parameter, and in the cleanup ar
 Tests in review_add.rs: a change cleanup anchored in a markdown file whose fix_files name two .rs files routes to the verifier; the same row without fix_files routes to the checker; a converted cleanup carrying fix_files is accepted by `review triage --convert cleanup`.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_add::/) | test(/^review_triage::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 13
 ref = "order-a-doc-fix-task-after-the-code-fix-task-it-describes"
 title = "Order a doc fix task after the code fix task it describes"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1436,15 +1445,15 @@ Tests in review_schedule.rs, each new test seeding its run with `catalogue = { b
 review-apply.md: document the rule and the `ordered` and `ordering_skipped` keys in the schedule section. claude/skills/apply-v2-engine/SKILL.md: where it lists what `review schedule` prints and where it reports the schedule to the user, add `ordered` (each as doc task needs code task, with the finding and the path it names) and `ordering_skipped` (each run and its reason, its pairs left unordered), and note a dropped_deps entry may carry `skipped: "cycle"` with `interacts_with`.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_schedule::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 14
 ref = "split-review-stats-audit-counts-by-class-and-count-ceiling-overrides-per-run"
 title = "Split review stats audit counts by class and count ceiling overrides per run"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1463,15 +1472,15 @@ by_run rows gain `ceiling_overrides: {count, over}` where over sums each entry's
 Tests in review_stats.rs: a store with one audited row of each class gives per-class counts per lens and per model whose sum equals the existing audited total; a run with two overrides reports count 2 and the overflow.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_stats::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 15
 ref = "report-repeat-pass-and-context-free-yield-in-review-stats"
 title = "Report repeat-pass and context-free yield in review stats"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1489,15 +1498,15 @@ detail = """
 Tests in review_stats.rs: a run where a verified repeat-cell finding is same_as a verified first-pass finding adds nothing unique to repeat; one where a first-pass row is merged into a repeat row also adds nothing unique to repeat and credits first; a verified cf-only finding that apply resolved counts unique 1, applied 1, scheduled 0, and one only scheduled counts applied 0, scheduled 1; a refuted repeat finding counts in findings only; a same_as to an earlier run's finding counts in cross_run only.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_stats::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 16
 ref = "replay-runs-u3-and-u5-through-the-reworked-proposal"
 title = "Replay runs U3 and U5 through the reworked proposal"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1508,6 +1517,8 @@ files = [
     "tomlctl/tests/fixtures/review_replay/u3/tracked.txt",
     "tomlctl/tests/fixtures/review_replay/u5/run.toml",
     "tomlctl/tests/fixtures/review_replay/u5/tracked.txt",
+    "tomlctl/src/review/cells/slicing.rs",
+    "tomlctl/src/review/cells/propose.rs",
 ]
 needs = [
     2,
@@ -1524,15 +1535,15 @@ Anonymise U5 with a throwaway script kept out of the repo: map each path segment
 The test builds the harness's git sandbox from tracked.txt, loads run.toml, runs `review plan --propose --lens +intent-fidelity --context-free --reserve 1`, and expands every slice entry against tracked.txt (a glob to the tracked files it matches, by PathSet's rules re-implemented in the test with globset: literal_separator, and a plain entry also matching everything under it; PathSet is pub(super) in the crate and the harness has none), classifying each file by compiling the live vocabulary.toml [routing] lockfiles, tests and executable lists in that priority, else other, and taking a lens as signal-matched when its frontmatter activation is signal or candidate and one of its apply_when signals is active in run.toml before asserting, for each run: no cell carrying correctness or test-gaps has a lockfile among its files, and none mixes code-kind with other-kind files; every security file lies under a root or is an evidence path of one of security's matched active signals (a "." root ignored), lockfiles allowed there; test-gaps files are only code and test files; mechanical cells number at most ceil(ceiling/4) and none has pass 2; no concern in unselected with reason ceiling is a signal-matched lens while a pass-2 cell exists; total cells are at most ceiling - 1; when any judgement-mode lens appears in unselected with reason ceiling, each mechanical lens holds exactly one cell. For U5 also: security is admitted.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^review_replay::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "e24d3627"
 
 [[items]]
 id = 17
 ref = "advertise-the-new-review-capabilities"
 title = "Advertise the new review capabilities"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1555,15 +1566,15 @@ detail = """
 FEATURES entries, each with a one-line meaning in the README table and the sample block: review_propose_kinds (kind-aware slicing, the signal-evidence and changed-with-tests rules, --context-free and --reserve on review plan --propose); review_plan_ceiling (append refuses past the ceiling, --over-ceiling-file, the run's ceiling_overrides); review_escalations (review escalation record and fix); review_stats_yield (per-class audit counts and review stats --yield). Pin them in tests/capabilities.rs as its existing cases do.
 Narrow check: `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 18
 ref = "update-compose-the-review-v2-carrier-and-the-engine-skill-for-the-new-proposal-ceiling-and-escalations"
 title = "Update compose, the review-v2 carrier and the engine skill for the new proposal, ceiling and escalations"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1588,15 +1599,15 @@ review-v2.md Stage 3: pass --context-free at standard and deep and --reserve per
 SKILL.md: the depth table's repeat and ceiling rows and the line after the batching paragraph (no quick escalation probe for code and perf; the ceiling is enforced on append); the stage-0 pre-flight feature list gains review_propose_kinds, review_plan_ceiling and review_escalations.
 Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 19
 ref = "add-the-escalation-fix-disposition-and-the-multi-file-convert-shape-to-triage"
 title = "Add the escalation fix disposition and the multi-file convert shape to triage"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1617,15 +1628,15 @@ triage-and-close.md: the presentation lists the run's open escalations (from rev
 agent-waves.md: add a `### One-row verify` section after Mop-up's opening rules, or as its own `##` section after Mop-up: a finding minted at triage, by `review triage --convert` or by `review escalation fix`, is `unverified` and gets one verifier (or checker, by its route) dispatched with the Verifier prompt (or Checker prompt) for that single id; its verdict lands before the finding is handed to apply, and the agent counts toward the run's agent total. triage-and-close.md's Convert already points here.
 Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 20
 ref = "bound-the-checker-and-verifier-cleanup-rules-by-fix_files"
 title = "Bound the checker and verifier cleanup rules by fix_files"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1645,15 +1656,15 @@ detail = """
 review-checker.md predicate 4: every path the edit names is file, target_file, one of instances or one of fix_files. review-verifier.md Cleanup: the edit stays within file, target_file, instances and fix_files; a change across those files that alters no observable behaviour is a cleanup to confirm, not a defect to refute.
 Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 21
 ref = "document-yield-audit-classes-and-the-reserve-in-measurement-and-the-plan-review-lead"
 title = "Document yield, audit classes and the reserve in measurement and the plan review lead"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1675,15 +1686,15 @@ measurement.md: the Signals table gains a Yield row (`review stats --yield`: fir
 plan-review-lead.md step 6 (Follow-up) and its compose step: at quick and in recheck, propose with `--reserve 1` so the escalation probe cell fits; never pass --over-ceiling-file; on a ceiling refusal, cut a candidate or repeat cell, or return.
 Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"
 
 [[items]]
 id = 22
 ref = "document-the-new-review-verbs-flags-and-fields-in-the-tomlctl-skill"
 title = "Document the new review verbs, flags and fields in the tomlctl skill"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1709,5 +1720,5 @@ detail = """
 - Routing: a cleanup's fix_files count toward its route.
 Read the shipped code for every flag and key spelling. Narrow check: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` (the flag-table gate)."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "e24d3627"

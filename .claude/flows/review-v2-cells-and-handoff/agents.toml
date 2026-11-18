@@ -1270,3 +1270,704 @@ turns = 8
 task_ids = []
 started_at = "2026-11-18T20:10:42.7383635Z"
 ended_at = "2026-11-18T20:11:19.6773318Z"
+
+[[agents]]
+id = "A44"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "acd79f6c2791aabf6"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:18:58.8560863Z"
+updated_at = "2026-11-18T20:26:16.8680842Z"
+ended_at = "2026-11-18T20:26:16.8680842Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-acd79f6c2791aabf6.jsonl'
+summary = ""
+context_tokens = 86898
+
+[agents.usage]
+input = 46
+cache_write = 86488
+cache_read = 1554215
+output = 10984
+turns = 22
+
+[[agents.segments]]
+task_ids = [1]
+started_at = "2026-11-18T20:18:58.8560863Z"
+ended_at = "2026-11-18T20:26:16.8680842Z"
+
+[[agents]]
+id = "A45"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a642779923866e62f"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:19:00.3478203Z"
+updated_at = "2026-11-18T20:20:25.8230883Z"
+ended_at = "2026-11-18T20:20:25.8230883Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a642779923866e62f.jsonl'
+summary = ""
+context_tokens = 68861
+
+[agents.usage]
+input = 28
+cache_write = 53568
+cache_read = 756044
+output = 4796
+turns = 13
+
+[[agents.segments]]
+task_ids = [2]
+started_at = "2026-11-18T20:19:00.3478203Z"
+ended_at = "2026-11-18T20:20:25.8230883Z"
+
+[[agents]]
+id = "A46"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a74b670064e8b3f55"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:19:00.3691429Z"
+updated_at = "2026-11-18T20:20:35.9379999Z"
+ended_at = "2026-11-18T20:20:35.9379999Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a74b670064e8b3f55.jsonl'
+summary = ""
+context_tokens = 80276
+
+[agents.usage]
+input = 28
+cache_write = 64682
+cache_read = 825602
+output = 7396
+turns = 13
+
+[[agents.segments]]
+task_ids = [3]
+started_at = "2026-11-18T20:19:00.3691429Z"
+ended_at = "2026-11-18T20:20:35.9379999Z"
+
+[[agents]]
+id = "A47"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a6cffb3449c90e592"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:20:36.2318709Z"
+updated_at = "2026-11-18T20:24:39.0774741Z"
+ended_at = "2026-11-18T20:24:39.0774741Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a6cffb3449c90e592.jsonl'
+summary = ""
+context_tokens = 91108
+
+[agents.usage]
+input = 36
+cache_write = 75249
+cache_read = 1206553
+output = 9280
+turns = 17
+
+[[agents.segments]]
+task_ids = [4]
+started_at = "2026-11-18T20:20:36.2318709Z"
+ended_at = "2026-11-18T20:24:39.0774741Z"
+
+[[agents]]
+id = "A48"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a968ee4fd3cb6a305"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:20:36.2533268Z"
+updated_at = "2026-11-18T20:28:07.3904773Z"
+ended_at = "2026-11-18T20:28:07.3904773Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a968ee4fd3cb6a305.jsonl'
+summary = ""
+context_tokens = 113277
+
+[agents.usage]
+input = 62
+cache_write = 111584
+cache_read = 2544873
+output = 16370
+turns = 30
+
+[[agents.segments]]
+task_ids = [9]
+started_at = "2026-11-18T20:20:36.2533268Z"
+ended_at = "2026-11-18T20:28:07.3904773Z"
+
+[[agents]]
+id = "A49"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a85cce567d0dd898e"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:24:39.3379103Z"
+updated_at = "2026-11-18T20:25:14.4727175Z"
+ended_at = "2026-11-18T20:25:14.4727175Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a85cce567d0dd898e.jsonl'
+summary = ""
+context_tokens = 65219
+
+[agents.usage]
+input = 16
+cache_write = 49919
+cache_read = 371390
+output = 3386
+turns = 7
+
+[[agents.segments]]
+task_ids = [5]
+started_at = "2026-11-18T20:24:39.3379103Z"
+ended_at = "2026-11-18T20:25:14.4727175Z"
+
+[[agents]]
+id = "A50"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "add3bd6a923e676f0"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:24:39.3518444Z"
+updated_at = "2026-11-18T20:26:26.6633907Z"
+ended_at = "2026-11-18T20:26:26.6633907Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-add3bd6a923e676f0.jsonl'
+summary = ""
+context_tokens = 70751
+
+[agents.usage]
+input = 26
+cache_write = 55555
+cache_read = 707834
+output = 4654
+turns = 12
+
+[[agents.segments]]
+task_ids = [12]
+started_at = "2026-11-18T20:24:39.3518444Z"
+ended_at = "2026-11-18T20:26:26.6633907Z"
+
+[[agents]]
+id = "A51"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "afbe134552b492271"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:26:17.2134926Z"
+updated_at = "2026-11-18T20:33:27.2773349Z"
+ended_at = "2026-11-18T20:33:27.2773349Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-afbe134552b492271.jsonl'
+summary = ""
+context_tokens = 121472
+
+[agents.usage]
+input = 68
+cache_write = 105758
+cache_read = 2960474
+output = 20779
+turns = 33
+
+[[agents.segments]]
+task_ids = [8]
+started_at = "2026-11-18T20:26:17.2134926Z"
+ended_at = "2026-11-18T20:33:27.2773349Z"
+
+[[agents]]
+id = "A52"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "add8cd52b932edf1d"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:26:27.290043Z"
+updated_at = "2026-11-18T20:27:50.8746117Z"
+ended_at = "2026-11-18T20:27:50.8746117Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-add8cd52b932edf1d.jsonl'
+summary = ""
+context_tokens = 58044
+
+[agents.usage]
+input = 12
+cache_write = 42556
+cache_read = 235013
+output = 1414
+turns = 5
+
+[[agents.segments]]
+task_ids = [20]
+started_at = "2026-11-18T20:26:27.290043Z"
+ended_at = "2026-11-18T20:27:50.8746117Z"
+
+[[agents]]
+id = "A53"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "af7da5449996447f9"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:26:27.2895603Z"
+updated_at = "2026-11-18T20:33:31.3913358Z"
+ended_at = "2026-11-18T20:33:31.3913358Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-af7da5449996447f9.jsonl'
+summary = ""
+context_tokens = 122454
+
+[agents.usage]
+input = 70
+cache_write = 107018
+cache_read = 3197508
+output = 24585
+turns = 34
+
+[[agents.segments]]
+task_ids = [13]
+started_at = "2026-11-18T20:26:27.2895603Z"
+ended_at = "2026-11-18T20:33:31.3913358Z"
+
+[[agents]]
+id = "A54"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "aa55f20bbafab8344"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:28:07.4853782Z"
+updated_at = "2026-11-18T20:40:49.5957817Z"
+ended_at = "2026-11-18T20:40:49.5957817Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-aa55f20bbafab8344.jsonl'
+summary = ""
+context_tokens = 141211
+
+[agents.usage]
+input = 80
+cache_write = 125424
+cache_read = 4058364
+output = 30164
+turns = 39
+
+[[agents.segments]]
+task_ids = [10]
+started_at = "2026-11-18T20:28:07.4853782Z"
+ended_at = "2026-11-18T20:40:49.5957817Z"
+
+[[agents]]
+id = "A55"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a01564776ae4d83df"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:33:27.376731Z"
+updated_at = "2026-11-18T20:46:12.3973364Z"
+ended_at = "2026-11-18T20:46:12.3973364Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a01564776ae4d83df.jsonl'
+summary = ""
+context_tokens = 146627
+
+[agents.usage]
+input = 94
+cache_write = 131202
+cache_read = 4971487
+output = 39028
+turns = 46
+
+[[agents.segments]]
+task_ids = [6]
+started_at = "2026-11-18T20:33:27.376731Z"
+ended_at = "2026-11-18T20:46:12.3973364Z"
+
+[[agents]]
+id = "A56"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a97eb2b37962705a3"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:33:31.4822925Z"
+updated_at = "2026-11-18T20:35:31.9866001Z"
+ended_at = "2026-11-18T20:35:31.9866001Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a97eb2b37962705a3.jsonl'
+summary = ""
+context_tokens = 70281
+
+[agents.usage]
+input = 24
+cache_write = 69743
+cache_read = 611498
+output = 3995
+turns = 11
+
+[[agents.segments]]
+task_ids = [11]
+started_at = "2026-11-18T20:33:31.4822925Z"
+ended_at = "2026-11-18T20:35:31.9866001Z"
+
+[[agents]]
+id = "A57"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "aafc62462fa8f7db2"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:35:32.1144455Z"
+updated_at = "2026-11-18T20:40:38.508385Z"
+ended_at = "2026-11-18T20:40:38.508385Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-aafc62462fa8f7db2.jsonl'
+summary = ""
+context_tokens = 105227
+
+[agents.usage]
+input = 50
+cache_write = 88436
+cache_read = 1949989
+output = 15569
+turns = 24
+
+[[agents.segments]]
+task_ids = [14]
+started_at = "2026-11-18T20:35:32.1144455Z"
+ended_at = "2026-11-18T20:40:38.508385Z"
+
+[[agents]]
+id = "A58"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a4e536ec4392551be"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:40:38.5804239Z"
+updated_at = "2026-11-18T20:44:58.9801506Z"
+ended_at = "2026-11-18T20:44:58.9801506Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a4e536ec4392551be.jsonl'
+summary = ""
+context_tokens = 119458
+
+[agents.usage]
+input = 50
+cache_write = 103799
+cache_read = 2266583
+output = 16870
+turns = 24
+
+[[agents.segments]]
+task_ids = [15]
+started_at = "2026-11-18T20:40:38.5804239Z"
+ended_at = "2026-11-18T20:44:58.9801506Z"
+
+[[agents]]
+id = "A59"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a71396071d09f4cbb"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:40:49.7074773Z"
+updated_at = "2026-11-18T20:41:52.6918863Z"
+ended_at = "2026-11-18T20:41:52.6918863Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a71396071d09f4cbb.jsonl'
+summary = ""
+context_tokens = 72586
+
+[agents.usage]
+input = 24
+cache_write = 72343
+cache_read = 657665
+output = 4109
+turns = 11
+
+[[agents.segments]]
+task_ids = [19]
+started_at = "2026-11-18T20:40:49.7074773Z"
+ended_at = "2026-11-18T20:41:52.6918863Z"
+
+[[agents]]
+id = "A60"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a0b5cbbfdc5eaa378"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:46:12.5474888Z"
+updated_at = "2026-11-18T20:58:59.3770754Z"
+ended_at = "2026-11-18T20:58:59.3770754Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a0b5cbbfdc5eaa378.jsonl'
+summary = ""
+context_tokens = 180540
+
+[agents.usage]
+input = 82
+cache_write = 162293
+cache_read = 5319595
+output = 54374
+turns = 40
+
+[[agents.segments]]
+task_ids = [7]
+started_at = "2026-11-18T20:46:12.5474888Z"
+ended_at = "2026-11-18T20:58:59.3770754Z"
+
+[[agents]]
+id = "A61"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "acbcaee1e7917bf4b"
+agent_type = "plan-worker-deep"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:58:59.6128757Z"
+updated_at = "2026-11-18T21:17:15.9307899Z"
+ended_at = "2026-11-18T21:17:15.9307899Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-acbcaee1e7917bf4b.jsonl'
+summary = ""
+context_tokens = 207499
+
+[agents.usage]
+input = 136
+cache_write = 192074
+cache_read = 8912970
+output = 68167
+turns = 66
+
+[[agents.segments]]
+task_ids = [16]
+started_at = "2026-11-18T20:58:59.6128757Z"
+ended_at = "2026-11-18T21:17:15.9307899Z"
+
+[[agents]]
+id = "A62"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a1032cdcb74b465c4"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:58:59.7403642Z"
+updated_at = "2026-11-18T20:59:26.765702Z"
+ended_at = "2026-11-18T20:59:26.765702Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-a1032cdcb74b465c4.jsonl'
+summary = ""
+context_tokens = 60868
+
+[agents.usage]
+input = 16
+cache_write = 60359
+cache_read = 337376
+output = 2479
+turns = 7
+
+[[agents.segments]]
+task_ids = [17]
+started_at = "2026-11-18T20:58:59.7403642Z"
+ended_at = "2026-11-18T20:59:26.765702Z"
+
+[[agents]]
+id = "A63"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "ac779a971ad67cef1"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:59:01.3475602Z"
+updated_at = "2026-11-18T21:01:43.2460438Z"
+ended_at = "2026-11-18T21:01:43.2460438Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-ac779a971ad67cef1.jsonl'
+summary = ""
+context_tokens = 130529
+
+[agents.usage]
+input = 64
+cache_write = 114807
+cache_read = 3108175
+output = 15839
+turns = 31
+
+[[agents.segments]]
+task_ids = [22]
+started_at = "2026-11-18T20:59:01.3475602Z"
+ended_at = "2026-11-18T21:01:43.2460438Z"
+
+[[agents]]
+id = "A64"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "ab191339c248c9790"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:59:01.2481592Z"
+updated_at = "2026-11-18T21:00:00.2401031Z"
+ended_at = "2026-11-18T21:00:00.2401031Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-ab191339c248c9790.jsonl'
+summary = ""
+context_tokens = 64113
+
+[agents.usage]
+input = 16
+cache_write = 48926
+cache_read = 368015
+output = 2769
+turns = 7
+
+[[agents.segments]]
+task_ids = [21]
+started_at = "2026-11-18T20:59:01.2481592Z"
+ended_at = "2026-11-18T21:00:00.2401031Z"
+
+[[agents]]
+id = "A65"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "acca7814625171f6a"
+agent_type = "plan-worker-lite"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T20:59:26.8747196Z"
+updated_at = "2026-11-18T21:00:26.8435695Z"
+ended_at = "2026-11-18T21:00:26.8435695Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\workflows\wf_56510a2d-ed7\agent-acca7814625171f6a.jsonl'
+summary = ""
+context_tokens = 82420
+
+[agents.usage]
+input = 18
+cache_write = 67216
+cache_read = 491558
+output = 7365
+turns = 8
+
+[[agents.segments]]
+task_ids = [18]
+started_at = "2026-11-18T20:59:26.8747196Z"
+ended_at = "2026-11-18T21:00:26.8435695Z"
+
+[[agents]]
+id = "A66"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a274d6a42f7a07b44"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T21:18:16.8357398Z"
+updated_at = "2026-11-18T21:26:23.0373819Z"
+ended_at = "2026-11-18T21:26:23.0373819Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\agent-a274d6a42f7a07b44.jsonl'
+summary = """
+outcome: pass | command: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check | duration: 3 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.hvSVgXiCw3/c1.log
+
+outcome: pass | command: cargo clippy --workspace --locked --all-targets | duration: 42 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.hvSVgXiCw3/c2.log
+
+outcome: pass | command: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast | duration: 401 | summary: Summary [ 397.172s] 3464 tests run: 3464 passed (7 slow), 1 skipped | log: C:/Users/rossa/AppData/Local/Temp/tmp.hvSVgXiCw3/c3.log"""
+context_tokens = 43099
+
+[agents.usage]
+input = 22
+cache_write = 42591
+cache_read = 383207
+output = 5370
+turns = 11
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-18T21:18:16.8357398Z"
+ended_at = "2026-11-18T21:26:23.0373819Z"
+
+[[agents]]
+id = "A67"
+harness = "claude-code"
+session_id = "2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d"
+agent_id = "a28dd62466b768a32"
+agent_type = "verification"
+kind = "subagent"
+name = ""
+team = ""
+status = "stopped"
+started_at = "2026-11-18T21:26:32.0347044Z"
+updated_at = "2026-11-18T21:33:27.2581134Z"
+ended_at = "2026-11-18T21:33:27.2581134Z"
+transcript_path = '\\?\C:\Users\rossa\.claude\projects\C--Users-rossa-dev-dev-tools\2fd6c461-cb1c-4b13-ada1-c51f9e56dd3d\subagents\agent-a28dd62466b768a32.jsonl'
+summary = "outcome: pass | command: cargo install --path tomlctl --locked | duration: 393 | summary: none | log: C:/Users/rossa/AppData/Local/Temp/tmp.s32cCZEzQ0/c1.log"
+context_tokens = 40086
+
+[agents.usage]
+input = 14
+cache_write = 30413
+cache_read = 232986
+output = 3557
+turns = 7
+
+[[agents.segments]]
+task_ids = []
+started_at = "2026-11-18T21:26:32.0347044Z"
+ended_at = "2026-11-18T21:33:27.2581134Z"
