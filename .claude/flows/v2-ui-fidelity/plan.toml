@@ -1,4 +1,4 @@
-schema_version = 3
+schema_version = 4
 last_updated = 2026-11-18
 
 [binding]
@@ -7,7 +7,7 @@ scope = []
 
 [id_high_water]
 C = 4
-D = 34
+D = 42
 H = 2
 
 [[decision]]
@@ -141,6 +141,8 @@ binds = [
     "32",
     "33",
     "34",
+    "36",
+    "37",
 ]
 rejected = []
 evidence = "notes/critic-reliability.md (image-only overflow and clipping near chance); notes/screenshot-capture.md (Read downsamples large captures)."
@@ -697,6 +699,205 @@ check = ""
 surfaced = false
 vetoed = false
 
+[[decision]]
+id = "D35"
+decision = "Lay the web fixture panel out as stacked-rows: one line per colour series (fold glyph, label taking the slack with an ellipsis, five fixed 18 px swatches on the right), the panel's width following the window up to 480 px (D42) and its height following its rows, the notices band rendered only when there is a notice."
+why = "The planted controls (tiles scaling with the panel, a reserved notices band, an overflowing label, an off-style fold glyph, a panel held at full height) each read as one clear break of this arrangement's rules: fixed tiles, content-sized height, a band that exists only with a notice."
+provenance = "user-confirmed"
+door = "two-way"
+class = "look"
+binds = [
+    "docs/flows/v2-ui-fidelity/design/ui-B.md",
+    "32",
+]
+evidence = "Rendered all three with claude/skills/ui-capture/scripts/render.sh at 560x360, geometry.json empty for each (docs/flows/v2-ui-fidelity/design/ui-B/); styled after the eggshell colour stance; published side by side at https://claude.ai/artifact/FGirEgyzX2emVKX4cuMeeu"
+if_false = "The worker builds another arrangement and the inspector judges against it"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "label-over-swatches"
+because = "doubles each series' height for long labels the fixture only needs in one state"
+
+[[decision.rejected]]
+option = "split-list-preview"
+because = "a one-item or empty list leaves the detail side carrying the panel, which muddies the content-extreme states the proof judges"
+
+[[decision]]
+id = "D36"
+decision = "Lay the terminal fixture panel out as single-table: one rounded box over the whole 80x24 terminal holding a task table (ID, status glyph, title, right-aligned FILES), the key-hint line inside the box's foot, the table region filling the box."
+why = "One box keeps every control a single clear break: a column out of line, a title cut without an ellipsis, text running into the right border, a band of blank rows held open above the hint line."
+provenance = "user-confirmed"
+door = "two-way"
+class = "look"
+binds = [
+    "docs/flows/v2-ui-fidelity/design/ui-B.md",
+    "33",
+]
+evidence = "Drawn as 80x24 grids in docs/flows/v2-ui-fidelity/design/ui-B/; rounded borders as glimpse/src/view/panel.rs:11 draws them"
+if_false = "The worker draws another arrangement and the inspector judges against it"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "list-detail"
+because = "two panes double the grid work per state without adding a defect class the proof needs"
+
+[[decision.rejected]]
+option = "list-over-log"
+because = "an empty log pane in the empty and one-item states reads as reserved space in a clean state"
+
+[[decision]]
+id = "D37"
+decision = "Make milestone B's controls blind: the implement-v2-visual Workflow stops telling each inspector which states are controls, the ui-inspector agent judges every state the same way with no control flag, and the fixtures' control states carry neutral names, so a caught control is evidence the inspector catches an unlabelled defect."
+why = "implement-v2-visual.js:152 prints each state as '(control: true|false)' and ui-inspector.md:19 and :53 tell the inspector a control must show a defect, so a caught control proves only that the inspector finds a defect it was told is there; D7 asks for a measured catch rate."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/agents/ui-inspector.md",
+    "32",
+    "33",
+    "34",
+    "36",
+    "37",
+]
+evidence = "claude/workflows/implement-v2-visual.js:152; claude/agents/ui-inspector.md:19,53; claude/skills/implement-v2-engine/references/visual.md section 6 reads soundness from the control's verdict alone"
+if_false = "Controls stay labelled; B proves the pipeline runs end to end and that the inspector finds a defect it is told to expect"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "labelled controls"
+because = "the proof then measures only whether the inspector looks when told a defect is present, not whether it would catch one in a clean state"
+
+[[decision]]
+id = "D38"
+decision = "Leave render.sh's 500 px width floor to the backlog and size every web fixture state at 500 px wide or more."
+why = "render.sh's geometry pass runs headless Chrome with --dump-dom, whose window never lays out narrower than 500 px, so any --size under 500 wide fails with 'could not size the probe's viewport'; the PNG pass honours the width. Only mocks and fixtures render through render.sh, since a project's own capture command drives its own browser."
+provenance = "user-confirmed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "32",
+    "34",
+]
+evidence = "Measured 2026-11-18: --size 480x360 and 320x360 fail after three attempts with the probe reporting 500x360; 500x360 and 600x400 pass; the PNG at 480x360 is 480 wide"
+if_false = "B gains a deep row fixing render.sh for widths under 500 px, and the web fixture adds a phone-width state"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "fix render.sh in B"
+because = "the fix lays the probe page out in a fixed-size iframe, a deep change to milestone A's renderer that the proof does not need"
+
+[[decision]]
+id = "D39"
+decision = "Hide the look mapping too: the implement-v2-visual Workflow gives each inspector a per-state list of look numbers instead of each look's state list. A clean state carries the looks that name it; a control carries the looks of the clean states sharing its name's surface prefix (up to its last '-'), or every look only when none shares it, as D41 revised it."
+why = "plan check refuses a look entry naming a control (tomlctl/src/plan/check.rs:845), so with the flag gone a state no look names would still mark itself as the control; a control judged against looks it cannot meet only fails, which is the verdict a sound control gives anyway."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/agents/ui-inspector.md",
+    "36",
+    "37",
+]
+evidence = "claude/workflows/implement-v2-visual.js:144-153 filters looks by the group's states and prints each look's states; tomlctl/src/plan/check.rs:841-855"
+if_false = "Controls stay inferable from missing look entries and B's catch rate is partly labelled"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "flag only"
+because = "a state with no look entry still reads as the control, so the catch rate stays partly labelled"
+
+[[decision.rejected]]
+option = "looks without state lists, judged where they apply"
+because = "loosens look matching for every project's clean states, inviting false fails and fix rounds"
+
+[[decision]]
+id = "D40"
+decision = "Ignore the capture command's output directory, /.ui-capture/, in the repo's .gitignore."
+why = "visual.md leaves the out directory to the project to keep out of git; ignored, the capture never shows in git status between rounds."
+provenance = "agent-assumed"
+door = "two-way"
+class = "structure"
+binds = ["34"]
+evidence = "claude/skills/implement-v2-engine/references/visual.md section 'The capture directory in the tree checks'; .gitignore has no entry for it"
+if_false = "The engine still exempts the directory from its tree checks, and the PNGs show as untracked"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "leave it tracked-but-exempt"
+because = "every round's PNGs then sit untracked in git status until cleaned by hand"
+
+[[decision]]
+id = "D41"
+decision = "Revise D39: a control carries the looks of the clean states that share its name's surface prefix (the name up to its last '-', so web-02 takes the looks of the web-* clean states), and every look of the milestone only when no clean state shares its prefix; a look a state's capture cannot show is no longer answered fail."
+why = "The cold read showed D39 as written gives every control both surfaces' looks, which marks it as a control in its prompt line, and with the inapplicable-look fail rule every control fails whatever the inspector sees, so the catch rate D7 asks for reads 9/9 regardless."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/agents/ui-inspector.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "36",
+    "37",
+]
+evidence = "docs/flows/v2-ui-fidelity/notes/cold-read-B.md point 1; tomlctl plan emit gate-list for B prints two web looks and two terminal looks; claude/skills/implement-v2-engine/references/visual.md section 6 counts any control fail as sound"
+if_false = "Controls stay recognisable and their verdicts say nothing about the inspector's catch rate"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "a declared twin per control"
+because = "needs a new ui_controls shape across tomlctl's schema, milestone verbs, plan check and emit for a pairing the names already carry"
+
+[[decision.rejected]]
+option = "D39 as written"
+because = "every control carries the other surface's looks and fails on them, so the proof measures nothing"
+
+[[decision]]
+id = "D42"
+decision = "The web fixture panel's width is the window's less 48 px up to 480 px, not 400 px, so the 500 px narrow state narrows it to 452 px."
+why = "At a 400 px cap every window from 448 px up shows the same panel, and render.sh cannot render below 500 px (D38), so a narrow state would show nothing the 640 px states do not."
+provenance = "user-confirmed"
+door = "two-way"
+class = "look"
+binds = [
+    "docs/flows/v2-ui-fidelity/design/ui-B.md",
+    "32",
+]
+evidence = "docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.png (640x480) and stacked-rows-narrow.png (500x480), re-rendered at the 480 px cap with geometry.json empty"
+if_false = "The panel caps at 400 px and the web fixture has no narrow state"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "400 px as drawn in the pick"
+because = "the narrow state then shows the same 400 px panel as every other state"
+
 [[contract]]
 id = "C1"
 kind = "interface"
@@ -878,6 +1079,26 @@ rest = "8ec3252927ad2dfa"
 rows = "f283a5f4c0c37e6c"
 specs = "74399728f4ec9820"
 
+[[run]]
+step = "elaborate:B"
+run_id = ""
+session = "b818c94a-deee-44c7-97ca-24e5b515ef69"
+started = 2026-11-18T08:00:07Z
+finished = 2026-11-18T08:33:12Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read:B"
+workflow = "plan-v2-prove"
+args_hash = "40c840cf0d21d711474573f41156049d5b52f9c32fed7f88bad5ff58d19374eb"
+run_id = "wf_203ea2b0-89c"
+session = "b818c94a-deee-44c7-97ca-24e5b515ef69"
+started = 2026-11-18T08:26:19Z
+finished = 2026-11-18T08:29:55Z
+skip_reason = ""
+outcome = "ok"
+
 [[handover]]
 id = "H1"
 reason = "permissions"
@@ -885,7 +1106,7 @@ action = "From an elevated PowerShell in the dev-tools checkout, run scripts/lin
 when = "After milestone A's commit, before elaborating milestone B."
 done_when = "scripts/link-v2-review.ps1 exits 0, and ~/.claude/agents/ui-inspector.md and ~/.claude/workflows/implement-v2-visual.js are links into this repo."
 source_task = 30
-done = false
+done = true
 
 [[handover]]
 id = "H2"
@@ -894,7 +1115,7 @@ action = "Start a new Claude Code session in dev-tools, so the newly linked agen
 when = "After the elevated link run."
 done_when = "The new session lists the ui-inspector agent type and the implement-v2-visual Workflow."
 source_task = 19
-done = false
+done = true
 
 [[attempt]]
 task = 1

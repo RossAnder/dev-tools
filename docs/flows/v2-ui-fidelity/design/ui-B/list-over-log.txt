@@ -1,0 +1,24 @@
+╭─ Tasks ──────────────────────────────────────────────────────────────────────╮
+│ ID  ST  TITLE                                                          FILES │
+│ 31  ✓   Write the capture contract                                         1 │
+│ 32  ●   Build the web fixture panel                                        2 │
+│ 33  ●   Build the terminal fixture panel                                   3 │
+│ 34  ○   Declare the fixtures' capture command                              4 │
+│ 35  ○   Link the inspector into the config dir                             5 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Log ────────────────────────────────────────────────────────────────────────╮
+│ 09:44  32 started  plan-worker-deep                                          │
+│ 09:44  33 started  plan-worker-lite                                          │
+│ 09:51  31 done                                                               │
+│ 09:52  34 waiting on 32, 33                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ j/k move  enter open  q quit                                          5 tasks

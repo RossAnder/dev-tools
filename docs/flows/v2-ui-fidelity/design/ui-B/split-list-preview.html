@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>split-list-preview</title><style>
+:root { --ink:#1a1a1a; --muted:#6f6a63; --line:#d9d5cf; --chip:#e7e4e0; --sel:#c4d5ff; --page:#ffffff; }
+* { box-sizing: border-box; }
+body { margin: 24px; background: var(--page); color: var(--ink); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+.panel { width: 100%; max-width: 400px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.count { color: var(--muted); }
+.add { margin-left: auto; font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--ink); border-radius: 3px; background: #fff; color: var(--ink); }
+.body { display: flex; }
+.list { flex: none; width: 140px; border-right: 1px solid var(--line); padding: 4px 0; }
+.item { display: flex; align-items: center; gap: 6px; padding: 5px 10px; white-space: nowrap; }
+.item.sel { background: var(--sel); }
+.item i { flex: none; width: 10px; height: 10px; border-radius: 2px; }
+.item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.detail { flex: 1 1 auto; min-width: 0; padding: 10px 12px; }
+.detail h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.step i { flex: none; width: 18px; height: 18px; border-radius: 3px; }
+.notice { padding: 8px 12px; border-top: 1px solid var(--line); background: var(--chip); font-size: 13px; }
+</style></head>
+<body>
+<section class="panel">
+  <div class="head"><h2>Series</h2><span class="count">4</span><button class="add">Add</button></div>
+  <div class="body">
+    <div class="list">
+      <div class="item"><i style="background:#7e92be"></i><span>Primary</span></div>
+      <div class="item"><i style="background:#739f7c"></i><span>Alternate</span></div>
+      <div class="item sel"><i style="background:#e5715a"></i><span>Accent warm</span></div>
+      <div class="item"><i style="background:#a29c94"></i><span>Neutral</span></div>
+    </div>
+    <div class="detail">
+      <h3>Accent warm</h3>
+      <div class="step"><i style="background:#e5715a"></i>1 &nbsp;#e5715a</div>
+      <div class="step"><i style="background:#d5604a"></i>2 &nbsp;#d5604a</div>
+      <div class="step"><i style="background:#c0513c"></i>3 &nbsp;#c0513c</div>
+      <div class="step"><i style="background:#a8432f"></i>4 &nbsp;#a8432f</div>
+      <div class="step"><i style="background:#8d3624"></i>5 &nbsp;#8d3624</div>
+    </div>
+  </div>
+  <div class="notice">Accent warm step 1 is below 3:1 on white.</div>
+</section>
+</body></html>

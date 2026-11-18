@@ -1,4 +1,4 @@
-schema_version = 2
+schema_version = 3
 last_updated = 2026-11-18
 plan_path = ""
 last_import_refs = []
@@ -107,6 +107,51 @@ note = "(new)"
 [[file_notes]]
 ref = "declare-the-fixtures-capture-command"
 file = ".claude/ui-capture.toml"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-01.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-02.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-03.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-04.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-05.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-06.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-07.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-08.txt"
+note = "(new)"
+
+[[file_notes]]
+ref = "build-the-terminal-fixture-panel"
+file = "claude/skills/ui-capture/fixtures/tui/tui-09.txt"
 note = "(new)"
 
 [[specs]]
@@ -1065,18 +1110,74 @@ constraints = [
     "Touch no file outside this task's files.",
     "No external resources; one self-contained HTML file.",
 ]
-premises = []
 means = []
-design = []
-precedent = []
+design = ["design/ui-B.md#web-panel"]
+precedent = ["docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.html"]
 executor = "deep"
 
 [[specs.accept]]
 behaviour = "the clean web states (empty, one item, many items, long label) show none of the rubric's defects, judged as look entries once elaborated"
 check = ""
-kind = "forward"
+kind = ""
 positive = ""
 writes_build = true
+run_by = "look"
+states = [
+    "web-01",
+    "web-03",
+    "web-04",
+    "web-06",
+    "web-08",
+    "web-10",
+]
+
+[[specs.accept]]
+behaviour = "the swatches, the fold glyphs and the Add button keep their size at every window width, the label alone takes the slack and ends in an ellipsis when cut, and the panel ends at its last row with no band below it, as design/ui-B.md#web-panel lays out"
+check = ""
+kind = ""
+positive = ""
+writes_build = true
+run_by = "look"
+states = [
+    "web-01",
+    "web-03",
+    "web-04",
+    "web-06",
+    "web-08",
+    "web-10",
+]
+
+[[specs.accept]]
+behaviour = "states.txt names eleven states, each of which panel.html draws"
+check = 'f=claude/skills/ui-capture/fixtures/web; test "$(grep -c . $f/states.txt)" -eq 11 && while read -r s size; do grep -qF "$s" $f/panel.html || exit 1; done < $f/states.txt'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "render.sh percent-encodes '#' in the file URL, so a fragment cannot pick a state"
+check = 'grep -qF "s/#/%23/g" claude/skills/ui-capture/scripts/render.sh'
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the chosen mock exists to start from"
+check = "test -f docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.html"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "build-the-terminal-fixture-panel"
@@ -1085,18 +1186,62 @@ constraints = [
     "Touch no file outside this task's files.",
     "Plain text, one line per terminal row, no escape codes.",
 ]
-premises = []
 means = []
-design = []
-precedent = []
+design = ["design/ui-B.md#terminal-panel"]
+precedent = ["docs/flows/v2-ui-fidelity/design/ui-B/single-table.txt"]
 executor = "lite"
 
 [[specs.accept]]
 behaviour = "the clean terminal states show none of the rubric's defects, judged as look entries once elaborated"
 check = ""
-kind = "forward"
+kind = ""
 positive = ""
 writes_build = true
+run_by = "look"
+states = [
+    "tui-01",
+    "tui-03",
+    "tui-04",
+    "tui-06",
+    "tui-08",
+]
+
+[[specs.accept]]
+behaviour = "every column and the right border hold their cells on every row, a long title ends in an ellipsis inside its column, and the hint line sits inside the box's foot, as design/ui-B.md#terminal-panel lays out"
+check = ""
+kind = ""
+positive = ""
+writes_build = true
+run_by = "look"
+states = [
+    "tui-01",
+    "tui-03",
+    "tui-04",
+    "tui-06",
+    "tui-08",
+]
+
+[[specs.accept]]
+behaviour = "all nine grids exist, and each clean grid is exactly its terminal's height in lines of exactly 80 characters"
+check = """python -I -c "import pathlib,sys; d=pathlib.Path('claude/skills/ui-capture/fixtures/tui'); n=['tui-0%d' % i for i in range(1,10)]; ok=all((d/(s+'.txt')).is_file() for s in n) and all((lambda L,h: len(L)==h and all(len(l)==80 for l in L))((d/(s+'.txt')).read_text(encoding='utf-8').splitlines(), 12 if s=='tui-08' else 24) for s in ['tui-01','tui-03','tui-04','tui-06','tui-08']); sys.exit(0 if ok else 1)""""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the chosen terminal grid exists to copy from"
+check = "test -f docs/flows/v2-ui-fidelity/design/ui-B/single-table.txt"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "declare-the-fixtures-capture-command"
@@ -1105,18 +1250,69 @@ constraints = [
     "Touch no file outside this task's files.",
     "Write .claude/ui-capture.toml through tomlctl set, never the Write tool.",
 ]
-premises = []
 means = []
-design = []
-precedent = []
+design = [
+    "design/ui-B.md#web-panel",
+    "design/ui-B.md#terminal-panel",
+]
+precedent = ["claude/skills/ui-capture/scripts/render.sh"]
 executor = "lite"
 
 [[specs.accept]]
 behaviour = "the capture command lists every fixture state and captures one"
-check = ""
+check = """d=$(mktemp -d) && test "$(bash claude/skills/ui-capture/fixtures/capture.sh --list | grep -c .)" -eq 20 && bash claude/skills/ui-capture/fixtures/capture.sh --out "$d" --only web-04 --only tui-04 && test -s "$d/web-04.png" && test -s "$d/tui-04.txt" && grep -q '"web-04"' "$d/geometry.json""""
 kind = "forward"
 positive = ""
-writes_build = true
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a state the command does not know fails the capture"
+check = 'test -f claude/skills/ui-capture/fixtures/capture.sh && ! bash claude/skills/ui-capture/fixtures/capture.sh --out "$(mktemp -d)" --only no-such-state'
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the repo declares the fixtures' capture and ignores its output"
+check = "grep -qF 'claude/skills/ui-capture/fixtures/capture.sh' .claude/ui-capture.toml && git check-ignore -q .ui-capture/probe"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 2
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "render.sh takes --size, an HTML file, an output directory and a state"
+check = "grep -qF 'render.sh [--size WxH] <html> <out-dir> <state>' claude/skills/ui-capture/scripts/render.sh"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the web fixture's states file exists"
+check = "test -f claude/skills/ui-capture/fixtures/web/states.txt"
+at = "after:32"
+
+[[specs.premises]]
+claim = "the terminal fixture's grids exist"
+check = "test -f claude/skills/ui-capture/fixtures/tui/tui-01.txt"
+at = "after:33"
 
 [[specs]]
 ref = "teach-the-finding-class-scan-the-decision-class-vocabulary-read"
@@ -1142,6 +1338,131 @@ writes_build = true
 text = "Read how finding_classes.rs recognises a `class` construction site and change whichever side is the narrower fix"
 binding = "suggested"
 detail = "The failure is a false positive of the scanner on a new field named class, not a missing documented class"
+
+[[specs]]
+ref = "stop-telling-inspectors-which-states-are-controls"
+outcome = "An inspector cannot tell from its prompt which of its states are planted controls, so a control it fails is a defect it found unprompted."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The script reads no clock and no randomness; the existing test asserting that must keep passing.",
+    "The args shape, the refusal rules, the grouping and the returned index's shape stay as they are.",
+]
+means = []
+design = []
+precedent = ["claude/workflows/tests/visual.test.mjs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "no inspector prompt marks a state as a control"
+check = "! grep -qF '(control: ' claude/workflows/implement-v2-visual.js"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a control's prompt line carries every look of the milestone, a clean state's only its own, and no prompt names which states are controls"
+check = "node --test --test-reporter=tap --test-name-pattern='a control carries every look' claude/workflows/tests/visual.test.mjs | grep -q '^ok [0-9]* - implement-v2-visual: a control carries every look and no prompt says which states are controls' "
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "every Workflow script test still passes"
+check = "node --test claude/workflows/tests/"
+kind = "guard"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the inspector prompt prints each state's control flag"
+check = "grep -qF '(control: ${u.control})' claude/workflows/implement-v2-visual.js"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the return schema requires a control key"
+check = """grep -qF "required: ['state', 'control', 'verdict', 'defects', 'note']" claude/workflows/implement-v2-visual.js"""
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "tell-the-inspector-it-is-not-told-which-states-are-planted"
+outcome = "The inspector judges every state alike with no notion of which are controls, and the ui-capture skill states that judges are not told."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change only the passages the detail names.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the inspector's return shape carries no control key"
+check = """! grep -qF '"control"' claude/agents/ui-inspector.md"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the inspector is not told which states are controls"
+check = "! grep -qF 'each with `control` true or false' claude/agents/ui-inspector.md && grep -q 'not told which' claude/skills/ui-capture/references/defects.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the inspector's input list gives each state a control flag"
+check = "grep -qF 'each with `control` true or false' claude/agents/ui-inspector.md"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "defects.md says the judge reports a control that showed no defect"
+check = "grep -qF 'the judge says so' claude/skills/ui-capture/references/defects.md"
+at = "base"
+
+[specs.premises.probe]
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+neg_rc = 0
+verdict = "holds"
 
 [[milestones]]
 id = "A"
@@ -1169,10 +1490,49 @@ at = "565754b52a1bb7df02987e4b41655d3c21fd1494"
 
 [[milestones]]
 id = "B"
-gates = ["bash claude/skills/ui-capture/fixtures/capture.sh --list"]
-elaboration = "deferred"
+gates = [
+    "bash claude/skills/ui-capture/fixtures/capture.sh --list",
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+]
+elaboration = "elaborated"
 defer_reason = "Runs only after milestone A is linked into the Claude config dir and a new session has started, since new agents and Workflows register at session start; elaborating it then also exercises the new UI design step."
 after = ["A"]
+ui_states = [
+    "web-01",
+    "web-03",
+    "web-04",
+    "web-06",
+    "web-08",
+    "web-10",
+    "tui-01",
+    "tui-03",
+    "tui-04",
+    "tui-06",
+    "tui-08",
+]
+ui_controls = [
+    "web-02",
+    "web-05",
+    "web-07",
+    "web-09",
+    "web-11",
+    "tui-02",
+    "tui-05",
+    "tui-07",
+    "tui-09",
+]
+
+[[milestones.gate_probes]]
+gate = "bash claude/skills/ui-capture/fixtures/capture.sh --list"
+probe = "bash claude/skills/ui-capture/scripts/render.sh --self-test"
+verdict = "holds"
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
+
+[[milestones.gate_probes]]
+gate = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+probe = "node --version"
+verdict = "holds"
+at = "ba73780bb476497ef3c43d5807c9ce243dd5d16e"
 
 [[changes]]
 at = 2026-11-18T07:14:05Z
@@ -1182,6 +1542,472 @@ old = ""
 new = "Teach the finding-class scan the decision class vocabulary read"
 actor = "orchestrator"
 reason = """tangential breakage from tasks 15, 17, 21, 22, 23 and 28: cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source and the_plan_scan_reads_both_construction_sites_and_no_tasks_class fail with 'tomlctl/src/plan/schema.rs: no severity resolves for `class`'; task 1's vocab(table, "class", ...) read in the decision parser looks like a finding-class construction site to the scanner"""
+
+[[changes]]
+at = 2026-11-18T08:24:25Z
+ref = "stop-telling-inspectors-which-states-are-controls"
+field = "*"
+old = ""
+new = "Stop telling inspectors which states are controls"
+actor = "orchestrator"
+reason = "elaborating B: decisions D37 and D39 make the controls blind"
+
+[[changes]]
+at = 2026-11-18T08:24:25Z
+ref = "tell-the-inspector-it-is-not-told-which-states-are-planted"
+field = "*"
+old = ""
+new = "Tell the inspector it is not told which states are planted"
+actor = "orchestrator"
+reason = "elaborating B: decisions D37 and D39 make the controls blind"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "action"
+old = "A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph, a panel held at full viewport height over a one-item list), each state selected by URL fragment."
+new = "Build panel.html, one self-contained page drawing the stacked-rows colour-series panel of design/ui-B.md#web-panel in eleven states picked by the data-state attribute on its html tag, and states.txt naming each state with its window size."
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "detail"
+old = ""
+new = """
+The page's first `<html` tag is written exactly `<html lang="en" data-state="web-01">`. Its script reads the state from `document.documentElement.dataset.state`, or from `location.hash` without the `#` when that names a state, so a person can open `panel.html#web-04` in a browser; the capture command (task 34) writes a copy per state with the attribute's value replaced. A fragment cannot select the state for a capture, because `render.sh` percent-encodes `#` in the file URL.
+
+The state names are neutral on purpose: nothing a capture shows, and no state name, says which states carry a planted defect. Write no comment, class name, id or visible text in panel.html naming a planted defect or a control; name each state's variant by what it draws (`stretchTiles`, `heldBand`), never by the defect.
+
+The states, in this order:
+
+| State | Window | Draws | Clean or planted |
+|---|---|---|---|
+| web-01 | 640x480 | No series: the header, then `No series yet.` | clean |
+| web-02 | 640x480 | One series, with the panel's height stretched to the window less the 48 px margin | planted: panel sized wrong for its content (rubric class 3) |
+| web-03 | 640x480 | One series | clean |
+| web-04 | 640x560 | Eight series and one notice | clean |
+| web-05 | 640x480 | One series whose label is about 90 characters, drawn on one line with no ellipsis and running past the panel's right edge by at least a third of the panel's width | planted: overflowing content (class 4) |
+| web-06 | 640x480 | Three series, one label about 90 characters, cut with an ellipsis | clean |
+| web-07 | 640x560 | Eight series, no notice, and an empty 48 px band at the foot of the panel where the notices band would be | planted: reserved empty space (class 2) |
+| web-08 | 1280x560 | Eight series and one notice | clean |
+| web-09 | 1280x560 | Eight series and one notice, the five swatches of each row stretched to share the row's free width | planted: scaling with the container (class 1) |
+| web-10 | 500x560 | Eight series and one notice | clean |
+| web-11 | 640x480 | Four series whose fold glyphs are bold `+` and `−` in 16 px bordered squares in place of `▸` | planted: off-style glyph (class 7) |
+
+Every clean state follows design/ui-B.md#web-panel exactly, and so does every planted state apart from its one planted defect. Use the mock design/ui-B/stacked-rows.html (beside design/ui-B.md under docs/flows/v2-ui-fidelity/) as the starting point for the tokens and the row markup, with the panel's max width at 480 px as the design file says. Series names and swatch colours are yours to choose, in the mock's palette: real-looking names such as Primary, Alternate, Accent warm, Neutral.
+
+states.txt holds one line per state, in the table's order: the state's name, one space, its window as `<width>x<height>`, such as `web-04 640x560`."""
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "spec.accept"
+old = """[{"behaviour":"the clean web states (empty, one item, many items, long label) show none of the rubric's defects, judged as look entries once elaborated","check":"","kind":"forward","positive":"","writes_build":true}]"""
+new = '''[{"behaviour":"the clean web states (empty, one item, many items, long label) show none of the rubric's defects, judged as look entries once elaborated","check":"","kind":"","positive":"","writes_build":true,"run_by":"look","states":["web-01","web-03","web-04","web-06","web-08","web-10"]},{"behaviour":"the swatches, the fold glyphs and the Add button keep their size at every window width, the label alone takes the slack and ends in an ellipsis when cut, and the panel ends at its last row with no band below it, as design/ui-B.md#web-panel lays out","check":"","kind":"","positive":"","writes_build":true,"run_by":"look","states":["web-01","web-03","web-04","web-06","web-08","web-10"]},{"behaviour":"states.txt names eleven states, each of which panel.html draws","check":"f=claude/skills/ui-capture/fixtures/web; test \"$(grep -c . $f/states.txt)\" -eq 11 && while read -r s size; do grep -qF \"$s\" $f/panel.html || exit 1; done < $f/states.txt","kind":"forward","positive":"","writes_build":false}]'''
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "spec.premises"
+old = "[]"
+new = '''[{"claim":"render.sh percent-encodes '#' in the file URL, so a fragment cannot pick a state","check":"grep -qF \"s/#/%23/g\" claude/skills/ui-capture/scripts/render.sh","at":"base"},{"claim":"the chosen mock exists to start from","check":"test -f docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.html","at":"base"}]'''
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "spec.design"
+old = "[]"
+new = '["design/ui-B.md#web-panel"]'
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-web-fixture-panel"
+field = "spec.precedent"
+old = "[]"
+new = '["docs/flows/v2-ui-fidelity/design/ui-B/stacked-rows.html"]'
+actor = "orchestrator"
+reason = "elaborated: stacked-rows layout (D35), blind neutral state names (D37), states picked by a data-state attribute since render.sh percent-encodes '#', web sizes at 500 px or wider (D38)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "action"
+old = "Text-grid captures of a small terminal panel at a fixed 80x24: clean states and planted-defect controls (a column out of line, a label truncated without an ellipsis, a border collision, a blank band)."
+new = "Write nine text grids under fixtures/tui/, one per state, drawing the single-table task list of design/ui-B.md#terminal-panel, plain text with one line per terminal row."
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "detail"
+old = ""
+new = """
+Each file is `<state>.txt`, UTF-8, LF line endings, one line per terminal row, every line exactly 80 characters including its border characters, with no escape codes. The box-drawing characters are `╭ ╮ ╰ ╯ ─ │`; the status glyphs `✓ ● ○` and the ellipsis `…` are one cell each.
+
+The state names are neutral on purpose: no grid's visible text, and no file name, says which grids carry a planted defect.
+
+| State | Size | Draws | Clean or planted |
+|---|---|---|---|
+| tui-01 | 80x24 | No tasks: header, separator, `No tasks in this milestone.` from column 10 on row 3, hint line `0 tasks` | clean |
+| tui-02 | 80x24 | Five tasks, the `FILES` value of the fourth task one column right of the others | planted: column out of line (class 9) |
+| tui-03 | 80x24 | One task | clean |
+| tui-04 | 80x24 | 25 tasks: 18 task rows on rows 3 to 20, then `… 7 more` on row 21 | clean |
+| tui-05 | 80x24 | Five tasks, the third's title longer than 63 cells cut at column 72 mid-word with no ellipsis | planted: truncation without an ellipsis (class 8) |
+| tui-06 | 80x24 | Five tasks, the third's title longer than 63 cells, ending `…` in column 72 | clean |
+| tui-07 | 80x24 | Five tasks, the third's title running through the right border so that row has no `│` in column 79 | planted: clipped or overflowing content (class 4) |
+| tui-08 | 80x12 | 20 tasks: six task rows on rows 3 to 8, `… 14 more` on row 9, the hint line on row 10 | clean |
+| tui-09 | 80x24 | Five tasks, pushed down by five blank rows between the separator and the first task | planted: reserved empty space (class 2) |
+
+Every clean grid follows design/ui-B.md#terminal-panel cell for cell, and every planted grid does too apart from its one planted defect. design/ui-B/single-table.txt beside design/ui-B.md is the model: copy its border, header, separator and hint line, and its column cells. Task ids, titles, statuses and file counts are yours to choose. A small throwaway script may draw the grids, but only the nine `.txt` files are committed."""
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "files"
+old = '["claude/skills/ui-capture/fixtures/tui/"]'
+new = '["claude/skills/ui-capture/fixtures/tui/tui-01.txt","claude/skills/ui-capture/fixtures/tui/tui-02.txt","claude/skills/ui-capture/fixtures/tui/tui-03.txt","claude/skills/ui-capture/fixtures/tui/tui-04.txt","claude/skills/ui-capture/fixtures/tui/tui-05.txt","claude/skills/ui-capture/fixtures/tui/tui-06.txt","claude/skills/ui-capture/fixtures/tui/tui-07.txt","claude/skills/ui-capture/fixtures/tui/tui-08.txt","claude/skills/ui-capture/fixtures/tui/tui-09.txt"]'
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "spec.accept"
+old = """[{"behaviour":"the clean terminal states show none of the rubric's defects, judged as look entries once elaborated","check":"","kind":"forward","positive":"","writes_build":true}]"""
+new = '''[{"behaviour":"the clean terminal states show none of the rubric's defects, judged as look entries once elaborated","check":"","kind":"","positive":"","writes_build":true,"run_by":"look","states":["tui-01","tui-03","tui-04","tui-06","tui-08"]},{"behaviour":"every column and the right border hold their cells on every row, a long title ends in an ellipsis inside its column, and the hint line sits inside the box's foot, as design/ui-B.md#terminal-panel lays out","check":"","kind":"","positive":"","writes_build":true,"run_by":"look","states":["tui-01","tui-03","tui-04","tui-06","tui-08"]},{"behaviour":"all nine grids exist, and each clean grid is exactly its terminal's height in lines of exactly 80 characters","check":"python -I -c \"import pathlib,sys; d=pathlib.Path('claude/skills/ui-capture/fixtures/tui'); n=['tui-0%d' % i for i in range(1,10)]; ok=all((d/(s+'.txt')).is_file() for s in n) and all((lambda L,h: len(L)==h and all(len(l)==80 for l in L))((d/(s+'.txt')).read_text(encoding='utf-8').splitlines(), 12 if s=='tui-08' else 24) for s in ['tui-01','tui-03','tui-04','tui-06','tui-08']); sys.exit(0 if ok else 1)\"","kind":"forward","positive":"","writes_build":false}]'''
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "spec.premises"
+old = "[]"
+new = '[{"claim":"the chosen terminal grid exists to copy from","check":"test -f docs/flows/v2-ui-fidelity/design/ui-B/single-table.txt","at":"base"}]'
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "spec.design"
+old = "[]"
+new = '["design/ui-B.md#terminal-panel"]'
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "spec.precedent"
+old = "[]"
+new = '["docs/flows/v2-ui-fidelity/design/ui-B/single-table.txt"]'
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "build-the-terminal-fixture-panel"
+field = "file_notes"
+old = "{}"
+new = '{"claude/skills/ui-capture/fixtures/tui/tui-01.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-02.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-03.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-04.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-05.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-06.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-07.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-08.txt":"(new)","claude/skills/ui-capture/fixtures/tui/tui-09.txt":"(new)"}'
+actor = "orchestrator"
+reason = "elaborated: single-table layout (D36), blind neutral state names (D37), one named grid file per state"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "action"
+old = "A capture command meeting the ui-capture contract for both fixtures (render.sh per web state, copy per terminal state, --list, --only, --out), declared in .claude/ui-capture.toml with paths naming the fixtures directory."
+new = "Write capture.sh, the ui-capture contract's command over both fixtures, declare it in .claude/ui-capture.toml, and ignore its output directory in .gitignore."
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "detail"
+old = ""
+new = """
+capture.sh, run from the repo root as `bash claude/skills/ui-capture/fixtures/capture.sh [--out <dir>] [--only <state>]... [--list]`, meets the contract in claude/skills/ui-capture/SKILL.md:
+
+- The states are the web states, read from `fixtures/web/states.txt` in its order, then the terminal states, the stems of `fixtures/tui/*.txt` sorted by name: twenty in all.
+- `--list` prints every state name, one per line, in that order, and captures nothing.
+- `--only <state>` is repeatable; without it every state is captured. A name it does not know is reported on stderr and the command exits 1 having captured nothing.
+- `--out <dir>` defaults to `.ui-capture`; the directory is created when absent.
+- A web state: copy `fixtures/web/panel.html` into a temporary directory as `<state>.html`, with its `data-state="web-01"` attribute replaced by the state's name, then run `bash claude/skills/ui-capture/scripts/render.sh --size <its window> <copy> <out> <state>`, which writes `<out>/<state>.png` and merges the state's key into `<out>/geometry.json`. Remove the temporary directory on exit.
+- A terminal state: copy `fixtures/tui/<state>.txt` to `<out>/<state>.txt`. It gets no geometry key.
+- Exit 0 only when every asked state was captured; carry render.sh's non-zero exit through, exit 2 included (no browser), naming the state it failed on. Capture every asked state before exiting, so one failure does not hide the others.
+- Locate the fixtures and render.sh relative to the script's own directory, never the working directory.
+
+Declare it with the tomlctl CLI, not the Write tool, and write no sidecar:
+
+```
+tomlctl set .claude/ui-capture.toml --set 'command=bash claude/skills/ui-capture/fixtures/capture.sh' --set out=.ui-capture --no-write-integrity
+tomlctl set-json .claude/ui-capture.toml paths --json '["claude/skills/ui-capture/fixtures/**"]' --no-write-integrity
+```
+
+Add `/.ui-capture/` to `.gitignore`, under a one-line comment saying it is the UI capture command's output."""
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "files"
+old = '["claude/skills/ui-capture/fixtures/capture.sh",".claude/ui-capture.toml"]'
+new = '["claude/skills/ui-capture/fixtures/capture.sh",".claude/ui-capture.toml",".gitignore"]'
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "spec.accept"
+old = '[{"behaviour":"the capture command lists every fixture state and captures one","check":"","kind":"forward","positive":"","writes_build":true}]'
+new = '''[{"behaviour":"the capture command lists every fixture state and captures one","check":"d=$(mktemp -d) && test \"$(bash claude/skills/ui-capture/fixtures/capture.sh --list | grep -c .)\" -eq 20 && bash claude/skills/ui-capture/fixtures/capture.sh --out \"$d\" --only web-04 --only tui-04 && test -s \"$d/web-04.png\" && test -s \"$d/tui-04.txt\" && grep -q '\"web-04\"' \"$d/geometry.json\"","kind":"forward","positive":"","writes_build":false},{"behaviour":"a state the command does not know fails the capture","check":"test -f claude/skills/ui-capture/fixtures/capture.sh && ! bash claude/skills/ui-capture/fixtures/capture.sh --out \"$(mktemp -d)\" --only no-such-state","kind":"forward","positive":"","writes_build":false},{"behaviour":"the repo declares the fixtures' capture and ignores its output","check":"grep -qF 'claude/skills/ui-capture/fixtures/capture.sh' .claude/ui-capture.toml && git check-ignore -q .ui-capture/probe","kind":"forward","positive":"","writes_build":false}]'''
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "spec.premises"
+old = "[]"
+new = """[{"claim":"render.sh takes --size, an HTML file, an output directory and a state","check":"grep -qF 'render.sh [--size WxH] <html> <out-dir> <state>' claude/skills/ui-capture/scripts/render.sh","at":"base"},{"claim":"the web fixture's states file exists","check":"test -f claude/skills/ui-capture/fixtures/web/states.txt","at":"after:32"},{"claim":"the terminal fixture's grids exist","check":"test -f claude/skills/ui-capture/fixtures/tui/tui-01.txt","at":"after:33"}]"""
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "spec.design"
+old = "[]"
+new = '["design/ui-B.md#web-panel","design/ui-B.md#terminal-panel"]'
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:19Z
+ref = "declare-the-fixtures-capture-command"
+field = "spec.precedent"
+old = "[]"
+new = '["claude/skills/ui-capture/scripts/render.sh"]'
+actor = "orchestrator"
+reason = "elaborated: capture over per-state page copies and the nine grids, the out directory ignored (D40)"
+
+[[changes]]
+at = 2026-11-18T08:25:36Z
+ref = "milestone:B"
+field = "gates"
+old = '["bash claude/skills/ui-capture/fixtures/capture.sh --list"]'
+new = '["bash claude/skills/ui-capture/fixtures/capture.sh --list","cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"]'
+actor = "orchestrator"
+reason = "elaborating B: capture states and blind controls per design/ui-B.md (D35-D37); rows 36 and 37 edit the Workflow script, agent and skill files the dispatch tests gate"
+
+[[changes]]
+at = 2026-11-18T08:25:36Z
+ref = "milestone:B"
+field = "gate_probes"
+old = "[]"
+new = '[{"gate":"bash claude/skills/ui-capture/fixtures/capture.sh --list","probe":"bash claude/skills/ui-capture/scripts/render.sh --self-test"},{"gate":"cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests","probe":"node --version"}]'
+actor = "orchestrator"
+reason = "elaborating B: capture states and blind controls per design/ui-B.md (D35-D37); rows 36 and 37 edit the Workflow script, agent and skill files the dispatch tests gate"
+
+[[changes]]
+at = 2026-11-18T08:25:36Z
+ref = "milestone:B"
+field = "ui_states"
+old = "[]"
+new = '["web-01","web-03","web-04","web-06","web-08","web-10","tui-01","tui-03","tui-04","tui-06","tui-08"]'
+actor = "orchestrator"
+reason = "elaborating B: capture states and blind controls per design/ui-B.md (D35-D37); rows 36 and 37 edit the Workflow script, agent and skill files the dispatch tests gate"
+
+[[changes]]
+at = 2026-11-18T08:25:36Z
+ref = "milestone:B"
+field = "ui_controls"
+old = "[]"
+new = '["web-02","web-05","web-07","web-09","web-11","tui-02","tui-05","tui-07","tui-09"]'
+actor = "orchestrator"
+reason = "elaborating B: capture states and blind controls per design/ui-B.md (D35-D37); rows 36 and 37 edit the Workflow script, agent and skill files the dispatch tests gate"
+
+[[changes]]
+at = 2026-11-18T08:31:47Z
+ref = "stop-telling-inspectors-which-states-are-controls"
+field = "detail"
+old = """
+Today `inspectorPrompt` prints each state as `- <state> (control: <bool>)`, lists the group's states in group order (controls first, since they are spread one per group before the clean states fill), and prints each look with its `states` list. Each of those tells the inspector which states are controls.
+
+The new prompt's `states:` and `looks:` blocks, exactly:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+- `<k>` is the look's 1-based position in `a.looks` as passed in the args, so a number means the same look in every inspector's prompt.
+- The `states:` lines list the group's states sorted by name (plain string order), whatever their order in the group.
+- A clean state carries the numbers of the looks whose `states` include it. A control carries the number of every look in `a.looks`. `looks none` is printed only when the milestone has no looks at all, or a clean state no look names.
+- The `looks:` block prints each look any state of the group carries, once, in number order, as compact JSON of `task`, `accept` and `behaviour` only: never its `states`. With no look carried it prints `- none`.
+
+Keep everything else as it is: the args checks and their refusal messages, `GROUP_SIZE`, the grouping (controls spread one per group first, then clean states fill), the note path, and the index the Workflow returns, whose entries still carry `control` from the args. In `RETURN_SCHEMA`, take `control` out of `required` and keep it in `properties`, so an inspector return with or without a `control` key validates; the Workflow never reads it.
+
+In visual.test.mjs, change `statesOf` and the `judging` helper to parse the new `states:` lines, and decide each state's verdict from the test's own args (a test knows its controls), not from the prompt. Fix the existing tests to the new shape without weakening what they assert, and add one test named exactly `implement-v2-visual: a control carries every look and no prompt says which states are controls`, asserting for a launch with two looks naming different clean states and two controls: no prompt contains `control`, each prompt's states are in name order, each control's line lists every look number, each clean state's line lists only its own, and no prompt's looks block contains `"states"`."""
+new = """
+Today `inspectorPrompt` prints each state as `- <state> (control: <bool>)`, lists the group's states in group order (controls first, since they are spread one per group before the clean states fill), and prints each look with its `states` list. Each of those tells the inspector which states are controls.
+
+The new prompt's `states:` and `looks:` blocks, exactly:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+- `<k>` is the look's 1-based position in `a.looks` as passed in the args, so a number means the same look in every inspector's prompt.
+- The `states:` lines list the group's states sorted by name (plain string order), whatever their order in the group.
+- A clean state carries the numbers of the looks whose `states` include it.
+- A control carries the numbers of the looks that name at least one clean state sharing the control's prefix, the prefix being the name up to its last `-` (`web-02` has prefix `web`; a name with no `-` is its own prefix). When no clean state shares the prefix, the control carries every look in `a.looks`. So in a milestone whose web looks name `web-*` states and whose terminal looks name `tui-*` states, `web-02` carries the web looks and `tui-05` the terminal looks.
+- `looks none` is printed only when a state carries no look.
+- The `looks:` block prints each look any state of the group carries, once, in number order, as compact JSON of `task`, `accept` and `behaviour` only: never its `states`. With no look carried it prints `- none`.
+
+Keep everything else as it is: the args checks and their refusal messages, `GROUP_SIZE`, the grouping (controls spread one per group first, then clean states fill), the note path, and the index the Workflow returns, whose entries still carry `control` from the args. In `RETURN_SCHEMA`, take `control` out of `required` and keep it in `properties`, so an inspector return with or without a `control` key validates; the Workflow never reads it.
+
+In visual.test.mjs, change `statesOf` and the `judging` helper to parse the new `states:` lines, and decide each state's verdict from the test's own args (a test knows its controls), not from the prompt. Fix the existing tests to the new shape without weakening what they assert, and add one test named exactly `implement-v2-visual: a control carries every look and no prompt says which states are controls`, for a launch with clean states `web-01`, `web-03`, `tui-01`, controls `web-02`, `tui-02` and `odd`, one look naming `web-01` and `web-03` and one naming `tui-01`. It asserts: no prompt contains `control`; each prompt's states are in name order; `web-02` carries the web look only, `tui-02` the terminal look only, `odd` both; each clean state carries only its own look; and no prompt's looks block contains `"states"`."""
+actor = "orchestrator"
+reason = "cold read B point 1: a control takes its own surface's looks by name prefix (D41)"
+
+[[changes]]
+at = 2026-11-18T08:31:47Z
+ref = "tell-the-inspector-it-is-not-told-which-states-are-planted"
+field = "detail"
+old = """
+The implement-v2-visual Workflow's prompt now gives the inspector, in place of `- <state> (control: <bool>)` lines and looks with their state lists:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+In claude/agents/ui-inspector.md:
+
+- The input list's `states` line: the states you judge, each with the numbers of the look entries it is judged against; the `looks` line: the look entries those numbers name, each with its task, accept index and behaviour.
+- The `## Controls` section becomes: some states may carry a defect planted on purpose, and you are not told which. Judge every state the same way against the rubric and the looks it carries. Never guess which states are planted, never go easier on a state because another shows a defect, and never invent a defect. A look a state carries that its capture cannot show, such as a terminal criterion on an image, is answered `fail` with that reason, never skipped.
+- The note's first line drops the `, control showed no defect: <states>` clause: `Verdict: <n> states judged, <f> fail, <u> unsure, <p> pass`.
+- The return shape drops `control`: `{"states": [{"state": "<name>", "verdict": "pass|fail|unsure", "defects": [...], "note": "<the note path>"}]}`.
+- The frontmatter `description` drops "and says so when a planted control state shows no defect".
+
+In claude/skills/ui-capture/references/defects.md, `## Controls`: replace "when the judge finds no defect in it, the judge says so, and its answers on the other states cannot be trusted" with: the judge is not told which states are controls; the orchestrator reads each control's verdict, and a control the judge passes means its answers on the other states cannot be trusted.
+
+In claude/skills/ui-capture/SKILL.md, `## Controls`: add one sentence that the judge is not told which states are controls, so a control it fails is a defect it found without being told one was there.
+
+After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which gates every `claude/**/*.md` file."""
+new = """
+The implement-v2-visual Workflow's prompt now gives the inspector, in place of `- <state> (control: <bool>)` lines and looks with their state lists:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+In claude/agents/ui-inspector.md:
+
+- The input list's `states` line: the states you judge, each with the numbers of the look entries it is judged against; the `looks` line: the look entries those numbers name, each `{task, accept, behaviour}`, `behaviour` being the criterion.
+- `## Judge each state`, pass 3 (Look entries): judge each look entry whose number the state's line carries, in place of "each look entry whose `states` names this state".
+- `## Verdicts`, the `pass` bullet: "every look entry the state carries is met", in place of "every look entry naming the state is met".
+- The `## Controls` section becomes: some states may carry a defect planted on purpose, and you are not told which. Judge every state the same way against the rubric and the looks it carries. Never guess which states are planted, never go easier on a state because another shows a defect, and never invent a defect.
+- The note's first line drops the `, control showed no defect: <states>` clause: `Verdict: <n> states judged, <f> fail, <u> unsure, <p> pass`.
+- The return shape drops `control`: `{"states": [{"state": "<name>", "verdict": "pass|fail|unsure", "defects": [...], "note": "<the note path>"}]}`.
+- The frontmatter `description` drops "and says so when a planted control state shows no defect".
+
+In claude/skills/ui-capture/references/defects.md, `## Controls`: replace "when the judge finds no defect in it, the judge says so, and its answers on the other states cannot be trusted" with: the judge is not told which states are controls; the orchestrator reads each control's verdict, and a control the judge passes means its answers on the other states cannot be trusted.
+
+In claude/skills/ui-capture/SKILL.md, `## Controls`, add two sentences: the judge is not told which states are controls, so a control it fails is a defect it found without being told one was there; and a control is judged against the look entries of the clean states that share its name up to the last `-`, so a project names each state `<surface>-<n>`, such as `settings-03`, with a control taking its surface's prefix.
+
+After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which gates every `claude/**/*.md` file."""
+actor = "orchestrator"
+reason = "cold read B points 1 and 2: no fail on an inapplicable look, and the look pass and pass verdict read look numbers"
+
+[[changes]]
+at = 2026-11-18T08:31:47Z
+ref = "declare-the-fixtures-capture-command"
+field = "detail"
+old = """
+capture.sh, run from the repo root as `bash claude/skills/ui-capture/fixtures/capture.sh [--out <dir>] [--only <state>]... [--list]`, meets the contract in claude/skills/ui-capture/SKILL.md:
+
+- The states are the web states, read from `fixtures/web/states.txt` in its order, then the terminal states, the stems of `fixtures/tui/*.txt` sorted by name: twenty in all.
+- `--list` prints every state name, one per line, in that order, and captures nothing.
+- `--only <state>` is repeatable; without it every state is captured. A name it does not know is reported on stderr and the command exits 1 having captured nothing.
+- `--out <dir>` defaults to `.ui-capture`; the directory is created when absent.
+- A web state: copy `fixtures/web/panel.html` into a temporary directory as `<state>.html`, with its `data-state="web-01"` attribute replaced by the state's name, then run `bash claude/skills/ui-capture/scripts/render.sh --size <its window> <copy> <out> <state>`, which writes `<out>/<state>.png` and merges the state's key into `<out>/geometry.json`. Remove the temporary directory on exit.
+- A terminal state: copy `fixtures/tui/<state>.txt` to `<out>/<state>.txt`. It gets no geometry key.
+- Exit 0 only when every asked state was captured; carry render.sh's non-zero exit through, exit 2 included (no browser), naming the state it failed on. Capture every asked state before exiting, so one failure does not hide the others.
+- Locate the fixtures and render.sh relative to the script's own directory, never the working directory.
+
+Declare it with the tomlctl CLI, not the Write tool, and write no sidecar:
+
+```
+tomlctl set .claude/ui-capture.toml --set 'command=bash claude/skills/ui-capture/fixtures/capture.sh' --set out=.ui-capture --no-write-integrity
+tomlctl set-json .claude/ui-capture.toml paths --json '["claude/skills/ui-capture/fixtures/**"]' --no-write-integrity
+```
+
+Add `/.ui-capture/` to `.gitignore`, under a one-line comment saying it is the UI capture command's output."""
+new = """
+capture.sh, run from the repo root as `bash claude/skills/ui-capture/fixtures/capture.sh [--out <dir>] [--only <state>]... [--list]`, meets the contract in claude/skills/ui-capture/SKILL.md:
+
+- The states are the web states, read from `fixtures/web/states.txt` in its order, then the terminal states, the stems of `fixtures/tui/*.txt` sorted by name: twenty in all.
+- `--list` prints every state name, one per line, in that order, and captures nothing.
+- `--only <state>` is repeatable; without it every state is captured. A name it does not know is reported on stderr and the command exits 1 having captured nothing.
+- `--out <dir>` defaults to `.ui-capture`; the directory is created when absent.
+- A web state: copy `fixtures/web/panel.html` into a temporary directory as `<state>.html`, with its `data-state="web-01"` attribute replaced by the state's name, then run `bash claude/skills/ui-capture/scripts/render.sh --size <its window> <copy> <out> <state>`, which writes `<out>/<state>.png` and merges the state's key into `<out>/geometry.json`. Remove the temporary directory on exit.
+- A terminal state: copy `fixtures/tui/<state>.txt` to `<out>/<state>.txt`. It gets no geometry key.
+- Capture every asked state before exiting, so one failure does not hide the others, and name each failed state with its exit code on stderr. Exit 0 only when every asked state was captured; otherwise exit with the highest code any state failed with, so a missing browser (render.sh's 2) is never reported as an ordinary render failure (1).
+- Locate the fixtures and render.sh relative to the script's own directory, never the working directory.
+
+Declare it with the tomlctl CLI, not the Write tool, and write no sidecar:
+
+```
+tomlctl set .claude/ui-capture.toml --set 'command=bash claude/skills/ui-capture/fixtures/capture.sh' --set out=.ui-capture --no-write-integrity
+tomlctl set-json .claude/ui-capture.toml paths --json '["claude/skills/ui-capture/fixtures/**"]' --no-write-integrity
+```
+
+Add `/.ui-capture/` to `.gitignore`, under a one-line comment saying it is the UI capture command's output."""
+actor = "orchestrator"
+reason = "cold read B point 3: capture.sh exits with the highest code any state failed with"
+
+[[changes]]
+at = 2026-11-18T08:32:35Z
+ref = "milestone:B"
+field = "elaboration"
+old = "deferred"
+new = "elaborated"
+actor = "orchestrator"
+reason = "elaborated: layouts stacked-rows and single-table picked (D35, D36, D42), blind controls with neutral names and prefix-matched looks (D37, D39, D41), 500 px floor left to the backlog (D38), out dir ignored (D40); rows 32-34 revised, 36 and 37 added; cold read ok with 4 points applied; all accept probes healthy, gate probes hold"
 
 [[items]]
 id = 1
@@ -1960,8 +2786,31 @@ files = [
 needs = []
 coupling = []
 deps_note = ""
-action = "A small static panel in the project's high-contrast style, with clean states (empty list, one item, many items, long label) and planted-defect control states (tiles scaling with the panel, a reserved blank notices band, overflowing label, an off-style +/- glyph, a panel held at full viewport height over a one-item list), each state selected by URL fragment."
-detail = ""
+action = "Build panel.html, one self-contained page drawing the stacked-rows colour-series panel of design/ui-B.md#web-panel in eleven states picked by the data-state attribute on its html tag, and states.txt naming each state with its window size."
+detail = """
+The page's first `<html` tag is written exactly `<html lang="en" data-state="web-01">`. Its script reads the state from `document.documentElement.dataset.state`, or from `location.hash` without the `#` when that names a state, so a person can open `panel.html#web-04` in a browser; the capture command (task 34) writes a copy per state with the attribute's value replaced. A fragment cannot select the state for a capture, because `render.sh` percent-encodes `#` in the file URL.
+
+The state names are neutral on purpose: nothing a capture shows, and no state name, says which states carry a planted defect. Write no comment, class name, id or visible text in panel.html naming a planted defect or a control; name each state's variant by what it draws (`stretchTiles`, `heldBand`), never by the defect.
+
+The states, in this order:
+
+| State | Window | Draws | Clean or planted |
+|---|---|---|---|
+| web-01 | 640x480 | No series: the header, then `No series yet.` | clean |
+| web-02 | 640x480 | One series, with the panel's height stretched to the window less the 48 px margin | planted: panel sized wrong for its content (rubric class 3) |
+| web-03 | 640x480 | One series | clean |
+| web-04 | 640x560 | Eight series and one notice | clean |
+| web-05 | 640x480 | One series whose label is about 90 characters, drawn on one line with no ellipsis and running past the panel's right edge by at least a third of the panel's width | planted: overflowing content (class 4) |
+| web-06 | 640x480 | Three series, one label about 90 characters, cut with an ellipsis | clean |
+| web-07 | 640x560 | Eight series, no notice, and an empty 48 px band at the foot of the panel where the notices band would be | planted: reserved empty space (class 2) |
+| web-08 | 1280x560 | Eight series and one notice | clean |
+| web-09 | 1280x560 | Eight series and one notice, the five swatches of each row stretched to share the row's free width | planted: scaling with the container (class 1) |
+| web-10 | 500x560 | Eight series and one notice | clean |
+| web-11 | 640x480 | Four series whose fold glyphs are bold `+` and `−` in 16 px bordered squares in place of `▸` | planted: off-style glyph (class 7) |
+
+Every clean state follows design/ui-B.md#web-panel exactly, and so does every planted state apart from its one planted defect. Use the mock design/ui-B/stacked-rows.html (beside design/ui-B.md under docs/flows/v2-ui-fidelity/) as the starting point for the tokens and the row markup, with the panel's max width at 480 px as the design file says. Series names and swatch colours are yours to choose, in the mock's palette: real-looking names such as Primary, Alternate, Accent warm, Neutral.
+
+states.txt holds one line per state, in the table's order: the state's name, one space, its window as `<width>x<height>`, such as `web-04 640x560`."""
 acceptance = ""
 agent = ""
 commit = ""
@@ -1976,12 +2825,39 @@ checkpoint = "B"
 phase = ""
 phase_depth = 0
 heading_depth = 3
-files = ["claude/skills/ui-capture/fixtures/tui/"]
+files = [
+    "claude/skills/ui-capture/fixtures/tui/tui-01.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-02.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-03.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-04.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-05.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-06.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-07.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-08.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-09.txt",
+]
 needs = []
 coupling = []
 deps_note = ""
-action = "Text-grid captures of a small terminal panel at a fixed 80x24: clean states and planted-defect controls (a column out of line, a label truncated without an ellipsis, a border collision, a blank band)."
-detail = ""
+action = "Write nine text grids under fixtures/tui/, one per state, drawing the single-table task list of design/ui-B.md#terminal-panel, plain text with one line per terminal row."
+detail = """
+Each file is `<state>.txt`, UTF-8, LF line endings, one line per terminal row, every line exactly 80 characters including its border characters, with no escape codes. The box-drawing characters are `╭ ╮ ╰ ╯ ─ │`; the status glyphs `✓ ● ○` and the ellipsis `…` are one cell each.
+
+The state names are neutral on purpose: no grid's visible text, and no file name, says which grids carry a planted defect.
+
+| State | Size | Draws | Clean or planted |
+|---|---|---|---|
+| tui-01 | 80x24 | No tasks: header, separator, `No tasks in this milestone.` from column 10 on row 3, hint line `0 tasks` | clean |
+| tui-02 | 80x24 | Five tasks, the `FILES` value of the fourth task one column right of the others | planted: column out of line (class 9) |
+| tui-03 | 80x24 | One task | clean |
+| tui-04 | 80x24 | 25 tasks: 18 task rows on rows 3 to 20, then `… 7 more` on row 21 | clean |
+| tui-05 | 80x24 | Five tasks, the third's title longer than 63 cells cut at column 72 mid-word with no ellipsis | planted: truncation without an ellipsis (class 8) |
+| tui-06 | 80x24 | Five tasks, the third's title longer than 63 cells, ending `…` in column 72 | clean |
+| tui-07 | 80x24 | Five tasks, the third's title running through the right border so that row has no `│` in column 79 | planted: clipped or overflowing content (class 4) |
+| tui-08 | 80x12 | 20 tasks: six task rows on rows 3 to 8, `… 14 more` on row 9, the hint line on row 10 | clean |
+| tui-09 | 80x24 | Five tasks, pushed down by five blank rows between the separator and the first task | planted: reserved empty space (class 2) |
+
+Every clean grid follows design/ui-B.md#terminal-panel cell for cell, and every planted grid does too apart from its one planted defect. design/ui-B/single-table.txt beside design/ui-B.md is the model: copy its border, header, separator and hint line, and its column cells. Task ids, titles, statuses and file counts are yours to choose. A small throwaway script may draw the grids, but only the nine `.txt` files are committed."""
 acceptance = ""
 agent = ""
 commit = ""
@@ -1999,6 +2875,7 @@ heading_depth = 3
 files = [
     "claude/skills/ui-capture/fixtures/capture.sh",
     ".claude/ui-capture.toml",
+    ".gitignore",
 ]
 needs = [
     32,
@@ -2006,8 +2883,27 @@ needs = [
 ]
 coupling = []
 deps_note = ""
-action = "A capture command meeting the ui-capture contract for both fixtures (render.sh per web state, copy per terminal state, --list, --only, --out), declared in .claude/ui-capture.toml with paths naming the fixtures directory."
-detail = ""
+action = "Write capture.sh, the ui-capture contract's command over both fixtures, declare it in .claude/ui-capture.toml, and ignore its output directory in .gitignore."
+detail = """
+capture.sh, run from the repo root as `bash claude/skills/ui-capture/fixtures/capture.sh [--out <dir>] [--only <state>]... [--list]`, meets the contract in claude/skills/ui-capture/SKILL.md:
+
+- The states are the web states, read from `fixtures/web/states.txt` in its order, then the terminal states, the stems of `fixtures/tui/*.txt` sorted by name: twenty in all.
+- `--list` prints every state name, one per line, in that order, and captures nothing.
+- `--only <state>` is repeatable; without it every state is captured. A name it does not know is reported on stderr and the command exits 1 having captured nothing.
+- `--out <dir>` defaults to `.ui-capture`; the directory is created when absent.
+- A web state: copy `fixtures/web/panel.html` into a temporary directory as `<state>.html`, with its `data-state="web-01"` attribute replaced by the state's name, then run `bash claude/skills/ui-capture/scripts/render.sh --size <its window> <copy> <out> <state>`, which writes `<out>/<state>.png` and merges the state's key into `<out>/geometry.json`. Remove the temporary directory on exit.
+- A terminal state: copy `fixtures/tui/<state>.txt` to `<out>/<state>.txt`. It gets no geometry key.
+- Capture every asked state before exiting, so one failure does not hide the others, and name each failed state with its exit code on stderr. Exit 0 only when every asked state was captured; otherwise exit with the highest code any state failed with, so a missing browser (render.sh's 2) is never reported as an ordinary render failure (1).
+- Locate the fixtures and render.sh relative to the script's own directory, never the working directory.
+
+Declare it with the tomlctl CLI, not the Write tool, and write no sidecar:
+
+```
+tomlctl set .claude/ui-capture.toml --set 'command=bash claude/skills/ui-capture/fixtures/capture.sh' --set out=.ui-capture --no-write-integrity
+tomlctl set-json .claude/ui-capture.toml paths --json '["claude/skills/ui-capture/fixtures/**"]' --no-write-integrity
+```
+
+Add `/.ui-capture/` to `.gitignore`, under a one-line comment saying it is the UI capture command's output."""
 acceptance = ""
 agent = ""
 commit = ""
@@ -2034,3 +2930,97 @@ detail = ""
 acceptance = ""
 agent = "plan-worker-deep"
 commit = "882d343ff25e9810268821851f52c3fb51bd3de7"
+
+[[items]]
+id = 36
+ref = "stop-telling-inspectors-which-states-are-controls"
+title = "Stop telling inspectors which states are controls"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Build each inspector's prompt in implement-v2-visual.js with no control flag, the group's states sorted by name, and a per-state list of look numbers in which a control carries every look of the milestone; update visual.test.mjs to the new prompt."
+detail = """
+Today `inspectorPrompt` prints each state as `- <state> (control: <bool>)`, lists the group's states in group order (controls first, since they are spread one per group before the clean states fill), and prints each look with its `states` list. Each of those tells the inspector which states are controls.
+
+The new prompt's `states:` and `looks:` blocks, exactly:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+- `<k>` is the look's 1-based position in `a.looks` as passed in the args, so a number means the same look in every inspector's prompt.
+- The `states:` lines list the group's states sorted by name (plain string order), whatever their order in the group.
+- A clean state carries the numbers of the looks whose `states` include it.
+- A control carries the numbers of the looks that name at least one clean state sharing the control's prefix, the prefix being the name up to its last `-` (`web-02` has prefix `web`; a name with no `-` is its own prefix). When no clean state shares the prefix, the control carries every look in `a.looks`. So in a milestone whose web looks name `web-*` states and whose terminal looks name `tui-*` states, `web-02` carries the web looks and `tui-05` the terminal looks.
+- `looks none` is printed only when a state carries no look.
+- The `looks:` block prints each look any state of the group carries, once, in number order, as compact JSON of `task`, `accept` and `behaviour` only: never its `states`. With no look carried it prints `- none`.
+
+Keep everything else as it is: the args checks and their refusal messages, `GROUP_SIZE`, the grouping (controls spread one per group first, then clean states fill), the note path, and the index the Workflow returns, whose entries still carry `control` from the args. In `RETURN_SCHEMA`, take `control` out of `required` and keep it in `properties`, so an inspector return with or without a `control` key validates; the Workflow never reads it.
+
+In visual.test.mjs, change `statesOf` and the `judging` helper to parse the new `states:` lines, and decide each state's verdict from the test's own args (a test knows its controls), not from the prompt. Fix the existing tests to the new shape without weakening what they assert, and add one test named exactly `implement-v2-visual: a control carries every look and no prompt says which states are controls`, for a launch with clean states `web-01`, `web-03`, `tui-01`, controls `web-02`, `tui-02` and `odd`, one look naming `web-01` and `web-03` and one naming `tui-01`. It asserts: no prompt contains `control`; each prompt's states are in name order; `web-02` carries the web look only, `tui-02` the terminal look only, `odd` both; each clean state carries only its own look; and no prompt's looks block contains `"states"`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 37
+ref = "tell-the-inspector-it-is-not-told-which-states-are-planted"
+title = "Tell the inspector it is not told which states are planted"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/ui-inspector.md",
+    "claude/skills/ui-capture/references/defects.md",
+    "claude/skills/ui-capture/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rewrite the inspector's input, Controls, note and return wording for prompts that carry no control flag, and say in the ui-capture skill that judges are not told which states are controls."
+detail = """
+The implement-v2-visual Workflow's prompt now gives the inspector, in place of `- <state> (control: <bool>)` lines and looks with their state lists:
+
+```
+states:
+- <state>: looks <k>, <k>
+- <state>: looks none
+looks:
+- <k>: {"task":<task>,"accept":<accept>,"behaviour":"<behaviour>"}
+```
+
+In claude/agents/ui-inspector.md:
+
+- The input list's `states` line: the states you judge, each with the numbers of the look entries it is judged against; the `looks` line: the look entries those numbers name, each `{task, accept, behaviour}`, `behaviour` being the criterion.
+- `## Judge each state`, pass 3 (Look entries): judge each look entry whose number the state's line carries, in place of "each look entry whose `states` names this state".
+- `## Verdicts`, the `pass` bullet: "every look entry the state carries is met", in place of "every look entry naming the state is met".
+- The `## Controls` section becomes: some states may carry a defect planted on purpose, and you are not told which. Judge every state the same way against the rubric and the looks it carries. Never guess which states are planted, never go easier on a state because another shows a defect, and never invent a defect.
+- The note's first line drops the `, control showed no defect: <states>` clause: `Verdict: <n> states judged, <f> fail, <u> unsure, <p> pass`.
+- The return shape drops `control`: `{"states": [{"state": "<name>", "verdict": "pass|fail|unsure", "defects": [...], "note": "<the note path>"}]}`.
+- The frontmatter `description` drops "and says so when a planted control state shows no defect".
+
+In claude/skills/ui-capture/references/defects.md, `## Controls`: replace "when the judge finds no defect in it, the judge says so, and its answers on the other states cannot be trusted" with: the judge is not told which states are controls; the orchestrator reads each control's verdict, and a control the judge passes means its answers on the other states cannot be trusted.
+
+In claude/skills/ui-capture/SKILL.md, `## Controls`, add two sentences: the judge is not told which states are controls, so a control it fails is a defect it found without being told one was there; and a control is judged against the look entries of the clean states that share its name up to the last `-`, so a project names each state `<surface>-<n>`, such as `settings-03`, with a control taking its surface's prefix.
+
+After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which gates every `claude/**/*.md` file."""
+acceptance = ""
+agent = ""
+commit = ""

@@ -1,0 +1,24 @@
+╭─ Tasks ────────────────────────╮╭─ Task 32 ──────────────────────────────────╮
+│  31 ✓ Write the capture contr… ││ Build the web fixture panel                │
+│ ›32 ● Build the web fixture p… ││                                            │
+│  33 ● Build the terminal fixt… ││ status   running                           │
+│  34 ○ Declare the fixtures' c… ││ agent    plan-worker-deep                  │
+│  35 ○ Link the inspector into… ││ files    fixtures/web/panel.html           │
+│                                ││          fixtures/web/states.txt           │
+│                                ││ needs    —                                 │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+│                                ││                                            │
+╰────────────────────────────────╯╰────────────────────────────────────────────╯
+ j/k move  enter open  q quit                                          5 tasks
