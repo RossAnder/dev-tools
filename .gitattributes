@@ -34,8 +34,12 @@ claude/agents/*.md text eol=lf
 # recurse, so `dir/**` is the required shape. The index is already LF.
 .githooks/** text eol=lf
 scripts/** text eol=lf
-# Skill scripts run the same way on Linux once a skill dir is linked there.
+# Skill scripts run the same way on Linux once a skill dir is linked there, and
+# so do skill fixtures: a fixture capture.sh is executed, and a CRLF text grid
+# would skew the column widths a capture judge measures. `text=auto` keeps a
+# binary fixture, such as a reference PNG, unconverted.
 claude/skills/*/scripts/** text eol=lf
+claude/skills/*/fixtures/** text=auto eol=lf
 
 # Pin the flow command carriers and this file to LF, like claude/agents above.
 # The index is already LF; CRLF copies on disk need the remedy in the last
