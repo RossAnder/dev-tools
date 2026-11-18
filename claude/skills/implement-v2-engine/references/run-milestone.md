@@ -34,6 +34,7 @@ The tree must be clean except for:
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
 - `.claude/inputs.toml` and `.claude/inputs.toml.sha256`, which the question loop and the user's captures write, by [questions.md](questions.md), section "The writes during a live run";
 - the `files` of every started row;
+- the paths granted by a request not yet applied, which a session that ended before its drain's Granted requests step left in the tree, by [requests.md](requests.md), section "Re-entry";
 - when the flow has `[[finding_links]]`, the review stores they name, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks";
 - when a milestone has `ui_states`, the paths under the capture `out` that `.claude/ui-capture.toml` declares, by [visual.md](visual.md), section "The capture directory in the tree checks".
 
@@ -250,6 +251,8 @@ While the run is live, its workers own the rows they hold: write no `tasks` fiel
 The Workflow runs a rolling pool, not waves: up to `max_parallel` workers at once, of which at most `max_compile_parallel`, when given, hold a crate source file, and whenever one returns, each free slot is filled, in args order, with a task whose `needs` and `after` ids have all returned `done`, whose files no running task holds, and which a full compile cap does not hold back. A long task holds back only the tasks that wait on it or share its files.
 
 **A question mid-run.** Before the notification, a worker may send a message whose first line is `QUESTION <input id> task <n>`: it met a choice its spec does not settle and is waiting on the user's answer. It arrives as a new turn while the run is live; handle it by [questions.md](questions.md), then end the turn and keep waiting for the notification.
+
+**A request mid-run.** A worker may instead send a message whose first line opens `REQUEST `, as `REQUEST <request-id> task <n>`: it posted a request for a file its task does not hold or a correction to its own spec, and is waiting on your ruling, not the user's. Rule it by [requests.md](requests.md), then end the turn and keep waiting. Rule every waiting request before opening a question's picker, which blocks every later turn until the user answers.
 
 The notification's result is an index, `{slug, milestone, tasks: [{id, status, note, error, deviations, handover, needs_files}], errors, script_version}`. A `needs_files` the Workflow refuses is emptied and its reason put in that entry's `error`. `needs_files` is empty unless the worker returned `failed` because its task cannot be done inside its `files`; it names the repo-relative paths the task would also need, none of which the worker edited, and its note gives one line per path saying why. The drain replan reads it to widen the task's `files`. An index whose `tasks` is empty and whose `errors` ends `no agent launched` is the Workflow refusing its args: a completed run, not a launch `error`. Close it as `errors`, report `errors`, and never relaunch the same args. Each entry's `status` is the worker's own (`done`, `failed`, `parked`) or one the Workflow sets:
 

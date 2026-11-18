@@ -28,7 +28,7 @@ The index is `{slug, milestone, tasks: [{id, status, note, error, deviations, ha
 
 | `status` | Meaning | The drain does |
 |---|---|---|
-| `done` | The worker met its checks and wrote `done` on its row | Nothing, unless it reports deviations or a handover |
+| `done` | The worker met its checks and wrote `done` on its row | Nothing, unless it reports deviations or a handover, or holds a granted request, which step 5a reads and applies |
 | `failed` | The worker tried and could not meet its checks, or its task needs the files in `needs_files` | Replan (step 6); a non-empty `needs_files` widens the row, under "Widening a row from `needs_files`" |
 | `parked` | Only a person can unblock it | `needs_human`; no replan. A row parked on a question its worker posted, open or answered, is settled first, by [questions.md](questions.md), section "At the drain" |
 | `blocked` | A need returned something other than `done` | Nothing; it follows its need |
@@ -68,7 +68,7 @@ tomlctl plan emit lane-check --slug <slug> --milestone <id>
 
 It reads the latest `implement:<id>` run and the task ids `plan run start --tasks` recorded on it, so it answers for an abandoned run settled at re-entry as for one this session launched. Rows, specs and trail rows of a milestone deferred when the run opened are left out, so a second session's elaboration is not reported. It prints `{clean, run_id, out_of_lane, store_writes, digest}`. On `"clean": true` there is nothing out of lane and no store change: go on to the attempts below. Otherwise read `out_of_lane` here and `store_writes` and `digest` in step 5.
 
-**Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store, the inputs store the question loop writes ([questions.md](questions.md), section "The writes during a live run") or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A path under a UI milestone's capture `out` is the visual pass's own output, by [visual.md](visual.md), section "The capture directory in the tree checks". A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
+**Out-of-lane edits.** Each `out_of_lane` entry is `{path, rows}`: an uncommitted path in no row the run dispatched, in no started row as the pre-flight in [run-milestone.md](run-milestone.md), step 1, defines it, and not the backlog store, the inputs store the question loop writes ([questions.md](questions.md), section "The writes during a live run") or a linked review store, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks", nor their sidecars. A path a request granted and the drain has not yet applied is in the requesting row's lane, since the verb reads the granted, unapplied paths from the request records ([requests.md](requests.md), section "The writes during a live run"); a path whose grant a worker wrote itself is not, because step 5a treats that request as denied and reports its paths here. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A path under a UI milestone's capture `out` is the visual pass's own output, by [visual.md](visual.md), section "The capture directory in the tree checks". A non-empty `rows` names the rows holding the path, none of which a worker has started. Look for the worker that made the edit in the notes you read and in the `files_touched` they name. When a note accounts for the path and the task needed it, widen that task's `files` through the replan (step 6) so the edit is in its lane. Otherwise list the path in `needs_human` and do not gate: the engine never commits, moves or discards an edit nobody owns.
 
 ### The attempts
 
@@ -99,7 +99,7 @@ A task with deviations or a handover proposal is still read in full by step 2's 
 
 ### What the run's agents ran
 
-The build discipline lets a worker compile-check and run narrow checks, never a full build or test suite; the gate owns those. Audit the run against it. The transcript directory is the path on the `Transcript dir:` line of the Workflow tool's launch result, which the launch step kept in `<scratch>/implement-<id>-<round>-transcripts.txt`. A run with no kept directory, such as an abandoned run settled at re-entry, is not audited, and the report says so.
+The build discipline lets a worker compile-check and run narrow checks, never a full build or test suite; the gate owns those. Audit the run against it, after step 5a has applied the run's grants and not here, so a check a request amended reads as the row's own. The transcript directory is the path on the `Transcript dir:` line of the Workflow tool's launch result, which the launch step kept in `<scratch>/implement-<id>-<round>-transcripts.txt`. A run with no kept directory, such as an abandoned run settled at re-entry, is not audited, and the report says so.
 
 ```bash
 tomlctl agents audit --transcripts <dir> --gate <gate-command> --gate <gate-command>
@@ -107,7 +107,7 @@ tomlctl agents audit --transcripts <dir> --gate <gate-command> --gate <gate-comm
 
 Pass one `--gate` for each `command` that `tomlctl plan emit gate-list --slug <slug> --milestone <id>` prints, so a worker that ran the milestone's own gate is caught whatever its toolchain. It prints an array of `{agent, command}` rows, one per Bash command an agent ran that contains one of those gate commands or invokes a build or test-suite run of a common toolchain (`cargo build`, `test` or `nextest`, `bun test`, `npm run build`, `docker build` and the like; [agents.md](../../tomlctl/references/agents.md#agents-audit) lists them). Compile checks and reading commands, a recursive `grep` among them, are not reported. The verb reads the transcripts and prints only matching commands; you still never read a transcript yourself. A row names a transcript agent, not a task, so judge each row against the whole milestone. It is allowed when its command:
 
-- equals, or is a narrower form of, an `accept` check of any row of the milestone, or a check any row's `detail` names, such as the same `cargo test` with a test filter or `--test <name>` added;
+- equals, or is a narrower form of, an `accept` check of any row of the milestone, an amended one step 5a wrote included, or a check any row's `detail` names, such as the same `cargo test` with a test filter or `--test <name>` added;
 - or is the `cli::dispatch::tests` subset, `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which a worker runs after editing a `claude/**/*.md` file or adding a `tomlctl` verb.
 
 Every other row is a breach. List every row under `audit:` in the report to the user ([report.md](report.md)), each with its agent id, its command and `allowed` or `breach`. A breach changes no task's status and no row: the work it checked is judged by its note and the gate like any other.
@@ -138,6 +138,12 @@ A worker may write only `status` and `agent`, only on its own row. The lane chec
 `digest` reads `unrecorded` for a run whose `plan run start` stored no digest, so only the trail answered: say so in the report.
 
 Report every such change in `needs_human`, with the row, the field and the old and new values where the trail or the diff gives them. Leave it in the store, and dispatch the row again only once you have judged it: a change you keep stands as written, and a change you undo goes back through an audited `tasks update --ndjson` row whose `reason` says a worker wrote the value outside its contract.
+
+## 5a. Granted requests
+
+The requests a worker made during the run are applied here, after the lane check and step 5 have read the store as the run left it, and before any step-6 row, since a re-spec re-issues each spec list whole and would drop an amend written after it. Run [requests.md](requests.md), section "At the drain: Granted requests", in its order: the transcript audit of rulings a worker wrote itself first, then the open items ruled denied, then one audited update applying each task's grants, then `plan request applied`. Its rows carry a `reason` opening `granted scope <request-id>:` or `granted amend <request-id>:`, which no round count of this file matches.
+
+Then run the audit of step 3's "What the run's agents ran", which waits for this step. A request treated as denied leaves its row's `needs_files` and note to step 6, as any other failure.
 
 ## 6. Replan
 
@@ -286,7 +292,7 @@ tomlctl tasks update <n> --slug <slug> --agent <name>
 
 After the replan, go back to run-milestone step 3 with `<round>` raised by one when at least one row of the milestone is `pending` with every need `done` or itself pending in the milestone. That re-runs the premises, rebuilds the dispatch set and confirms it with `tasks ready --checkpoint`.
 
-Stop relaunching when a launch moved no row to `done` and the replan moved no field: the same args would run the same way. Go on from step 8 with what is left; the commit does not run, and each row still `failed` goes under the report's `failed:` section with that as the reason relaunching stopped.
+Stop relaunching when a launch moved no row to `done` and the replan moved no field: the same args would run the same way. A grant step 5a wrote on a `done` row is not a moved field, since it records work already done; one written on a `failed` or `parked` row is, so that row relaunches once on its widened files or amended spec, a `parked` one once it is unparked. Go on from step 8 with what is left; the commit does not run, and each row still `failed` goes under the report's `failed:` section with that as the reason relaunching stopped.
 
 When every row of the milestone is `done`, go to step 7, by way of the reproduce check in [apply-rows.md](apply-rows.md), section "Reproduce check", when a row of the milestone fixes a finding; that check may mint fix tasks and come back here before the gate runs. When a row of the milestone settles a finding, go by way of [apply-rows.md](apply-rows.md), section "Settle drain", after that check and before the gate. When a row is `parked`, the milestone cannot gate: drain the rest of its disjoint work through relaunches, then go on from step 8 the same way.
 

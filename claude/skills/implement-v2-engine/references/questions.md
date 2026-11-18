@@ -45,6 +45,8 @@ Put the question to the user with `AskUserQuestion`, one question per record:
 
 Several `QUESTION` messages waiting together go in one call, at most four questions to it.
 
+Before you open the picker, rule every `REQUEST` message waiting in this turn by [requests.md](requests.md). The open picker blocks every later turn until the user answers, and a request left behind it times out at its worker as a denial.
+
 Nothing times out while the picker is open: wait for the user, with no timer and no default. A worker whose own wait ends while the picker is open parks, and the answer still lands below.
 
 **Never answer a worker's question yourself**, however small the choice looks or however plain the right option seems. The user's pick is the only answer this loop records. A question the user declines or dismisses stays open; its worker parks, and the drain asks it again.
@@ -89,7 +91,7 @@ Then end the turn. The worker resumes on the question's status by itself, and th
 
 ## The writes during a live run
 
-This loop is the one thing that writes while a run is live, and it writes only `.claude/inputs.toml` and `plan.toml`, never `tasks.toml`. The lane check's store digest covers `tasks.toml` alone, so the decision is no store change there. `.claude/inputs.toml` and its `.sha256` sidecar are tracked, outside the flow's directories, and modified by both the worker's `inputs add` and your `inputs answer`:
+This loop and the request procedure ([requests.md](requests.md), whose `plan request add` and `plan request rule` write `[[request]]` records to `plan.toml`) are the only things that write while a run is live. This loop writes only `.claude/inputs.toml` and `plan.toml`, never `tasks.toml`. The lane check's store digest covers `tasks.toml` alone, so the decision is no store change there. `.claude/inputs.toml` and its `.sha256` sidecar are tracked, outside the flow's directories, and modified by both the worker's `inputs add` and your `inputs answer`:
 
 - **Lane check.** `plan emit lane-check` exempts both, as it does the backlog store, so they never appear under `out_of_lane` ([drain.md](drain.md), step 3), and the pre-flight's clean-tree check exempts them too ([run-milestone.md](run-milestone.md), step 1).
 - **The flow-store commit.** Stage both with the flow stores in the second commit ([drain.md](drain.md), step 10), so the next pre-flight's clean-tree check does not stop on them.
