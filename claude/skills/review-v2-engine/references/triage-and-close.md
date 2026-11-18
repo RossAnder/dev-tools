@@ -32,7 +32,7 @@ The audit projection is the verifier projection plus every verdict on each row a
 
 - A CONFIRMED defect is overturned when its citation does not show the `failure_scenario` happening, or shows documented intent the verifier missed.
 - A REFUTED defect is overturned when its citation does not defeat the `failure_scenario` — the refutation rests on an uncited claim, the wrong line, or a path the trigger never takes.
-- A checked cleanup row is overturned when its `old` text is not at the anchor, the edit leaves `file`, `target_file` and `instances`, or a symbol called dead is referenced.
+- A checked cleanup row is overturned when its `old` text is not at the anchor, the edit leaves `file`, `target_file`, `instances` and `fix_files`, or a symbol called dead is referenced.
 - A contested finding is settled for whichever verdict its citations support.
 
 **Recording.** Every sampled row gets an audit verdict, upheld or overturned, so `review stats` can measure the verifiers against a denominator. The verdict is your call on the finding itself: `confirmed` when it stands, `refuted` when it does not. Upholding a CONFIRMED or PLAUSIBLE defect, or a checker's confirm, is `confirmed`; upholding a refutation is `refuted`; an overturn is the opposite call. Use `confirmed` or `refuted` only. An audit `plausible` reads as a confirm in the overturn count while saying the audit could not decide, so the count would be measured against a call nobody made; when the excerpt and the cited range leave a row undecided, it is upheld only if its recorded verdict follows from its citation, and overturned otherwise.
@@ -73,8 +73,9 @@ It prints the path and a counts line. Do not read the report back; it is for the
 3. the deferred proposals, each with its age, the overdue ones marked as needing a disposition before the run can close;
 4. contested findings, with your audit outcome for each;
 5. the advisory list from the digest, each item with your recommendation and a one-line reason;
-6. the report path;
-7. the disposition grammar below, and what happens to anything the user leaves untriaged.
+6. the run's open escalations, each by id (`<cell>:<n>`) and text, from the digest or the report, with whether you recommend fixing it;
+7. the report path;
+8. the disposition grammar below, and what happens to anything the user leaves untriaged.
 
 Read the blocked findings from the store rather than the run, since a block an earlier run left open is still the user's to answer:
 
@@ -122,6 +123,7 @@ Each user instruction maps to `review triage` calls, or `review settle` for a de
 | `park F7 — <reason>` | stage `<reason>`; `review triage F7 --park-file <path> --expect-status open` |
 | `backlog F7,F9` | stage 8's backlog hand-off, then one `review triage <id> --backlog-ref <B-id> --expect-status open` per id |
 | `convert F8` | write the replacement row (below); `review triage F8 --convert cleanup\|defect --ndjson <path> --expect-status open` |
+| `fix C52:1` | an escalation the user wants fixed: write the finding row the escalation text supports (a defect or cleanup with `blocked_on` `evidence` and `blocked_missing` the escalation's why) to `<run-dir>/payloads/escalation-C52-1.ndjson`; `review escalation fix C52:1 --ndjson <path>`; then verify the minted finding with the one-row dispatch of `agent-waves.md` before handing it to apply |
 | `addressed F4 — <what changed>` | plan family only, for a finding the author fixed by hand: stage `<what changed>`; `review triage F4 --addressed-file <path> --expect-status open`, adding `--targets <targets>` when the hand edit changed records other than the finding's own `target`. The row becomes `resolved` with its `addressed` targets, which the re-check covers; `--addressed <text>` is the inline twin, never used for user prose |
 | `answer F2 — <answer>` | stage `<answer>`; `review triage F2 --answer-file <path> --expect-status open`, for a finding blocked on `decision` |
 | `accept F6 — <fix>` | stage `<fix>`; `review settle F6 --accept --tier user --fix-file <path>`, for a deferred proposal |
@@ -137,7 +139,7 @@ For example, a dismissal whose reason you staged:
 tomlctl review triage F3 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss-F3.md --expect-status open
 ```
 
-**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. Leave `lens` out and it defaults to the advisory's own; given, it must be a concern of the advisory's cell, as `review add` requires of every row: a `contrarian` advisory converts under `contrarian`, never under a lens its cell did not run. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before handing it to apply.
+**Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or, for a change across several files, a cleanup that also carries `instances` and `fix_files` (`old` being only the text at the anchor), so it converts as a cleanup and not as a defect a verifier would refute; or the `fix`, `failure_scenario`, `severity`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. Leave `lens` out and it defaults to the advisory's own; given, it must be a concern of the advisory's cell, as `review add` requires of every row: a `contrarian` advisory converts under `contrarian`, never under a lens its cell did not run. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before handing it to apply.
 
 **Convert after the run finished.** An advisory parked in an earlier run and revisited later belongs to a finished run, which cannot verify a replacement, so a plain `--convert` on it is refused. Convert it into the run you have open: add `--run <open run>`, which must be of the advisory's family. The replacement is minted `unverified` in that run, routed by its catalogue, and that run cannot finish until the replacement is verified, so verify it in the same run's waves. With no open run, leave the advisory parked and convert it at the next run.
 
@@ -196,6 +198,6 @@ It stamps `finished` and computes `counts`. It refuses while any finding is `unv
 
 **6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions and counts.
 
-**7. Close summary.** Print the run id, the report path, the counts line, what was handed to apply (the `/apply-v2` command named, with its ids or `--all`, and any pick you said the schedule rule will refuse), the backlog ids, any `skipped_stale` rows, the decision answers recorded, any `plan` picks with the `/plan-v2` command named, the deferred proposals given a disposition and any still overdue, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
+**7. Close summary.** Print the run id, the report path, the counts line, what was handed to apply (the `/apply-v2` command named, with its ids or `--all`, and any pick you said the schedule rule will refuse), the escalations fixed with their finding ids (the open ones are offered as backlog captures as before), the backlog ids, any `skipped_stale` rows, the decision answers recorded, any `plan` picks with the `/plan-v2` command named, the deferred proposals given a disposition and any still overdue, a substrate fallback if one happened, and `triage pending` when the user's answer was empty.
 
 Then list each unhandled escalation: every entry of a wave index's `escalations` that you did not turn into a follow-up cell — out of budget, or anchored outside the scope and not a `ripple` row — by cell and text, each offered as a backlog capture. Capture only the ones the user accepts, through `backlog-capture`'s check-then-add gate as in step 2; the rest are dropped with the run.

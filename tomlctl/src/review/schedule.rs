@@ -9,7 +9,9 @@
 //! linked back through `[[finding_links]]`. The task store is written before
 //! the review store, so a rerun after a crash between the two finds the
 //! uncommitted task already linked to a still-open finding and marks the
-//! finding without minting again.
+//! finding without minting again. A prose fix whose text names another chosen
+//! finding's executable path needs that finding's task, so a doc fix lands
+//! after the code it describes.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -19,8 +21,9 @@ use clap::Args;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
+use super::catalogue::{FileKind, run_catalogue};
 use super::export::description;
-use super::fields::{self, BlockedOn, Family, FindingStatus, Kind};
+use super::fields::{self, BlockedOn, Family, FindingStatus, Kind, RoutingGlobs};
 use super::invalid;
 use super::select::{self, Selection};
 use super::store::{self, Finding, Row, Store, Target};
@@ -126,6 +129,15 @@ struct Placed {
 struct TaskOutcome {
     placed: Vec<Placed>,
     dropped_deps: Vec<JsonValue>,
+    ordered: Vec<JsonValue>,
+}
+
+/// A prose-target finding whose text names another chosen finding's
+/// executable path, in another group: `doc`'s task should need `code`'s.
+struct Interaction {
+    doc: usize,
+    code: usize,
+    names: String,
 }
 
 pub(crate) fn run(
@@ -185,7 +197,9 @@ pub(crate) fn run(
         )));
     }
     let groups = fold(&stored, &chosen);
+    let (interactions, ordering_skipped) = interactions(&stored, &root, &chosen, &groups);
     let compose = Compose {
+        interactions: &interactions,
         root: &root,
         stored: &stored,
         projected: &projected,
@@ -215,6 +229,7 @@ pub(crate) fn run(
                 &linked,
                 current.next_id(),
                 (held, refused),
+                &ordering_skipped,
             ));
         };
         outcome = if rows.is_empty() {
@@ -260,6 +275,7 @@ pub(crate) fn run(
             &outcome,
             0,
             (held, refused),
+            &ordering_skipped,
         ));
     }
     if !outcome.placed.is_empty() {
@@ -285,6 +301,8 @@ pub(crate) fn run(
         "held": held,
         "refused": refused,
         "dropped_deps": outcome.dropped_deps,
+        "ordered": outcome.ordered,
+        "ordering_skipped": ordering_skipped,
         "skipped_stale": stale,
     }))
 }
@@ -298,6 +316,7 @@ fn preview(
     linked: &TaskOutcome,
     first: u32,
     (held, refused): (Vec<JsonValue>, Vec<JsonValue>),
+    ordering_skipped: &[JsonValue],
 ) -> JsonValue {
     let placed = |settle: bool| -> Vec<JsonValue> {
         let linked = linked.placed.iter().filter(|p| p.settle == settle).map(
@@ -331,6 +350,8 @@ fn preview(
         "held": held,
         "refused": refused,
         "dropped_deps": linked.dropped_deps,
+        "ordered": linked.ordered,
+        "ordering_skipped": ordering_skipped,
     })
 }
 
@@ -511,7 +532,150 @@ fn fold(stored: &Store, chosen: &[usize]) -> Vec<Group> {
     groups
 }
 
+/// The fields of a prose fix that say what its edit describes. Evidence,
+/// citations and a bare symbol are left out: they name code the finding read,
+/// not code its edit restates.
+const NAMING_FIELDS: &[&str] = &["edit", "old", "fix", "fix_sketch", "failure_scenario"];
+
+/// Each chosen prose-target finding whose text names, in full or by a
+/// basename unique among the chosen executable paths, an executable path
+/// another group's finding edits; with each run whose catalogue could not be
+/// loaded, whose findings are left unordered. Catalogues load once per run,
+/// and only when at least two groups exist.
+fn interactions(
+    stored: &Store,
+    root: &Path,
+    chosen: &[usize],
+    groups: &[Group],
+) -> (Vec<Interaction>, Vec<JsonValue>) {
+    if groups.len() < 2 {
+        return (Vec::new(), Vec::new());
+    }
+    let mut globs: HashMap<&str, Option<RoutingGlobs>> = HashMap::new();
+    let mut skipped = Vec::new();
+    for &index in chosen {
+        let run = stored.findings[index].run.as_str();
+        if globs.contains_key(run) {
+            continue;
+        }
+        let loaded = stored
+            .runs
+            .iter()
+            .find(|r| r.id == run)
+            .ok_or_else(|| anyhow::anyhow!("no run {run} in this store"))
+            .and_then(|r| run_catalogue(root, r))
+            .and_then(|catalogue| catalogue.routing().compile());
+        match loaded {
+            Ok(compiled) => {
+                globs.insert(run, Some(compiled));
+            }
+            Err(e) => {
+                skipped.push(json!({"run": run, "reason": e.to_string()}));
+                globs.insert(run, None);
+            }
+        }
+    }
+    let globs_of = |index: usize| {
+        globs
+            .get(stored.findings[index].run.as_str())
+            .and_then(Option::as_ref)
+    };
+    let group_of: HashMap<usize, usize> = groups
+        .iter()
+        .enumerate()
+        .flat_map(|(at, g)| g.findings.iter().map(move |&i| (i, at)))
+        .collect();
+    let executable: HashMap<usize, Vec<String>> = chosen
+        .iter()
+        .filter_map(|&index| {
+            let globs = globs_of(index)?;
+            let paths = edited(&stored.findings[index])
+                .into_iter()
+                .filter(|p| globs.kind(p) == FileKind::Code)
+                .collect();
+            Some((index, paths))
+        })
+        .collect();
+    let mut by_basename: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+    for path in executable.values().flatten() {
+        by_basename
+            .entry(basename(path))
+            .or_default()
+            .insert(path.as_str());
+    }
+
+    let mut found = Vec::new();
+    for &doc in chosen {
+        let Some(globs) = globs_of(doc) else {
+            continue;
+        };
+        let f = &stored.findings[doc];
+        let target = match f.text("target_file").unwrap_or_default().trim() {
+            "" => f.file.trim(),
+            target => target,
+        };
+        if target.is_empty() || globs.kind(target) == FileKind::Code {
+            continue;
+        }
+        let mut text: Vec<&str> = NAMING_FIELDS.iter().filter_map(|k| f.text(k)).collect();
+        text.push(&f.summary);
+        for &code in chosen {
+            if group_of.get(&code) == group_of.get(&doc) {
+                continue;
+            }
+            let Some(paths) = executable.get(&code) else {
+                continue;
+            };
+            let names = paths.iter().find_map(|path| {
+                if text.iter().any(|t| mentions(t, path)) {
+                    return Some(path.clone());
+                }
+                let base = basename(path);
+                let unique = by_basename.get(base).is_some_and(|all| all.len() == 1);
+                (unique && base != path && text.iter().any(|t| mentions(t, base)))
+                    .then(|| base.to_string())
+            });
+            if let Some(names) = names {
+                found.push(Interaction { doc, code, names });
+            }
+        }
+    }
+    (found, skipped)
+}
+
+fn basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// Whether `text` holds `name` as a whole path: not glued to a longer path or
+/// identifier on either side.
+fn mentions(text: &str, name: &str) -> bool {
+    let glued_before = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '\\');
+    let glued_after = |c: char| c.is_alphanumeric() || c == '_';
+    text.match_indices(name).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + name.len()..].chars().next();
+        !before.is_some_and(glued_before) && !after.is_some_and(glued_after)
+    })
+}
+
+/// Whether `target` is reachable from `from` over `needs`.
+fn reaches(needs: &HashMap<u32, Vec<u32>>, from: u32, target: u32) -> bool {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![from];
+    while let Some(task) = stack.pop() {
+        if task == target {
+            return true;
+        }
+        if seen.insert(task) {
+            stack.extend(needs.get(&task).into_iter().flatten().copied());
+        }
+    }
+    false
+}
+
 struct Compose<'a> {
+    interactions: &'a [Interaction],
     root: &'a Path,
     stored: &'a Store,
     projected: &'a [Row],
@@ -570,7 +734,7 @@ impl Compose<'_> {
                 task_of.insert(self.stored.findings[index].id.clone(), first + at as u32);
             }
         }
-        let mut rows = pending
+        let mut needs: Vec<Vec<u32>> = pending
             .iter()
             .enumerate()
             .map(|(at, findings)| {
@@ -596,8 +760,15 @@ impl Compose<'_> {
                         }
                     }
                 }
-                self.row(findings, needs)
+                needs
             })
+            .collect();
+        let upstream = self.order(&pending, first, &task_of, &mut needs, &mut outcome);
+        let mut rows = pending
+            .iter()
+            .zip(needs)
+            .zip(upstream)
+            .map(|((findings, needs), upstream)| self.row(findings, needs, &upstream))
             .collect::<Vec<NewRow>>();
         for &index in settle {
             let f = &self.stored.findings[index];
@@ -613,6 +784,57 @@ impl Compose<'_> {
             }
         }
         (rows, outcome)
+    }
+
+    /// Adds to `needs` each interaction's edge from a pending row's doc fix
+    /// to the code fix's task, once per pair of tasks, and returns per row the
+    /// upstream tasks and code findings it must check its edit against. An
+    /// edge that would close a cycle is dropped and reported instead.
+    fn order(
+        &self,
+        pending: &[Vec<usize>],
+        first: u32,
+        task_of: &HashMap<String, u32>,
+        needs: &mut [Vec<u32>],
+        outcome: &mut TaskOutcome,
+    ) -> Vec<Vec<(u32, usize)>> {
+        let mut upstream: Vec<Vec<(u32, usize)>> = vec![Vec::new(); pending.len()];
+        for edge in self.interactions {
+            let Some(at) = pending.iter().position(|row| row.contains(&edge.doc)) else {
+                continue;
+            };
+            let own = first + at as u32;
+            let doc = &self.stored.findings[edge.doc];
+            let code = &self.stored.findings[edge.code];
+            let Some(&task) = task_of.get(&code.id) else {
+                continue;
+            };
+            if task == own || needs[at].contains(&task) {
+                continue;
+            }
+            let graph: HashMap<u32, Vec<u32>> = needs
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (first + i as u32, n.clone()))
+                .collect();
+            if reaches(&graph, task, own) {
+                outcome.dropped_deps.push(json!({
+                    "finding": doc.id,
+                    "interacts_with": code.id,
+                    "skipped": "cycle",
+                }));
+                continue;
+            }
+            needs[at].push(task);
+            upstream[at].push((task, edge.code));
+            outcome.ordered.push(json!({
+                "task": own,
+                "needs": task,
+                "finding": doc.id,
+                "names": edge.names,
+            }));
+        }
+        upstream
     }
 
     /// A settle task: one deep worker writes a note that proposes the
@@ -683,7 +905,7 @@ impl Compose<'_> {
         }
     }
 
-    fn row(&self, findings: &[usize], needs: Vec<u32>) -> NewRow {
+    fn row(&self, findings: &[usize], needs: Vec<u32>, upstream: &[(u32, usize)]) -> NewRow {
         let found: Vec<&Finding> = findings.iter().map(|&i| &self.stored.findings[i]).collect();
         let ids: Vec<String> = found.iter().map(|f| f.id.clone()).collect();
         let mut files: Vec<String> = Vec::new();
@@ -741,6 +963,17 @@ impl Compose<'_> {
             } else {
                 format!("Decision on {}: {answer}", f.id)
             });
+        }
+        for &(task, index) in upstream {
+            let code = &self.stored.findings[index];
+            let at = match code.symbol.trim() {
+                "" => code.file.trim().to_string(),
+                symbol => format!("{}::{symbol}", code.file.trim()),
+            };
+            constraints.push(format!(
+                "Task {task} changes {at}; once it is done, check this edit against that code \
+                 and return failed if the finding no longer holds."
+            ));
         }
         let outcome: Vec<String> = found.iter().map(|f| outcome(f)).collect();
         let premises: Vec<JsonValue> = found

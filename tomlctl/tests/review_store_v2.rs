@@ -220,6 +220,40 @@ fn a_store_holding_a_scheduled_finding_is_written_as_version_two() {
 }
 
 #[test]
+fn escalations_and_ceiling_overrides_survive_a_write() {
+    let repo = Repo::new(&[open("F1"), open("F2")]);
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    let text = text
+        .replacen(
+            "started = \"2026-10-01T10:00:00Z\"\n",
+            "started = \"2026-10-01T10:00:00Z\"\nceiling_overrides = [{ wave = 2, ceiling = 8, planned = 6, added = 5, reason = \"user directed\" }]\n",
+            1,
+        )
+        .replacen(
+            "note = \"done\"\n",
+            "note = \"done\"\nescalations = [{ n = 1, wave = 1, text = \"the parser may drop rows\", status = \"open\" }, { n = 2, wave = 1, text = \"the lock is held too long\", status = \"fixed\", finding = \"F1\" }]\n",
+            1,
+        );
+    fs::write(&path, &text).unwrap();
+    let before = repo.store();
+    repo.dismiss("F2").success();
+    let after = repo.store();
+    assert_eq!(
+        after["runs"][0]["ceiling_overrides"],
+        before["runs"][0]["ceiling_overrides"]
+    );
+    assert_eq!(
+        after["cells"][0]["escalations"],
+        before["cells"][0]["escalations"]
+    );
+    let rows = after["cells"][0]["escalations"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows[0].get("finding").is_none());
+    assert_eq!(rows[1]["finding"].as_str(), Some("F1"));
+}
+
+#[test]
 fn a_version_two_store_that_no_longer_needs_it_is_written_as_version_one() {
     let repo = Repo::new(&[open("F1"), open("F2")]);
     let path = repo.root.join(".claude/review-v2/t.toml");

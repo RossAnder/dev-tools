@@ -8,6 +8,7 @@ owns = ["redundant-tests", "implementation-pinned-tests"]
 activation = "signal"
 apply_when = { signals = ["test-growth", "test-ratio-high"] }
 slice = "per-subsystem"
+kinds = ["test"]
 v1_category = "testability"
 +++
 

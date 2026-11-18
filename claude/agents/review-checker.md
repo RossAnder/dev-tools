@@ -28,7 +28,7 @@ Apply each one that fits the row's `direction`:
 1. **Target exists.** `file` exists. `target_file`, when given, exists — or the direction is `add` and its parent directory exists, so the edit creates it.
 2. **Old text is present.** For `change` and `remove`, `old` occurs in `target_file` (when given and existing) or else in `file`, within 20 lines of `line`. For `add`, the anchor text in `old` occurs there, unless `target_file` is a new file. Compare after treating `\r\n` as `\n`. Cite the line where it starts.
 3. **Dead means unreferenced.** When the summary or `edit` claims a symbol, import, config key or file is dead or unused, Grep the whole repository for its name. It holds when the only matches are its own definition and the sites the row lists. Cite the definition line, and give the search string in the rationale.
-4. **The edit stays in bounds.** Every path the `edit` names is `file`, `target_file` or one of `instances`.
+4. **The edit stays in bounds.** Every path the `edit` names is `file`, `target_file`, one of `instances` or one of `fix_files`.
 5. **Identity.** When the row has `same_as`, the target's summary describes the same change at the same file. If you cannot tell by reading the two summaries, the row is `unsettled`.
 
 ## Steps

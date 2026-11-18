@@ -73,7 +73,7 @@ tomlctl review schedule <ids | --all> --slug <slug> --flow <slug> --dry-run
 tomlctl review schedule <ids | --all> --scope <scope> --dry-run
 ```
 
-It prints `{scheduled, settle, held, refused, dropped_deps}`. A `scheduled` or `settle` row with `action: "would-mint"` carries the task's `title`, `executor` and `files`; one with `action: "linked"` is already on a live task of the flow. Each `held` and `refused` row carries its reason. The rule it applies is the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`; never restate or second-guess it here. An explicit id that is unknown is a `refused` row: stop and name it.
+It prints `{scheduled, settle, held, refused, dropped_deps, ordered, ordering_skipped}`. A `scheduled` or `settle` row with `action: "would-mint"` carries the task's `title`, `executor` and `files`; one with `action: "linked"` is already on a live task of the flow. Each `held` and `refused` row carries its reason. Each `ordered` row is a doc task that needs a code task: `task` needs `needs` because `finding`'s text names the path `names`. Each `ordering_skipped` row is a run whose catalogue could not be loaded, with its `reason`; its findings' pairs are left unordered. A `dropped_deps` row may carry `skipped: "cycle"` with `interacts_with`, an ordering edge left out because it would close a cycle. The rule it applies is the `tomlctl` skill's `references/review-apply.md`, section `tomlctl review schedule`; never restate or second-guess it here. An explicit id that is unknown is a `refused` row: stop and name it.
 
 Then read the findings that pass, for the report and the gates:
 
@@ -185,7 +185,7 @@ With a settle milestone, add `--settle-checkpoint settle-<n>`; without it the ve
 tomlctl review schedule <ids> --slug <slug> --flow <flow> --checkpoint apply-<n> --settle-checkpoint settle-<n>
 ```
 
-Pass `--all` in place of the ids when the arguments did. The verb mints the task rows with their specs and links under the task store's lock, then marks each finding `scheduled`. Report its `scheduled` and `settle` rows as finding, task and `action` (`minted` or `linked`), and its `held`, `refused`, `dropped_deps` and `skipped_stale` rows each with its reason. When it fails, report its error and stop; a rerun resumes by Re-entry.
+Pass `--all` in place of the ids when the arguments did. The verb mints the task rows with their specs and links under the task store's lock, then marks each finding `scheduled`. Report its `scheduled` and `settle` rows as finding, task and `action` (`minted` or `linked`), and its `held`, `refused`, `dropped_deps` and `skipped_stale` rows each with its reason. Report each `ordered` row as the doc task needing the code task, with the finding and the path it names, and each `ordering_skipped` row as the run and its reason, saying its pairs were left unordered; a `dropped_deps` row with `skipped: "cycle"` names the finding and the one it `interacts_with`. When it fails, report its error and stop; a rerun resumes by Re-entry.
 
 When `scheduled` and `settle` are both empty, the milestones stay with no rows: report that, say a rerun with another selection reuses it, and stop. The execution engine passes over a milestone with no rows.
 

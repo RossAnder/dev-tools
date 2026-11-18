@@ -75,7 +75,7 @@ Anything else in the arguments is scope: paths, globs, or a feature name.
    tomlctl capabilities
    ```
 
-   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce`, `review_stats_apply` and `review_digest_with`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
+   Halt unless `.features` lists `review_add`, `review_survey`, `review_catalogue`, `review_run_head`, `review_run_show`, `review_ruled_out`, `review_same_as_link`, `review_blocked_on`, `review_settle`, `review_triage_answer`, `review_schedule`, `review_reconcile`, `review_anchor`, `review_reproduce`, `review_stats_apply`, `review_digest_with`, `review_propose_kinds`, `review_plan_ceiling` and `review_escalations`, telling the user to run `cargo install --path tomlctl` in the dev-tools checkout and restart.
 3. Invoke the `flow-contract-flow-context` skill and build the envelope as it says, with the **v1 command name**: `--command review` for `/review-v2`, `--command optimise` for `/optimise-v2`, `--command review-plan` for `/review-plan-v2`. The envelope builder knows only the v1 names. Gate on `envelope.ok`, emit the bootstrap-summary line, and bind the store flag from `envelope.resolved.slug`, or derive `<scope>` when no flow resolved. A v2 run skips the user-inputs sweep.
 4. Read back the v1 outcomes of findings an earlier run exported to a v1 ledger, for stores that still hold `exported` findings, so a re-found fixed issue resolves as a regression rather than a repeat. It is a legacy read-back for v1 rows whose `v2_ref` names this store, since triage hands findings to `/apply-v2` rather than to a v1 ledger:
 
@@ -217,18 +217,18 @@ tomlctl review run finish <run> --slug <slug>
 
 | | quick | standard | deep |
 |---|---|---|---|
-| cell ceiling, all waves (`--propose` scales it to about 1 cell per 100 changed lines, floor 3) | 6 | 16 | 32 |
+| cell ceiling, all waves, enforced on append (`--propose` scales it to about 1 cell per 100 changed lines, floor 3, less `--reserve`) | 6 | 16 | 32 |
 | concerns per cell | ≤3 | ≤3 | ≤2 |
 | follow-up waves | 0 | 1 | 2 |
 | defect verification | one verifier per critical or major defect (the plan family batches them, see below); one batch verifier per cell for minor | as quick | one verifier per non-critical defect; a critical goes to a 3-vote panel instead, and survives on ≥2 non-refuted votes |
 | cleanup check | pooled Haiku checker batches; code-touching and test-removal rows go to one Opus verifier batch per cell, unsettled checker rows to an Opus verifier each | as quick | as quick |
-| repeat passes | none | floor and hotspot cells once more, files in reverse order | every high-risk cell once more |
+| repeat passes | none | hotspot cells first, then floor cells, once more from the room left after `--reserve`, files in reverse order | every high-risk cell once more |
 | plan-executor cells | ≤4 tasks | ≤12 tasks, L and M first, checkpoint-marker tasks first | every task |
 | confirm the map before launch | no | no | yes |
 
 **Plan family batching.** Under the `plan-v2-review` Workflow the pipeline runs with `batch_defects`: a cell's verifier-routed defects that would each get a single verifier go to one batch when there are two or more, and a row carrying `same_as` stays single so `--strike-same-as` still works on its verdict. Reverify follows the same split: the ids the lead lists under `reverify_single`, those carrying a `same_as`, get a verifier each, and the rest of its `reverify` list go in one batch. The code and perf families keep the per-finding rule in the table.
 
-The ceiling counts every wave's cells, repeat cells included; plan-executor cells sit outside it. At `quick`, escalated sweeper candidates still get one Opus cell (see `references/compose.md`).
+The ceiling counts every wave's cells, repeat cells included; plan-executor cells sit outside it, and `review plan` refuses cells past it on append unless the user directs an override. At `quick`, code and perf runs have no escalation probe cell: escalations go to triage (see `references/compose.md`).
 
 ## Family deltas
 

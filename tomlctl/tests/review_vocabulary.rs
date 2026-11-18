@@ -347,3 +347,103 @@ fn rust_test_growth_counts_test_attributes() {
     );
     assert_eq!(unknown(&out, "test-growth"), None);
 }
+
+const ROUTING_VOCABULARY: &str = r#"
+[concerns.logic]
+meaning = "wrong output for a nameable input"
+families = ["code"]
+
+[routing]
+executable = ["**/*.rs"]
+tests = ["**/tests/**"]
+"#;
+
+fn lens_with(extra: &str) -> String {
+    format!(
+        r#"+++
+id = "correctness"
+status = "stable"
+families = ["code"]
+mode = "judgement"
+produces = ["defect"]
+owns = ["logic"]
+activation = "floor"
+{extra}
++++
+## Question
+Does it compute the right thing?
+
+## Owns
+`logic` — wrong output.
+
+## Probes — code
+- off-by-one in ranges
+
+## Does not flag
+- confirmations
+"#
+    )
+}
+
+/// Runs `review catalogue` over a temp catalogue holding `vocabulary` and one lens.
+fn catalogue_run(vocabulary: &str, lens: &str) -> (bool, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let builtin = tmp.path().join("builtin");
+    fs::create_dir_all(builtin.join("lenses")).unwrap();
+    fs::write(builtin.join("vocabulary.toml"), vocabulary).unwrap();
+    fs::write(builtin.join("lenses/correctness.md"), lens).unwrap();
+    let out = common::Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", tmp.path())
+        .args(["review", "catalogue", "--builtin"])
+        .arg(&builtin)
+        .output()
+        .expect("tomlctl runs");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn routing_accepts_lockfiles_and_refuses_unknown_keys() {
+    let with_lockfiles = format!("{ROUTING_VOCABULARY}lockfiles = [\"**/Cargo.lock\"]\n");
+    let (ok, _, stderr) = catalogue_run(&with_lockfiles, &lens_with("slice = \"per-subsystem\""));
+    assert!(ok, "lockfiles key rejected: {stderr}");
+
+    let unknown = format!("{ROUTING_VOCABULARY}manifests = [\"**/x\"]\n");
+    let (ok, _, stderr) = catalogue_run(&unknown, &lens_with("slice = \"per-subsystem\""));
+    assert!(!ok, "an unknown routing key was accepted");
+    assert!(stderr.contains("manifests"), "stderr: {stderr}");
+}
+
+#[test]
+fn lens_kinds_parse_and_refuse_lockfile() {
+    let (ok, _, stderr) = catalogue_run(
+        ROUTING_VOCABULARY,
+        &lens_with("slice = \"per-subsystem\"\nkinds = [\"code\", \"other\"]"),
+    );
+    assert!(ok, "kinds rejected: {stderr}");
+
+    let (ok, _, stderr) = catalogue_run(
+        ROUTING_VOCABULARY,
+        &lens_with("slice = \"per-subsystem\"\nkinds = [\"lockfile\"]"),
+    );
+    assert!(!ok, "a lockfile kind was accepted");
+    assert!(
+        stderr.contains("correctness") && stderr.contains("lockfile"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn new_slice_rules_validate() {
+    for rule in ["signal-evidence", "changed-with-tests"] {
+        let (ok, _, stderr) = catalogue_run(
+            ROUTING_VOCABULARY,
+            &lens_with(&format!("slice = \"{rule}\"")),
+        );
+        assert!(ok, "{rule} rejected: {stderr}");
+    }
+}

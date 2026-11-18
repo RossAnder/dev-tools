@@ -1,0 +1,439 @@
+# Run U3 of the mid-run-requests flow, its record without cells or outcomes.
+
+id = "U3"
+family = "code"
+depth = "standard"
+changed_lines = 3907
+scope = [
+  "Cargo.lock",
+  "claude/agents/plan-worker-deep.md",
+  "claude/agents/plan-worker-lite.md",
+  "claude/commands/implement-v2.md",
+  "claude/skills/flow-contract-task-store/SKILL.md",
+  "claude/skills/implement-v2-engine/SKILL.md",
+  "claude/skills/implement-v2-engine/references/apply-rows.md",
+  "claude/skills/implement-v2-engine/references/drain.md",
+  "claude/skills/implement-v2-engine/references/questions.md",
+  "claude/skills/implement-v2-engine/references/report.md",
+  "claude/skills/implement-v2-engine/references/requests.md",
+  "claude/skills/implement-v2-engine/references/run-milestone.md",
+  "claude/skills/plan-v2-engine/references/write-and-prove.md",
+  "claude/skills/tomlctl/SKILL.md",
+  "claude/skills/tomlctl/references/generated.md",
+  "claude/skills/tomlctl/references/plan-engine.md",
+  "claude/skills/tomlctl/references/plan-request.md",
+  "claude/skills/tomlctl/references/plan-run.md",
+  "claude/skills/tomlctl/references/plan-store.md",
+  "claude/skills/tomlctl/references/plan.md",
+  "tomlctl/Cargo.toml",
+  "tomlctl/README.md",
+  "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+  "tomlctl/src/cli/types/mod.rs",
+  "tomlctl/src/cli/types/plan.rs",
+  "tomlctl/src/generated.rs",
+  "tomlctl/src/lib.rs",
+  "tomlctl/src/plan/check.rs",
+  "tomlctl/src/plan/check/case_collision.rs",
+  "tomlctl/src/plan/check/generated_outputs.rs",
+  "tomlctl/src/plan/dispatch.rs",
+  "tomlctl/src/plan/emit.rs",
+  "tomlctl/src/plan/holders.rs",
+  "tomlctl/src/plan/lane.rs",
+  "tomlctl/src/plan/mod.rs",
+  "tomlctl/src/plan/request.rs",
+  "tomlctl/src/plan/schema.rs",
+  "tomlctl/src/plan/schema_request.rs",
+  "tomlctl/src/plan/view.rs",
+  "tomlctl/tests/capabilities.rs",
+  "tomlctl/tests/it.rs",
+  "tomlctl/tests/output_options.rs",
+  "tomlctl/tests/plan_check.rs",
+  "tomlctl/tests/plan_emit.rs",
+  "tomlctl/tests/plan_request.rs",
+  "tomlctl/tests/plan_view.rs",
+]
+
+[[signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+  ".",
+  "glimpse",
+  "lumina",
+  "lumina/companion",
+  "lumina/core",
+  "lumina/protocol",
+  "lumina/server",
+  "statusline",
+  "tomlctl",
+]
+evidence = []
+
+[[signals]]
+name = "lang:ts"
+source = "detector"
+roots = [
+  "lumina/web",
+]
+evidence = []
+
+[[signals]]
+name = "framework:vue"
+source = "detector"
+roots = [
+  "lumina/web",
+]
+evidence = []
+
+[[signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+  "lumina/companion",
+  "lumina/core",
+  "lumina/server",
+]
+evidence = []
+
+[[signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+  "lumina",
+  "lumina/core",
+  "lumina/server",
+]
+evidence = []
+
+[[signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+  ".claude/skills/adopt-flow-registry",
+  ".claude/skills/testing-discipline",
+  "claude/agents",
+  "claude/commands",
+  "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+  "claude/plugins/lumina-story-blocks/skills/alternatives",
+  "claude/plugins/lumina-story-blocks/skills/approach",
+  "claude/plugins/lumina-story-blocks/skills/closure-gate",
+  "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+  "claude/plugins/lumina-story-blocks/skills/create-project",
+  "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+  "claude/plugins/lumina-story-blocks/skills/edge-cases",
+  "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+  "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+  "claude/plugins/lumina-story-blocks/skills/focus-framing",
+  "claude/plugins/lumina-story-blocks/skills/focus-shape",
+  "claude/plugins/lumina-story-blocks/skills/lifecycle",
+  "claude/plugins/lumina-story-blocks/skills/mcp",
+  "claude/plugins/lumina-story-blocks/skills/next-block",
+  "claude/plugins/lumina-story-blocks/skills/not-doing",
+  "claude/plugins/lumina-story-blocks/skills/plan-story",
+  "claude/plugins/lumina-story-blocks/skills/problem-statement",
+  "claude/plugins/lumina-story-blocks/skills/relevance",
+  "claude/plugins/lumina-story-blocks/skills/research-directed",
+  "claude/plugins/lumina-story-blocks/skills/research-explore",
+  "claude/plugins/lumina-story-blocks/skills/research-notes",
+  "claude/plugins/lumina-story-blocks/skills/risks",
+  "claude/plugins/lumina-story-blocks/skills/run-sprint",
+  "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+  "claude/plugins/lumina-story-blocks/skills/story-review",
+  "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+  "claude/plugins/lumina-story-blocks/skills/verification-commands",
+  "claude/plugins/lumina-story-blocks/skills/vet-research",
+  "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+  "claude/skills/apply-v2-engine",
+  "claude/skills/backlog-capture",
+  "claude/skills/backlog-clear",
+  "claude/skills/commit-conventions",
+  "claude/skills/documentation-conventions",
+  "claude/skills/flow-contract-apply-constraints",
+  "claude/skills/flow-contract-apply-dependency-sort",
+  "claude/skills/flow-contract-apply-pipeline",
+  "claude/skills/flow-contract-apply-rollback-protocol",
+  "claude/skills/flow-contract-apply-vet-implement-lite",
+  "claude/skills/flow-contract-execution-record-schema",
+  "claude/skills/flow-contract-flow-context",
+  "claude/skills/flow-contract-ledger-disposition-sweep",
+  "claude/skills/flow-contract-ledger-schema",
+  "claude/skills/flow-contract-plan-output-format",
+  "claude/skills/flow-contract-plan-restructure",
+  "claude/skills/flow-contract-plansdirectory-prompt",
+  "claude/skills/flow-contract-reconciler",
+  "claude/skills/flow-contract-showcase-bundle",
+  "claude/skills/flow-contract-task-store",
+  "claude/skills/flow-contract-user-inputs",
+  "claude/skills/flow-contract-vet-research",
+  "claude/skills/implement-v2-engine",
+  "claude/skills/plan-v2-engine",
+  "claude/skills/research-methods",
+  "claude/skills/review-v2-engine",
+  "claude/skills/review-v2-lenses",
+  "claude/skills/review-v2-method",
+  "claude/skills/test-author",
+  "claude/skills/tomlctl",
+  "claude/skills/ui-capture",
+]
+evidence = []
+
+[[signals]]
+name = "rename-or-removal"
+source = "detector"
+roots = [
+  "tomlctl/src/plan",
+]
+evidence = []
+
+[[signals]]
+name = "process-heavy"
+source = "detector"
+roots = [
+  "tomlctl/src/plan/check",
+]
+evidence = []
+
+[[signals]]
+name = "docs-touched"
+source = "detector"
+roots = [
+  "claude/agents",
+  "claude/commands",
+  "claude/skills/flow-contract-task-store",
+  "claude/skills/implement-v2-engine",
+  "claude/skills/implement-v2-engine/references",
+  "claude/skills/plan-v2-engine/references",
+  "claude/skills/tomlctl",
+  "claude/skills/tomlctl/references",
+  "tomlctl",
+]
+evidence = []
+
+[[signals]]
+name = "tests-touched"
+source = "detector"
+roots = [
+  "tomlctl/src/cli/dispatch/tests",
+  "tomlctl/tests",
+]
+evidence = []
+
+[[signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+  ".",
+  ".claude/flows/eventual-churning-sunrise",
+  ".claude/flows/federated-beaming-hollerith",
+  ".claude/flows/giggly-conjuring-brook",
+  ".claude/flows/glimpse-ux-backlog",
+  ".claude/flows/glimpse-v2-visibility",
+  ".claude/flows/human-only-handovers",
+  ".claude/flows/jiggly-exploring-robin",
+  ".claude/flows/lively-twirling-babbage",
+  ".claude/flows/mid-run-requests",
+  ".claude/flows/milestone-cadence",
+  ".claude/flows/milestones-by-dependency",
+  ".claude/flows/polymorphic-wondering-magpie",
+  ".claude/flows/proud-leaping-conway",
+  ".claude/flows/review-system-v2",
+  ".claude/flows/review-system-v2/archive",
+  ".claude/flows/review-v2-first-run-repairs",
+  ".claude/flows/shimmying-marinating-bumblebee",
+  ".claude/flows/temporal-snuggling-pnueli",
+  ".claude/flows/toasty-wobbling-stonebraker",
+  ".claude/flows/tomlctl-backlog-capture",
+  ".claude/flows/tomlctl-followups",
+  ".claude/flows/tomlctl-followups-round-2",
+  ".claude/flows/tomlctl-items-sweep-clusters",
+  ".claude/flows/tomlctl-test-and-gate-cost",
+  ".claude/flows/twinkling-hopping-otter",
+  ".claude/flows/unified-singing-gem",
+  ".claude/flows/v2-apply",
+  ".claude/flows/v2-harness-tuning",
+  ".claude/flows/v2-planning",
+  ".claude/flows/v2-ui-fidelity",
+  ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+  ".claude/flows/whimsical-hugging-puppy",
+  ".claude/flows/woolly-greeting-rainbow",
+  ".claude/rules",
+  ".github/agents",
+  ".github/skills/backlog-capture",
+  ".github/skills/flow-contract-apply-constraints",
+  ".github/skills/flow-contract-apply-dependency-sort",
+  ".github/skills/flow-contract-apply-pipeline",
+  ".github/skills/flow-contract-apply-pipeline/references",
+  ".github/skills/flow-contract-apply-rollback-protocol",
+  ".github/skills/flow-contract-apply-vet-implement-lite",
+  ".github/skills/flow-contract-execution-record-schema",
+  ".github/skills/flow-contract-flow-context",
+  ".github/skills/flow-contract-ledger-disposition-sweep",
+  ".github/skills/flow-contract-ledger-schema",
+  ".github/skills/flow-contract-plan-output-format",
+  ".github/skills/flow-contract-plan-restructure",
+  ".github/skills/flow-contract-plansdirectory-prompt",
+  ".github/skills/flow-contract-reconciler",
+  ".github/skills/flow-contract-task-store",
+  ".github/skills/flow-contract-vet-research",
+  ".github/skills/tomlctl",
+  ".github/skills/tomlctl/references",
+  "claude/agents",
+  "claude/commands",
+  "claude/plugins/lumina-story-blocks/skills/mcp",
+  "claude/skills/apply-v2-engine",
+  "claude/skills/backlog-capture",
+  "claude/skills/backlog-clear",
+  "claude/skills/commit-conventions",
+  "claude/skills/documentation-conventions",
+  "claude/skills/documentation-conventions/references",
+  "claude/skills/flow-contract-apply-constraints",
+  "claude/skills/flow-contract-apply-dependency-sort",
+  "claude/skills/flow-contract-apply-pipeline",
+  "claude/skills/flow-contract-apply-pipeline/references",
+  "claude/skills/flow-contract-apply-rollback-protocol",
+  "claude/skills/flow-contract-apply-vet-implement-lite",
+  "claude/skills/flow-contract-execution-record-schema",
+  "claude/skills/flow-contract-flow-context",
+  "claude/skills/flow-contract-ledger-disposition-sweep",
+  "claude/skills/flow-contract-ledger-schema",
+  "claude/skills/flow-contract-plan-output-format",
+  "claude/skills/flow-contract-plan-output-format/references",
+  "claude/skills/flow-contract-plan-restructure",
+  "claude/skills/flow-contract-plansdirectory-prompt",
+  "claude/skills/flow-contract-reconciler",
+  "claude/skills/flow-contract-showcase-bundle",
+  "claude/skills/flow-contract-task-store",
+  "claude/skills/flow-contract-task-visibility",
+  "claude/skills/flow-contract-user-inputs",
+  "claude/skills/flow-contract-vet-research",
+  "claude/skills/implement-v2-engine",
+  "claude/skills/implement-v2-engine/references",
+  "claude/skills/plan-v2-engine",
+  "claude/skills/plan-v2-engine/references",
+  "claude/skills/research-methods",
+  "claude/skills/research-methods/references",
+  "claude/skills/review-v2-engine",
+  "claude/skills/review-v2-engine/references",
+  "claude/skills/review-v2-lenses",
+  "claude/skills/review-v2-lenses/checks",
+  "claude/skills/review-v2-lenses/facets",
+  "claude/skills/review-v2-lenses/lenses",
+  "claude/skills/review-v2-lenses/methods",
+  "claude/skills/review-v2-method",
+  "claude/skills/review-v2-method/references",
+  "claude/skills/test-author",
+  "claude/skills/tomlctl",
+  "claude/skills/tomlctl/references",
+  "claude/skills/ui-capture",
+  "claude/skills/ui-capture/references",
+  "config/nvim",
+  "docs/flows/glimpse-v2-visibility",
+  "docs/flows/glimpse-v2-visibility/design",
+  "docs/flows/glimpse-v2-visibility/notes",
+  "docs/flows/glimpse-v2-visibility/notes/run",
+  "docs/flows/human-only-handovers",
+  "docs/flows/human-only-handovers/design",
+  "docs/flows/human-only-handovers/notes",
+  "docs/flows/human-only-handovers/notes/run",
+  "docs/flows/mid-run-requests",
+  "docs/flows/mid-run-requests/design",
+  "docs/flows/mid-run-requests/notes",
+  "docs/flows/mid-run-requests/notes/run",
+  "docs/flows/milestone-cadence",
+  "docs/flows/milestone-cadence/notes",
+  "docs/flows/milestone-cadence/notes/run",
+  "docs/flows/milestones-by-dependency",
+  "docs/flows/milestones-by-dependency/design",
+  "docs/flows/milestones-by-dependency/notes",
+  "docs/flows/milestones-by-dependency/notes/run",
+  "docs/flows/tomlctl-test-and-gate-cost",
+  "docs/flows/tomlctl-test-and-gate-cost/design",
+  "docs/flows/tomlctl-test-and-gate-cost/notes",
+  "docs/flows/tomlctl-test-and-gate-cost/notes/run",
+  "docs/flows/v2-apply",
+  "docs/flows/v2-apply/design",
+  "docs/flows/v2-apply/notes",
+  "docs/flows/v2-apply/notes/run",
+  "docs/flows/v2-harness-tuning",
+  "docs/flows/v2-harness-tuning/design",
+  "docs/flows/v2-harness-tuning/notes",
+  "docs/flows/v2-harness-tuning/notes/run",
+  "docs/flows/v2-ui-fidelity",
+  "docs/flows/v2-ui-fidelity/design",
+  "docs/flows/v2-ui-fidelity/notes",
+  "docs/flows/v2-ui-fidelity/notes/run",
+  "docs/ideas",
+  "docs/plans",
+  "glimpse",
+  "lumina",
+  "lumina/docs/runbooks",
+  "scripts/templates",
+  "statusline",
+  "themes",
+  "themes/firefox",
+  "themes/nvim",
+  "tomlctl",
+  "tomlctl/tests/fixtures/tasks",
+]
+evidence = []
+
+[[signals]]
+name = "churn-hotspot"
+source = "detector"
+roots = [
+  "tomlctl/src",
+  "tomlctl/src/cli/types",
+  "tomlctl/src/plan",
+  "tomlctl/tests",
+]
+evidence = [
+  "tomlctl/tests/capabilities.rs",
+  "tomlctl/tests/output_options.rs",
+  "tomlctl/src/lib.rs",
+  "tomlctl/src/cli/types/mod.rs",
+  "tomlctl/src/plan/check.rs",
+  "tomlctl/tests/plan_check.rs",
+  "tomlctl/src/cli/types/plan.rs",
+  "tomlctl/src/plan/view.rs",
+  "tomlctl/tests/plan_view.rs",
+  "tomlctl/src/plan/schema.rs",
+  "tomlctl/src/plan/lane.rs",
+  "tomlctl/src/plan/mod.rs",
+  "tomlctl/src/plan/emit.rs",
+  "tomlctl/tests/plan_emit.rs",
+]
+
+[[signals]]
+name = "finding-hotspot"
+source = "detector"
+roots = [
+  "tomlctl/src/cli/types",
+  "tomlctl/src/plan",
+  "tomlctl/tests",
+]
+evidence = [
+  "tomlctl/src/plan/check.rs",
+  "tomlctl/src/cli/types/plan.rs",
+  "tomlctl/src/plan/lane.rs",
+  "tomlctl/src/plan/schema.rs",
+  "tomlctl/src/plan/view.rs",
+  "tomlctl/tests/plan_check.rs",
+  "tomlctl/tests/output_options.rs",
+]
+
+[[signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [
+  ".claude",
+]
+evidence = []
+
+[[signals]]
+name = "trust-boundary"
+source = "judged"
+accepted = true
+roots = []
+evidence = [
+  "tomlctl/src/plan/request.rs",
+]

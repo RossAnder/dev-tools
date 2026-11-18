@@ -167,3 +167,7 @@ Stage 5 runs `review resolve` and then `review digest --since-wave <wave>`. Any 
 4. Number the mop-up batches after the wave's own (`check-<wave>-<n+1>`), and end the turn as for any wave.
 
 An id the mop-up also fails to verify stays `unverified`, and `review run finish` refuses until it is verified or the run finishes with `--incomplete-file` naming it.
+
+## One-row verify
+
+A finding minted at triage, by `review triage --convert` or by `review escalation fix`, is `unverified`. Dispatch one verifier for that single id with the Verifier prompt, or one checker with the Checker prompt when its `route` is `checker`; an escalation-fix finding always routes to the verifier. Its verdict lands before the finding is handed to apply, and the agent counts toward the run's agent total.

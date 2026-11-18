@@ -547,7 +547,7 @@ const CELL_ASSIGNMENT: [Vis; 8] = [R, N, N, N, R, N, N, R];
 const RECORD_STATE: [Vis; 8] = [N, N, N, N, R, N, N, R];
 const TARGET: [Vis; 8] = [R, R, N, R, R, R, N, R];
 const TIER: [Vis; 8] = [N, N, N, R, R, R, N, R];
-const FIX_FILES: [Vis; 8] = [R, R, N, R, R, R, N, R];
+const FIX_FILES: [Vis; 8] = [R, R, R, R, R, R, N, R];
 
 use Record::{Cell, Finding, Run, Verdict};
 
@@ -583,6 +583,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Run, "audit", Ty::Table, RECORD_STATE),
     field(Run, "rechecks", Ty::Str, RECORD_STATE),
     field(Run, "incomplete", Ty::Str, RECORD_STATE).computed(),
+    field(Run, "ceiling_overrides", Ty::TableList, RECORD_STATE).computed(),
     // cells
     field(Cell, "id", Ty::Str, CELL_ASSIGNMENT).computed(),
     field(Cell, "run", Ty::Str, RECORD_STATE).computed(),
@@ -607,6 +608,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
         .cap(600)
         .computed(),
     field(Cell, "ruled_out", Ty::TableList, RECORD_STATE).computed(),
+    field(Cell, "escalations", Ty::TableList, RECORD_STATE).computed(),
     // findings: identity and bookkeeping
     field(Finding, "id", Ty::Str, IDENT).computed(),
     field(Finding, "run", Ty::Str, INTERNAL).computed(),
@@ -1363,14 +1365,35 @@ fn verdicts_disagree(verdicts: &[Map<String, JsonValue>]) -> bool {
 pub(crate) struct RoutingGlobs {
     executable: GlobSet,
     tests: GlobSet,
+    lockfiles: GlobSet,
 }
 
 impl RoutingGlobs {
-    pub(crate) fn new(executable: &[String], tests: &[String]) -> Result<Self> {
+    pub(crate) fn new(
+        executable: &[String],
+        tests: &[String],
+        lockfiles: &[String],
+    ) -> Result<Self> {
         Ok(Self {
             executable: compile("executable", executable)?,
             tests: compile("tests", tests)?,
+            lockfiles: compile("lockfiles", lockfiles)?,
         })
+    }
+
+    /// The kind of a path, in priority lockfile, test, code, other.
+    pub(crate) fn kind(&self, path: &str) -> super::catalogue::FileKind {
+        use super::catalogue::FileKind;
+        let path = path.trim_start_matches("./");
+        if self.lockfiles.is_match(path) {
+            FileKind::Lockfile
+        } else if self.tests.is_match(path) {
+            FileKind::Test
+        } else if self.executable.is_match(path) {
+            FileKind::Code
+        } else {
+            FileKind::Other
+        }
     }
 }
 
@@ -1411,7 +1434,7 @@ pub(super) fn edited_paths<'a>(
 /// since the checker's projection hides the record edit it carries. Any
 /// other cleanup goes to the verifier when it edits executable non-test code
 /// or removes a test, at its edit target (`target_file`, else `file`) or any
-/// of its `instances`, and to the checker otherwise. A test path is never
+/// of its `instances` or `fix_files`, and to the checker otherwise. A test path is never
 /// treated as executable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn route(
@@ -1423,6 +1446,7 @@ pub(crate) fn route(
     file: &str,
     target_file: Option<&str>,
     instances: &[String],
+    fix_files: &[String],
     globs: &RoutingGlobs,
 ) -> Route {
     match kind {
@@ -1436,7 +1460,9 @@ pub(crate) fn route(
             let Some(direction) = direction else {
                 return Route::Verifier;
             };
-            for path in edited_paths(file, target_file, instances.iter().map(String::as_str)) {
+            let edited = edited_paths(file, target_file, instances.iter().map(String::as_str))
+                .chain(fix_files.iter().map(String::as_str));
+            for path in edited {
                 let needs_verifier = if globs.tests.is_match(path) {
                     direction == Direction::Remove
                 } else {
@@ -1792,7 +1818,7 @@ mod tests {
         (Finding, "target_file", None, "- rt R R C R - -"),
         (Finding, "effort", Some(Kind::Cleanup), "- rt R R C R - -"),
         (Finding, "instances", None, "- rt R R C R - -"),
-        (Finding, "fix_files", None, "R R - R R R - R"),
+        (Finding, "fix_files", None, "R R R R R R - R"),
         (Finding, "angle", None, "- - - - ut - R R"),
         (Finding, "rationale", None, "- - - - ut - R R"),
         (Finding, "alternative", None, "- - - - ut - R R"),
@@ -1970,6 +1996,7 @@ mod tests {
         RoutingGlobs::new(
             &["**/*.rs".to_string(), "**/*.ts".to_string()],
             &["tests/**".to_string(), "**/*.test.ts".to_string()],
+            &["**/Cargo.lock".to_string()],
         )
         .expect("test globs compile")
     }
@@ -1990,6 +2017,7 @@ mod tests {
             file,
             target,
             &instances,
+            &[],
             &globs(),
         )
     }
@@ -2033,6 +2061,7 @@ mod tests {
             "src/a.rs",
             None,
             &[],
+            &[],
             &globs(),
         );
         assert_eq!(advisory, Route::Unrouted);
@@ -2049,6 +2078,7 @@ mod tests {
                 Depth::Standard,
                 "docs/plans/a.md",
                 Some(".claude/flows/s/tasks.toml"),
+                &[],
                 &[],
                 &globs(),
             );
@@ -2067,6 +2097,7 @@ mod tests {
                 depth,
                 "src/a.rs",
                 None,
+                &[],
                 &[],
                 &globs(),
             )

@@ -25,15 +25,17 @@ Only `accepted` may change on an existing judged signal; a retry of the same cal
 ## 2. The proposal
 
 ```bash
-tomlctl review plan --run <run> --slug <slug> --propose --accept-signals trust-boundary --lens +contrarian --lens -doc-drift --out <run-dir>/proposal.ndjson
+tomlctl review plan --run <run> --slug <slug> --propose --accept-signals trust-boundary --lens +contrarian --lens -doc-drift --context-free --reserve <n> --out <run-dir>/proposal.ndjson
 ```
 
 - `--accept-signals` names the candidates you accepted, comma-separated; omit it when you accepted none.
 - `--lens` repeats once per user `--lens` flag, passed through unchanged; omit it when the user gave none.
 - `--lens +intent-fidelity` is added on every code-family run whose store is bound to a flow with `.claude/flows/<slug>/plan.toml`, so the work is held against the flow's brief and the decisions its user stated or confirmed. Add it whatever the user's flags, unless they passed `--lens -intent-fidelity`, which wins. Never add it on a `--scope` run, a perf or plan-family run, or a run bound to a flow without `plan.toml`: there is no brief or decision record to hold the code against.
+- `--context-free` is passed at `standard` and `deep` on a code run with a diff: the proposal then emits the context-free correctness cells itself (one per code-kind correctness slice, merged down to at most max(1, ceil(ceiling/6)) cells, admitted right after the floor lenses). Never append context-free rows of your own.
+- `--reserve <n>` leaves `n` cells of the ceiling free for cells added after the proposal: pass the follow-up allowance of the depth (standard 1, deep 2; quick 0), so a follow-up wave fits. The summary reports `reserve`, `mechanical_pool` and `context_free`.
 - `--out` keeps the proposal in the run directory, where you edit it.
 
-The proposal is deterministic: floor lenses first, then signal-tier lenses whose signals matched, then lenses whose `always_at` is the run's depth, then candidate lenses ordered by how many of their signals matched, until the cell ceiling (about one cell per 100 changed lines, floor 3, capped by the depth). Each lens is sliced by its own `slice` rule, same-mode concerns with identical slices are bundled, repeat cells (`pass = 2`) are added at `standard` and `deep`, and every row carries `reason = "proposed"`. It never emits more cells than the ceiling minus the cells already planned, check cells included: floor-lens slices merge toward half that budget before a later tier is admitted, and a lens that fits an existing cell's bundle joins it rather than being cut. It slices sweeper cells itself, splitting a sweeper slice at 40 files into cells that each count against the ceiling; when the budget cannot hold them, slices keep merging down to one whole-scope cell per lens, and each sweeper cell left over 40 files is listed under `over_cap`. It also carries an estimated agent count, and lists the matched concerns that missed the ceiling under `unselected`, a cut check as `check:<id>` with reason `ceiling`. A concern an earlier wave's cell already carries is never listed as a ceiling cut. In the plan family, `plan-executor` cells hold up to 4 tasks each and sit outside the ceiling.
+The proposal is deterministic and admits in phases: first judgement lenses and the context-free cells (floor lenses first, then signal-tier lenses whose signals matched, then lenses whose `always_at` is the run's depth, then candidate lenses ordered by how many of their signals matched), then the mechanical sweeper pool, then repeat passes. Slices are kind-aware: judgement lenses are sliced by subsystem, `security` sits where the trust-boundary evidence points, and `test-gaps` covers changed code and its tests. Same-mode concerns with identical slices are bundled, and every row carries `reason = "proposed"`. The ceiling is about one cell per 100 changed lines, floor 3, capped by the depth; the proposal never emits more cells than the ceiling minus the cells already planned and minus `--reserve`, check cells included, and it never cuts a lens the signals matched. Sweeper cells share a pool of ceil(ceiling/4) cells. Repeat cells (`pass = 2`) are added at `standard` and `deep` from the room left over, hotspot cells first, then floor cells. `over_cap` lists the sweeper cells the pool merged past 40 files. It also carries an estimated agent count, and lists the matched concerns that missed the ceiling under `unselected`, a cut check as `check:<id>` with reason `ceiling`. A concern an earlier wave's cell already carries is never listed as a ceiling cut. In the plan family, `plan-executor` cells hold up to 4 tasks each and sit outside the ceiling.
 
 Read it with the Read tool. The rows are the cells you will write; each holds `slice`, `concerns`, `agent`, `reason`, and where present `pass`, `question` and `facets`.
 
@@ -46,7 +48,7 @@ Edit `<run-dir>/proposal.ndjson` into the wave's cell file, `<run-dir>/payloads/
 The proposal slices by rule; you slice by risk.
 
 - **Hotspots get their own cell.** A churn hotspot from the surveyor's `hotspots:` that the proposal grouped with quiet files moves to a cell of its own, with the same concerns.
-- **Split a slice a single agent cannot hold.** A `per-subsystem` slice spanning many unrelated files, or a judgement lens's whole-scope slice over a large diff, splits along the subsystems `profile.md` names. Sweeper cells arrive already split at 40 files; re-split only an `over_cap` cell, and only when the ceiling has room for the extra cell.
+- **Split a slice a single agent cannot hold.** A `per-subsystem` slice spanning many unrelated files, or a judgement lens's whole-scope slice over a large diff, splits along the subsystems `profile.md` names. Re-split a judgement slice only by subsystem, and only when a proposal slice is still too wide for one agent. Sweeper cells arrive already pooled; re-split only an `over_cap` cell, and only when the ceiling has room for the extra cell.
 - **Merge slivers.** Two one-file cells with the same concerns over closely coupled files become one; the saved cell can go to a probe or a candidate lens.
 - **Keep slices repo-relative.** A slice entry is a path, a glob, or for `plan-executor` cells a task ref; never a directory outside the scope.
 
@@ -80,11 +82,19 @@ A probe is a question the change raises that no catalogue lens owns. Add a `prob
 
 ### The ceiling
 
-The depth's cell ceiling counts every wave, repeat cells included; plan-executor cells sit outside it. Edits that add cells must stay within it: drop a candidate-tier cell, merge slivers, or cut a repeat pass first. Never drop a floor lens to make room; floor lenses run on every run of their family.
+The depth's cell ceiling counts every wave, repeat cells included; plan-executor cells sit outside it. `review plan --ndjson` refuses a wave whose cells would pass the ceiling, writes nothing and names the numbers. Edits that add cells must stay within it: drop a candidate-tier cell, merge slivers, or cut a repeat pass first. Never drop a floor lens to make room; floor lenses run on every run of their family.
+
+To go over the ceiling, ask the user with `AskUserQuestion`; never otherwise. Stage their answer, quoted, with the Write tool as a reason file under `<run-dir>/payloads/`, then append with it:
+
+```bash
+tomlctl review plan --run <run> --slug <slug> --ndjson <run-dir>/payloads/cells-w<n>.ndjson --over-ceiling-file <run-dir>/payloads/over-ceiling-w<n>.md
+```
+
+The override is recorded on the run and shown in the report and in `review stats`.
 
 ### Family deltas
 
-The carrier adds its own cells here; `/review-v2`'s context-free correctness cell is one. Write them into the same cell file with the reason the carrier gives.
+The carrier adds its own cells here, written into the same cell file with the reason the carrier gives. `/review-v2`'s context-free correctness cells are no longer one of them: they come from `--propose --context-free`.
 
 ## 4. The agent-count statement
 
@@ -170,11 +180,18 @@ A hit matches on place, not on claim, so first ask whether the rule-out's reason
 
 ### Escalations
 
-The wave's escalations arrive as the Workflow index's top-level `escalations`, `[{cell, text}]`, each cut to 300 characters; under the Agent-wave fallback, they are the `escalate` entries of the cell-returns. `escalations` is the index's last key, so a result cut short loses escalation text first: when the result says it was truncated, read the notification's output file before deciding. Give each escalation exactly one disposition:
+The wave's escalations arrive as the Workflow index's top-level `escalations`, `[{cell, text}]`, each cut to 300 characters; under the Agent-wave fallback, they are the `escalate` entries of the cell-returns. `escalations` is the index's last key, so a result cut short loses escalation text first: when the result says it was truncated, read the notification's output file before deciding. After each wave is settled, record its escalations on their cells, so triage can dispose of them after a session break and the report lists them: write the index's `escalations` as NDJSON rows `{"cell": "<id>", "text": "<text>"}` with the Write tool to `<run-dir>/payloads/escalations-w<n>.ndjson`, then run:
+
+```bash
+tomlctl review escalation record --run <run> --slug <slug> --ndjson <run-dir>/payloads/escalations-w<n>.ndjson
+```
+
+Each is stored as `<cell>:<n>` with status `open`. Give each escalation exactly one disposition:
 
 1. **A follow-up cell** — the escalation needs judgement in a place no cell covered: a `probe:<slug>` cell or a lens cell, by the Follow-up table below, within the allowance and the ceiling.
 2. **A mechanical row for the next cell** — the escalation is a grep-provable edit with exact `old` text that its cell could have written as an out-of-lens cleanup row under a lens the run's catalogue marks mechanical for this family (the `review-v2-method` skill's "Mechanical-cleanup exception"). Put it in the `question` of a cell the next wave runs over that file, asking it to write the row; this adds no cell. With no such cell coming, or when the family has no mechanical lens, it takes disposition 3.
 3. **A close-summary item** — out of budget, or anchored outside the scope and not a ripple row. Name it in the close summary and offer it as a backlog capture through the `backlog check` gate (`triage-and-close.md`).
+4. **The user's fix at triage** — an escalation the user picks to fix at triage reaches `/apply-v2` through its settle route; `triage-and-close.md` gives the command.
 
 ### Follow-up
 
@@ -189,7 +206,9 @@ A follow-up is a new wave of cells, written through `review plan` as the next wa
 | a gap the findings revealed | a probe or a lens cell on the place the gap points: a defect pattern that likely recurs in sibling files, or a finding in a file no cell sliced |
 | an `after_wave` lens the run enabled, such as an opted-in `synthesis` | the lens over the whole scope, after the wave it names |
 
-**Escalations at `quick`.** `quick` allows no follow-up wave, but a sweeper's escalated candidate needs judgement it could not give. Collect every escalation of the run into one `review-finder` probe cell whose `question` lists them, write it as the next wave, and launch it: one Opus batch, not a wave of cells. It counts against the ceiling.
+**Escalations at `quick`.** `quick` allows no follow-up wave and its ceiling is full after wave 1. For code and perf runs there is no probe cell: the recorded escalations go to triage, where the user picks fix or a backlog capture. The plan family keeps its probe: `plan-review-lead` reserves one cell for it.
+
+**Reserve.** Pass `--reserve` equal to the depth's follow-up allowance at proposal time (standard 1, deep 2), so a follow-up wave fits under the ceiling without an override.
 
 Do not launch a follow-up for a cell sealed `covered` with no findings; a clean result is a result. Do not re-run a lens on a slice it already covered to "double-check" a finding; verification owns that. When the allowance or the ceiling is spent and a trigger remains, the cell stays as sealed, and its status shows in the report's coverage map.
 

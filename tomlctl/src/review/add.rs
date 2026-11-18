@@ -688,6 +688,16 @@ pub(super) fn route_of(
                 .collect()
         })
         .unwrap_or_default();
+    let fix_files: Vec<String> = row
+        .get("fix_files")
+        .and_then(JsonValue::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(JsonValue::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     fields::route(
         run.family,
         kind,
@@ -697,6 +707,7 @@ pub(super) fn route_of(
         str_of(row, "file").unwrap_or_default(),
         str_of(row, "target_file"),
         &instances,
+        &fix_files,
         globs,
     )
 }

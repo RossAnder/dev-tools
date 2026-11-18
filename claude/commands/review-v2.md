@@ -44,17 +44,12 @@ The surveyor resolves `lint-baseline` through its discovery ladder, one command 
 
 ### Stage 3 — the context-free correctness cell
 
-At `standard` and `deep`, add one cell that runs the `correctness` lens over the diff alone, with no pack, no prior findings and no CLAUDE.md. It is an independent read: a finder that has absorbed the project's conventions and the store's history tends to accept what they accept, and this cell is the check on that. Its agent is `review-finder-cf`, the same finder run with `omitClaudeMd`; the store accepts that agent only on a cell whose concerns are exactly `["correctness"]`.
+At `standard` and `deep`, pass `--context-free` and `--reserve <n>` (the depth's follow-up allowance: standard 1, deep 2) to `review plan --propose`: the proposal emits the context-free correctness cells itself, so append no row of your own. Each is a cell that runs the `correctness` lens over the diff alone, with no pack, no prior findings and no CLAUDE.md. It is an independent read: a finder that has absorbed the project's conventions and the store's history tends to accept what they accept, and this cell is the check on that. Its agent is `review-finder-cf`, the same finder run with `omitClaudeMd`; the store accepts that agent only on a cell whose concerns are exactly `["correctness"]`.
 
 - **When**: the run has a diff, meaning its `base` is not `HEAD`. Not at `quick`. For a path review of unchanged code there are no hunks to read, so leave it out and say so in the close summary.
-- **Row**: write it into the wave-1 cell file with the composed rows. Its slice is the run's scope, or, when the proposal split `correctness` across several slices because the diff is large, one context-free cell per such slice.
-
-  ```json
-  {"slice": ["<scope globs>"], "concerns": ["correctness"], "agent": "review-finder-cf", "question": "context-free variant: diff only, no pack, no prior findings", "reason": "context-free correctness pass over the diff, independent of the pack"}
-  ```
-
-- **Ceiling**: it counts against the depth's cell ceiling like any cell, and outranks candidate-tier cells and repeat passes. When nothing but floor cells is left to cut, leave it out and say so in the close summary.
-- **Store record**: the cell's `agent` marks it as context-free; the `question` and `reason` above record why it exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's.
+- **Rows**: the proposal carries them, one per code-kind correctness slice, merged down to at most max(1, ceil(ceiling/6)) cells; keep them in the wave-1 cell file with the composed rows.
+- **Ceiling**: the proposal reserves room for them and for the follow-up wave the depth allows, and admits them right after the floor lenses, so they outrank candidate-tier cells and repeat passes.
+- **Store record**: the cell's `agent` marks it as context-free; its `question` and `reason` record why it exists. `review stats --yield` reports the findings context-free cells add.
 - **Dispatch**: it runs at stage 4 like any other cell, on either substrate. `review show --for finder` gives a `review-finder-cf` cell no pack and adds the run's `base`, and the cell prompt omits the `pack:` line for it, so the finder reads the slice as `git diff <base>` (`git diff <base> <head>` for a bounded run) and skips the prior findings. Its findings route like any finder cell's.
 
 ### Stage 8 — backlog and hand-off

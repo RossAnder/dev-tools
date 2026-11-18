@@ -7,7 +7,7 @@ produces = ["defect", "cleanup", "advisory"]
 owns = ["input-validation", "injection", "access-control", "secrets-and-crypto", "supply-chain-execution"]
 activation = "signal"
 apply_when = { signals = ["trust-boundary", "dependency-change", "build-script-change", "package-lifecycle-change"] }
-slice = "per-subsystem"
+slice = "signal-evidence"
 methods = ["trace"]
 v1_category = "security"
 research_domain = "security"

@@ -78,6 +78,15 @@ str_enum!(SliceRule {
     PerSubsystem => "per-subsystem",
     PerFile => "per-file",
     PerTask => "per-task",
+    SignalEvidence => "signal-evidence",
+    ChangedWithTests => "changed-with-tests",
+});
+
+str_enum!(FileKind {
+    Code => "code",
+    Test => "test",
+    Lockfile => "lockfile",
+    Other => "other",
 });
 
 str_enum!(Executor {
@@ -108,6 +117,7 @@ const LENS_KEYS: &[&str] = &[
     "after_wave",
     "methods",
     "slice",
+    "kinds",
     "v1_category",
     "research_domain",
 ];
@@ -409,6 +419,8 @@ pub(crate) struct Entry {
     pub(crate) after_wave: Option<u32>,
     pub(crate) methods: Vec<String>,
     pub(crate) slice: Option<SliceRule>,
+    /// The file kinds a judgement lens reads; empty means code.
+    pub(crate) kinds: Vec<FileKind>,
     /// `(family, category)` pairs as declared; [`Catalogue::validate`] checks them.
     pub(crate) v1_category: Vec<(String, String)>,
     pub(crate) attaches_to: Vec<String>,
@@ -442,6 +454,7 @@ impl Entry {
             after_wave: None,
             methods: Vec::new(),
             slice: None,
+            kinds: Vec::new(),
             v1_category: Vec::new(),
             attaches_to: Vec::new(),
             executor: None,
@@ -511,11 +524,12 @@ pub(crate) struct Concern {
 pub(crate) struct Routing {
     pub(crate) executable: Vec<String>,
     pub(crate) tests: Vec<String>,
+    pub(crate) lockfiles: Vec<String>,
 }
 
 impl Routing {
     pub(crate) fn compile(&self) -> Result<super::fields::RoutingGlobs> {
-        super::fields::RoutingGlobs::new(&self.executable, &self.tests)
+        super::fields::RoutingGlobs::new(&self.executable, &self.tests, &self.lockfiles)
     }
 }
 
@@ -1940,6 +1954,13 @@ fn parse_entry(raw: RawEntry, errors: &mut Vec<CatalogueError>) -> Option<Entry>
             e.after_wave = f.number("after_wave");
             e.methods = f.texts("methods", false);
             e.slice = f.word("slice", true, SliceRule::parse, SliceRule::VALUES);
+            e.kinds = f.words("kinds", false, FileKind::parse, FileKind::VALUES);
+            if e.kinds.contains(&FileKind::Lockfile) {
+                f.problem(
+                    "kinds",
+                    format!("of lens {:?} holds \"lockfile\", which no lens reads", e.id),
+                );
+            }
             e.v1_category = f.v1_category(&e.families);
             f.text("research_domain", false);
         }
@@ -2120,9 +2141,10 @@ fn read_vocabulary(
     }
     if let Some(routing) = section("routing", errors) {
         let mut f = Front::new(&routing, path, "routing.".into(), errors);
-        f.only(&["executable", "tests"], "routing table");
+        f.only(&["executable", "tests", "lockfiles"], "routing table");
         vocab.routing.executable.extend(f.globs("executable"));
         vocab.routing.tests.extend(f.globs("tests"));
+        vocab.routing.lockfiles.extend(f.globs("lockfiles"));
     }
 }
 

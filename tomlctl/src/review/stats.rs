@@ -11,7 +11,9 @@
 //! plan finding's disposition from `tier`, status, `applied` and `addressed`, so it needs
 //! no status of its own. `--apply` is the native counterpart of `--outcomes`:
 //! it reads a finding's apply link, its `reopen_reason`, its block and settle
-//! fields and the store's reproductions, and opens no v1 ledger.
+//! fields and the store's reproductions, and opens no v1 ledger. `--yield`
+//! credits a repeat or context-free arm only with a same-run identity cluster
+//! no verified first-pass row belongs to.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -66,6 +68,11 @@ pub(crate) struct ReviewStatsArgs {
         help = "Count findings minted where an earlier run's cell sealed `covered`"
     )]
     pub(crate) escapes: bool,
+    #[arg(
+        long = "yield",
+        help = "Per run and pooled per depth: cells, findings, verified, unique, applied and scheduled for the first-pass, repeat and context-free arms"
+    )]
+    pub(crate) yields: bool,
     #[arg(
         long = "calibration",
         help = "Exemplars from user dismissals, v1 wontfix reasons and audit overturns"
@@ -187,8 +194,12 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
         "ok": true,
         "stores": stores.iter().map(|s| s.label.clone()).collect::<Vec<_>>(),
     });
-    let sections =
-        args.outcomes || args.apply || args.escapes || args.calibration || args.plan_outcomes;
+    let sections = args.outcomes
+        || args.apply
+        || args.escapes
+        || args.yields
+        || args.calibration
+        || args.plan_outcomes;
     if axis.is_some() || !sections {
         let axis = axis.unwrap_or(Axis::Lens);
         out["by"] = json!(axis.as_str());
@@ -206,6 +217,9 @@ pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
     }
     if args.escapes {
         out["escapes"] = escapes(&view);
+    }
+    if args.yields {
+        out["yield"] = yields(&view);
     }
     if args.calibration {
         let n = args.exemplars.unwrap_or(DEFAULT_EXEMPLARS);
@@ -388,6 +402,93 @@ fn overturn<'v>(route: Option<Route>, verdicts: &[&'v Verdict]) -> (bool, Option
     }
 }
 
+/// The verifying call an audit judged: a defect's call by its outcome, a
+/// cleanup only when a checker decided it, since those are the classes the
+/// audit's per-class floors are read for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuditClass {
+    ConfirmedDefect,
+    RefutedDefect,
+    CheckedCleanup,
+    Other,
+}
+
+impl AuditClass {
+    const ALL: [Self; 4] = [
+        Self::ConfirmedDefect,
+        Self::RefutedDefect,
+        Self::CheckedCleanup,
+        Self::Other,
+    ];
+
+    fn of(kind: Kind, refuted: bool, by: &str) -> Self {
+        match kind {
+            Kind::Defect if refuted => Self::RefutedDefect,
+            Kind::Defect => Self::ConfirmedDefect,
+            Kind::Cleanup if by == "checker" => Self::CheckedCleanup,
+            _ => Self::Other,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ConfirmedDefect => "confirmed_defect",
+            Self::RefutedDefect => "refuted_defect",
+            Self::CheckedCleanup => "checked_cleanup",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// Audited rows and their overturns, in total and per [`AuditClass`].
+#[derive(Default)]
+struct AuditTally {
+    audited: usize,
+    overturned: usize,
+    /// `(audited, overturned)` indexed by [`AuditClass`].
+    classes: [(usize, usize); AuditClass::ALL.len()],
+}
+
+impl AuditTally {
+    fn add(&mut self, finding: &Finding, verdicts: &[&Verdict]) {
+        let (audited, overturned) = overturn(finding.route, verdicts);
+        if !audited {
+            return;
+        }
+        let overturned = usize::from(overturned.is_some());
+        self.audited += 1;
+        self.overturned += overturned;
+        let class = deciding_verifier(finding.route, verdicts)
+            .map_or(AuditClass::Other, |(refuted, deciding)| {
+                AuditClass::of(finding.kind, refuted, &deciding.by)
+            });
+        let slot = &mut self.classes[class as usize];
+        slot.0 += 1;
+        slot.1 += overturned;
+    }
+
+    /// Sets `audited`, `overturned`, `audit_overturn_rate` and
+    /// `audit_classes` on `row`.
+    fn write(&self, row: &mut JsonValue) {
+        row["audited"] = json!(self.audited);
+        row["overturned"] = json!(self.overturned);
+        row["audit_overturn_rate"] = rate(self.overturned, self.audited);
+        let classes: serde_json::Map<String, JsonValue> = AuditClass::ALL
+            .iter()
+            .map(|&class| {
+                let (audited, overturned) = self.classes[class as usize];
+                let entry = json!({
+                    "audited": audited,
+                    "overturned": overturned,
+                    "rate": rate(overturned, audited),
+                });
+                (class.as_str().to_string(), entry)
+            })
+            .collect();
+        row["audit_classes"] = JsonValue::Object(classes);
+    }
+}
+
 fn user_dismissal(finding: &Finding) -> Option<&str> {
     if finding.status() != FindingStatus::Dismissed {
         return None;
@@ -408,8 +509,7 @@ struct Tally {
     kinds: [usize; Kind::ALL.len()],
     verified: usize,
     refuted: usize,
-    audited: usize,
-    overturned: usize,
+    audit: AuditTally,
     dismissed: usize,
 }
 
@@ -436,9 +536,7 @@ impl Tally {
             self.verified += 1;
             self.refuted += usize::from(refuted);
         }
-        let (audited, overturned) = overturn(finding.route, verdicts);
-        self.audited += usize::from(audited);
-        self.overturned += usize::from(overturned.is_some());
+        self.audit.add(finding, verdicts);
         self.dismissed += usize::from(user_dismissal(finding).is_some());
     }
 
@@ -465,15 +563,13 @@ impl Tally {
             "verified": self.verified,
             "refuted": self.refuted,
             "refute_rate": rate(self.refuted, self.verified),
-            "audited": self.audited,
-            "overturned": self.overturned,
-            "audit_overturn_rate": rate(self.overturned, self.audited),
             "dismissed": self.dismissed,
             "dismissal_rate": rate(self.dismissed, self.findings()),
             "thin": self.status(CellStatus::Thin),
             "uncovered": self.status(CellStatus::Uncovered),
             "uncovered_rate": rate(self.status(CellStatus::Uncovered), self.cells),
         });
+        self.audit.write(&mut row);
         match axis {
             Axis::Lens => {
                 row["hashes"] = json!(self.hashes);
@@ -545,8 +641,7 @@ fn by_model(view: &View) -> Vec<JsonValue> {
         runs: BTreeSet<String>,
         verified: usize,
         refuted: usize,
-        audited: usize,
-        overturned: usize,
+        audit: AuditTally,
     }
     let mut tallies: BTreeMap<String, ModelTally> = BTreeMap::new();
     for sv in &view.stores {
@@ -568,25 +663,22 @@ fn by_model(view: &View) -> Vec<JsonValue> {
             tally.runs.insert(sv.run_key(run));
             tally.verified += 1;
             tally.refuted += usize::from(refuted);
-            let (audited, overturned) = overturn(finding.route, verdicts);
-            tally.audited += usize::from(audited);
-            tally.overturned += usize::from(overturned.is_some());
+            tally.audit.add(finding, verdicts);
         }
     }
     tallies
         .iter()
         .map(|(model, t)| {
-            json!({
+            let mut row = json!({
                 "key": model,
                 "roles": t.roles,
                 "runs": t.runs.len(),
                 "verified": t.verified,
                 "refuted": t.refuted,
                 "refute_rate": rate(t.refuted, t.verified),
-                "audited": t.audited,
-                "overturned": t.overturned,
-                "audit_overturn_rate": rate(t.overturned, t.audited),
-            })
+            });
+            t.audit.write(&mut row);
+            row
         })
         .collect()
 }
@@ -698,10 +790,33 @@ fn by_run(view: &View) -> Vec<JsonValue> {
                 "concerns": waived_concerns,
                 "files": run.waivers.len() - waived_concerns,
             });
+            row["ceiling_overrides"] = ceiling_overrides(run);
             rows.push(row);
         }
     }
     rows
+}
+
+/// How many waves the user let past the run's ceiling, and by how many cells
+/// in all: each entry's `planned + added - ceiling`.
+fn ceiling_overrides(run: &store::Run) -> JsonValue {
+    let entries: Vec<&toml::Table> = run
+        .rest
+        .get("ceiling_overrides")
+        .and_then(toml::Value::as_array)
+        .map(|list| list.iter().filter_map(toml::Value::as_table).collect())
+        .unwrap_or_default();
+    let int =
+        |t: &toml::Table, key: &str| t.get(key).and_then(toml::Value::as_integer).unwrap_or(0);
+    let over: i64 = entries
+        .iter()
+        .map(|e| {
+            int(e, "planned")
+                .saturating_add(int(e, "added"))
+                .saturating_sub(int(e, "ceiling"))
+        })
+        .fold(0, i64::saturating_add);
+    json!({ "count": entries.len(), "over": over })
 }
 
 /// A v1 row linked to a finding the view keeps.
@@ -1116,6 +1231,216 @@ fn escapes(view: &View) -> JsonValue {
         "by_concern": concerns,
         "findings": found,
     })
+}
+
+/// The pass a finding's cell ran as: the context-free finder, a repeat pass,
+/// or the first pass, which a finding with no known cell also counts under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Arm {
+    First,
+    Repeat,
+    Cf,
+}
+
+impl Arm {
+    const ALL: [Self; 3] = [Self::First, Self::Repeat, Self::Cf];
+
+    fn of(cell: Option<&Cell>) -> Self {
+        match cell {
+            Some(c) if c.agent.trim() == fields::FINDER_CF => Self::Cf,
+            Some(c) if c.pass.is_some_and(|p| p >= 2) => Self::Repeat,
+            _ => Self::First,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::First => "first",
+            Self::Repeat => "repeat",
+            Self::Cf => "cf",
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+struct ArmTally {
+    cells: usize,
+    findings: usize,
+    verified: usize,
+    unique: usize,
+    applied: usize,
+    scheduled: usize,
+}
+
+#[derive(Default)]
+struct YieldTally {
+    arms: [ArmTally; Arm::ALL.len()],
+    cross_run: [usize; Arm::ALL.len()],
+}
+
+impl YieldTally {
+    fn merge(&mut self, other: &Self) {
+        for (into, from) in self.arms.iter_mut().zip(&other.arms) {
+            into.cells += from.cells;
+            into.findings += from.findings;
+            into.verified += from.verified;
+            into.unique += from.unique;
+            into.applied += from.applied;
+            into.scheduled += from.scheduled;
+        }
+        for (into, from) in self.cross_run.iter_mut().zip(&other.cross_run) {
+            *into += from;
+        }
+    }
+
+    fn to_json(&self) -> JsonValue {
+        let mut row = serde_json::Map::new();
+        for arm in Arm::ALL {
+            let t = &self.arms[arm as usize];
+            row.insert(
+                arm.as_str().to_string(),
+                json!({
+                    "cells": t.cells,
+                    "findings": t.findings,
+                    "verified": t.verified,
+                    "unique": t.unique,
+                    "applied": t.applied,
+                    "scheduled": t.scheduled,
+                }),
+            );
+        }
+        let cross: serde_json::Map<String, JsonValue> = Arm::ALL
+            .iter()
+            .map(|&arm| {
+                (
+                    arm.as_str().to_string(),
+                    json!(self.cross_run[arm as usize]),
+                )
+            })
+            .collect();
+        row.insert("cross_run".to_string(), JsonValue::Object(cross));
+        JsonValue::Object(row)
+    }
+}
+
+/// The ids a finding's `same_as` and `merged_into` name.
+fn yield_links(finding: &Finding) -> impl Iterator<Item = &str> {
+    [
+        finding.same_as.as_str(),
+        finding.text("merged_into").unwrap_or_default(),
+    ]
+    .into_iter()
+    .filter(|id| !id.is_empty())
+}
+
+fn cluster_root(parent: &mut [usize], mut at: usize) -> usize {
+    while parent[at] != at {
+        parent[at] = parent[parent[at]];
+        at = parent[at];
+    }
+    at
+}
+
+/// One run's arms. Clusters are the connected components of the `same_as`
+/// and `merged_into` links among the run's findings; a finding linked to
+/// another run's finding is counted only in `cross_run`.
+fn run_yield(sv: &StoreView, run: &str) -> YieldTally {
+    let store = &sv.loaded.store;
+    let cell_of: BTreeMap<&str, &Cell> = store.cells.iter().map(|c| (c.id.as_str(), c)).collect();
+    let run_of: BTreeMap<&str, &str> = store
+        .findings
+        .iter()
+        .map(|f| (f.id.as_str(), f.run.as_str()))
+        .collect();
+    let mut tally = YieldTally::default();
+    for cell in sv.cells.iter().filter(|c| c.run == run) {
+        tally.arms[Arm::of(Some(cell)) as usize].cells += 1;
+    }
+    let mut members: Vec<(&Finding, Arm)> = Vec::new();
+    for f in sv.findings.iter().filter(|f| f.run == run) {
+        let arm = Arm::of(cell_of.get(f.cell.as_str()).copied());
+        let cross = yield_links(f).any(|id| run_of.get(id).is_some_and(|&r| r != run));
+        if cross {
+            tally.cross_run[arm as usize] += 1;
+        } else {
+            members.push((f, arm));
+        }
+    }
+    let index: BTreeMap<&str, usize> = members
+        .iter()
+        .enumerate()
+        .map(|(i, (f, _))| (f.id.as_str(), i))
+        .collect();
+    let mut parent: Vec<usize> = (0..members.len()).collect();
+    for (i, (f, _)) in members.iter().enumerate() {
+        for target in yield_links(f).filter_map(|id| index.get(id).copied()) {
+            let (a, b) = (
+                cluster_root(&mut parent, i),
+                cluster_root(&mut parent, target),
+            );
+            parent[a] = b;
+        }
+    }
+    #[derive(Default)]
+    struct Cluster {
+        verified: [bool; Arm::ALL.len()],
+        resolved: bool,
+        scheduled: bool,
+    }
+    let mut clusters: BTreeMap<usize, Cluster> = BTreeMap::new();
+    for (i, (f, arm)) in members.iter().enumerate() {
+        let verified = verifier_call(f.route, sv.verdicts_of(&f.id)) == Some(false);
+        let slot = &mut tally.arms[*arm as usize];
+        slot.findings += 1;
+        slot.verified += usize::from(verified);
+        let cluster = clusters.entry(cluster_root(&mut parent, i)).or_default();
+        cluster.verified[*arm as usize] |= verified;
+        match apply_state(f) {
+            Some("resolved") => cluster.resolved = true,
+            Some("scheduled") => cluster.scheduled = true,
+            _ => {}
+        }
+    }
+    let first = Arm::First as usize;
+    for cluster in clusters.values() {
+        for arm in Arm::ALL {
+            let at = arm as usize;
+            let credited = cluster.verified[at] && (at == first || !cluster.verified[first]);
+            if !credited {
+                continue;
+            }
+            let slot = &mut tally.arms[at];
+            slot.unique += 1;
+            if cluster.resolved {
+                slot.applied += 1;
+            } else if cluster.scheduled {
+                slot.scheduled += 1;
+            }
+        }
+    }
+    tally
+}
+
+/// What each arm found per run, and those runs summed per depth.
+fn yields(view: &View) -> JsonValue {
+    let mut runs = Vec::new();
+    let mut pooled: BTreeMap<&'static str, YieldTally> = BTreeMap::new();
+    for sv in &view.stores {
+        for run in &sv.runs {
+            let tally = run_yield(sv, &run.id);
+            let mut row = tally.to_json();
+            row["store"] = json!(sv.loaded.label);
+            row["run"] = json!(run.id);
+            row["depth"] = json!(run.depth.as_str());
+            runs.push(row);
+            pooled.entry(run.depth.as_str()).or_default().merge(&tally);
+        }
+    }
+    let pooled: serde_json::Map<String, JsonValue> = pooled
+        .into_iter()
+        .map(|(depth, t)| (depth.to_string(), t.to_json()))
+        .collect();
+    json!({"runs": runs, "pooled": pooled})
 }
 
 /// A plan finding's disposition, from its frozen `tier`, its status and who

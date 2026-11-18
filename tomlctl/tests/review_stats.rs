@@ -1434,6 +1434,288 @@ fn stats_all_aggregates_across_stores() {
     assert_eq!(perf["rows"], json!([]), "no perf runs: {perf}");
 }
 
+const CLASSES_STORE_PATH: &str = ".claude/review-v2/classes.toml";
+
+/// One audited row of every class, overturns in three of them, an unaudited
+/// row, and a run whose user let two waves past the ceiling.
+const CLASSES_STORE: &str = r#"schema_version = 1
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-10-12T10:00:00Z"
+models = { verifier = "opus", checker = "haiku" }
+ceiling_overrides = [
+  { wave = 2, ceiling = 10, planned = 8, added = 4, reason = "the user kept every lens" },
+  { wave = 3, ceiling = 10, planned = 12, added = 1, reason = "one follow-up" },
+]
+
+[[runs]]
+id = "U2"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-10-13T10:00:00Z"
+models = { verifier = "sonnet" }
+
+[[cells]]
+id = "C1"
+run = "U1"
+slice = ["src/lib.rs"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "covered"
+
+[[findings]]
+id = "D1"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 1
+summary = "confirmed and upheld"
+status = "open"
+
+[[findings]]
+id = "D2"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 2
+summary = "confirmed and overturned"
+status = "open"
+
+[[findings]]
+id = "D3"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 3
+summary = "refuted and overturned"
+status = "refuted"
+
+[[findings]]
+id = "D4"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "defect"
+lens = "correctness"
+file = "src/lib.rs"
+line = 4
+summary = "confirmed, never audited"
+status = "open"
+
+[[findings]]
+id = "K1"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+file = "src/lib.rs"
+line = 5
+summary = "checked and overturned"
+status = "open"
+
+[[findings]]
+id = "K2"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+file = "src/lib.rs"
+line = 6
+summary = "checked and upheld"
+status = "open"
+
+[[findings]]
+id = "K3"
+run = "U1"
+cell = "C1"
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+file = "src/lib.rs"
+line = 7
+summary = "a cleanup a verifier decided"
+status = "open"
+
+[[verdicts]]
+finding = "D1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "D1"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "D2"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "D2"
+run = "U2"
+by = "audit"
+verdict = "refuted"
+
+[[verdicts]]
+finding = "D3"
+run = "U1"
+by = "verifier"
+verdict = "refuted"
+
+[[verdicts]]
+finding = "D3"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "D4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "K1"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "K1"
+run = "U2"
+by = "audit"
+verdict = "refuted"
+
+[[verdicts]]
+finding = "K2"
+run = "U1"
+by = "checker"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "K2"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "K3"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+
+[[verdicts]]
+finding = "K3"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+"#;
+
+/// Asserts a row's `audit_classes` entry for `class` is `(audited, overturned)`.
+fn assert_class(row: &JsonValue, class: &str, audited: u64, overturned: u64) {
+    let entry = &row["audit_classes"][class];
+    assert_eq!(entry["audited"], audited, "{class}: {row}");
+    assert_eq!(entry["overturned"], overturned, "{class}: {row}");
+}
+
+fn class_sum(row: &JsonValue, key: &str) -> u64 {
+    row["audit_classes"]
+        .as_object()
+        .expect("audit_classes is an object")
+        .values()
+        .map(|c| c[key].as_u64().unwrap())
+        .sum()
+}
+
+#[test]
+fn audit_counts_split_by_class_per_lens_and_per_model() {
+    let repo = Repo::new();
+    repo.write(CLASSES_STORE_PATH, CLASSES_STORE);
+
+    let lens = repo.stats(&["--scope", "classes", "--by", "lens"]);
+    let correctness = row(&lens["rows"], "correctness");
+    assert_eq!(correctness["audited"], 6, "{correctness}");
+    assert_eq!(correctness["overturned"], 3, "{correctness}");
+    assert_eq!(correctness["audit_overturn_rate"], 0.5, "{correctness}");
+    assert_class(correctness, "confirmed_defect", 2, 1);
+    assert_class(correctness, "refuted_defect", 1, 1);
+    assert_class(correctness, "checked_cleanup", 2, 1);
+    assert_class(correctness, "other", 1, 0);
+    assert_eq!(
+        correctness["audit_classes"]["refuted_defect"]["rate"], 1.0,
+        "{correctness}"
+    );
+    assert_eq!(class_sum(correctness, "audited"), 6, "{correctness}");
+    assert_eq!(class_sum(correctness, "overturned"), 3, "{correctness}");
+
+    let model = repo.stats(&["--scope", "classes", "--by", "model"]);
+    let opus = row(&model["rows"], "opus");
+    assert_eq!(opus["audited"], 4, "{opus}");
+    assert_eq!(opus["overturned"], 2, "{opus}");
+    assert_class(opus, "confirmed_defect", 2, 1);
+    assert_class(opus, "refuted_defect", 1, 1);
+    assert_class(opus, "checked_cleanup", 0, 0);
+    assert_class(opus, "other", 1, 0);
+    assert_eq!(
+        opus["audit_classes"]["checked_cleanup"]["rate"],
+        JsonValue::Null,
+        "{opus}"
+    );
+    assert_eq!(class_sum(opus, "audited"), 4, "{opus}");
+
+    let haiku = row(&model["rows"], "haiku");
+    assert_eq!(haiku["audited"], 2, "{haiku}");
+    assert_eq!(haiku["overturned"], 1, "{haiku}");
+    assert_class(haiku, "confirmed_defect", 0, 0);
+    assert_class(haiku, "refuted_defect", 0, 0);
+    assert_class(haiku, "checked_cleanup", 2, 1);
+    assert_class(haiku, "other", 0, 0);
+    assert_eq!(class_sum(haiku, "audited"), 2, "{haiku}");
+}
+
+#[test]
+fn stats_by_run_counts_ceiling_overrides() {
+    let repo = Repo::new();
+    repo.write(CLASSES_STORE_PATH, CLASSES_STORE);
+    let out = repo.stats(&["--scope", "classes", "--by", "run"]);
+    let u1 = row(&out["rows"], "U1");
+    assert_eq!(
+        u1["ceiling_overrides"],
+        json!({"count": 2, "over": 5}),
+        "2 over in wave 2 and 3 over in wave 3: {u1}"
+    );
+    assert_class(u1, "checked_cleanup", 2, 1);
+    let u2 = row(&out["rows"], "U2");
+    assert_eq!(
+        u2["ceiling_overrides"],
+        json!({"count": 0, "over": 0}),
+        "{u2}"
+    );
+}
+
 #[test]
 fn stats_apply_reads_a_verifier_unblock_from_its_recorded_block() {
     let repo = Repo::new();
@@ -1447,4 +1729,184 @@ fn stats_apply_reads_a_verifier_unblock_from_its_recorded_block() {
     assert_eq!(correctness["blocked_on"]["design"], 1, "{correctness}");
     assert_eq!(correctness["blocked_on"]["unrecorded"], 0, "{correctness}");
     assert_eq!(correctness["verifier_unblocked"], 1, "{correctness}");
+}
+
+const YIELD_STORE_PATH: &str = ".claude/review-v2/yield.toml";
+
+fn yield_cell(id: &str, run: &str, agent: &str, pass: Option<u32>) -> String {
+    let pass = pass.map(|p| format!("pass = {p}\n")).unwrap_or_default();
+    format!(
+        "[[cells]]\nid = \"{id}\"\nrun = \"{run}\"\nwave = 1\n{pass}slice = [\"src/lib.rs\"]\n\
+         concerns = [\"correctness\"]\nagent = \"{agent}\"\nreason = \"proposed\"\n\
+         status = \"covered\"\nsealed = true\nnote = \"covered\"\n\n"
+    )
+}
+
+/// A defect finding in `cell` with a verifier verdict of `verdict`, plus the
+/// `extra` lines, which must set `status`.
+fn yield_finding(id: &str, run: &str, cell: &str, verdict: &str, extra: &str) -> String {
+    format!(
+        "[[findings]]\nid = \"{id}\"\nrun = \"{run}\"\ncell = \"{cell}\"\nfamily = \"code\"\n\
+         kind = \"defect\"\nlens = \"correctness\"\nroute = \"verifier\"\nfile = \"src/lib.rs\"\n\
+         line = 1\nsummary = \"{id}\"\n{extra}\n\n\
+         [[verdicts]]\nfinding = \"{id}\"\nrun = \"{run}\"\nby = \"verifier\"\n\
+         verdict = \"{verdict}\"\ncitation = \"src/lib.rs:1\"\nrationale = \"read it\"\n\n"
+    )
+}
+
+fn yield_store() -> String {
+    let open = "status = \"open\"";
+    let mut s = String::from("schema_version = 2\n\n");
+    for (run, depth, day) in [
+        ("U1", "standard", 1),
+        ("U2", "standard", 2),
+        ("U3", "deep", 3),
+    ] {
+        s += &format!(
+            "[[runs]]\nid = \"{run}\"\ncommand = \"review-v2\"\nfamily = \"code\"\n\
+             depth = \"{depth}\"\nstarted = \"2026-11-0{day}T10:00:00Z\"\n\n"
+        );
+    }
+    s += &yield_cell("C1", "U1", "review-finder", None);
+    s += &yield_cell("C2", "U1", "review-finder", Some(2));
+    s += &yield_cell("C3", "U1", "review-finder-cf", None);
+    s += &yield_cell("C4", "U2", "review-finder", None);
+    s += &yield_cell("C5", "U2", "review-finder-cf", None);
+    s += &yield_cell("C6", "U2", "review-finder", Some(2));
+    s += &yield_cell("C7", "U3", "review-finder", None);
+    // A repeat row the same as a first-pass row.
+    s += &yield_finding("F1", "U1", "C1", "confirmed", open);
+    s += &yield_finding(
+        "F2",
+        "U1",
+        "C2",
+        "confirmed",
+        "same_as = \"F1\"\nstatus = \"open\"",
+    );
+    // A first-pass row merged into a repeat row.
+    s += &yield_finding(
+        "F3",
+        "U1",
+        "C1",
+        "confirmed",
+        "status = \"merged\"\nmerged_into = \"F4\"",
+    );
+    s += &yield_finding("F4", "U1", "C2", "confirmed", open);
+    // A context-free row apply resolved.
+    s += &yield_finding(
+        "F5",
+        "U1",
+        "C3",
+        "confirmed",
+        "status = \"resolved\"\nresolution = \"abc123 fixed it\"\nresolved = 2026-11-04\n\
+         apply_flow = \"fix-apply\"\napply_task = \"fix-f5\"",
+    );
+    // A refuted repeat row.
+    s += &yield_finding("F7", "U1", "C2", "refuted", open);
+    // A context-free row apply only scheduled.
+    s += &yield_finding(
+        "F8",
+        "U2",
+        "C5",
+        "confirmed",
+        "status = \"scheduled\"\napply_flow = \"fix-apply\"\napply_task = \"fix-f8\"",
+    );
+    // A repeat row the same as an earlier run's row.
+    s += &yield_finding(
+        "F9",
+        "U2",
+        "C6",
+        "confirmed",
+        "same_as = \"F1\"\nstatus = \"open\"",
+    );
+    s += &yield_finding("F10", "U3", "C7", "confirmed", open);
+    s
+}
+
+fn arm(
+    cells: u64,
+    findings: u64,
+    verified: u64,
+    unique: u64,
+    applied: u64,
+    scheduled: u64,
+) -> JsonValue {
+    json!({
+        "cells": cells,
+        "findings": findings,
+        "verified": verified,
+        "unique": unique,
+        "applied": applied,
+        "scheduled": scheduled,
+    })
+}
+
+#[test]
+fn stats_yield_credits_only_clusters_without_a_first_pass_member() {
+    let repo = Repo::new();
+    let store = yield_store();
+    repo.write(YIELD_STORE_PATH, &store);
+    let out = repo.stats(&["--scope", "yield", "--yield"]);
+    assert!(
+        out.get("rows").is_none(),
+        "a section alone prints no rows: {out}"
+    );
+    let runs = out["yield"]["runs"].as_array().expect("runs is an array");
+    assert_eq!(runs.len(), 3, "{out}");
+
+    let u1 = &runs[0];
+    assert_eq!(
+        (u1["run"].as_str(), u1["depth"].as_str()),
+        (Some("U1"), Some("standard"))
+    );
+    assert_eq!(
+        u1["first"],
+        arm(1, 2, 2, 2, 0, 0),
+        "the same_as pair and the merged pair each credit first: {u1}"
+    );
+    assert_eq!(
+        u1["repeat"],
+        arm(1, 3, 2, 0, 0, 0),
+        "a repeat row joined to a first-pass row adds nothing unique, and a refuted one counts in findings only: {u1}"
+    );
+    assert_eq!(u1["cf"], arm(1, 1, 1, 1, 1, 0), "{u1}");
+    assert_eq!(
+        u1["cross_run"],
+        json!({"first": 0, "repeat": 0, "cf": 0}),
+        "{u1}"
+    );
+
+    let u2 = &runs[1];
+    assert_eq!(u2["first"], arm(1, 0, 0, 0, 0, 0), "{u2}");
+    assert_eq!(
+        u2["repeat"],
+        arm(1, 0, 0, 0, 0, 0),
+        "a row the same as an earlier run's counts in cross_run only: {u2}"
+    );
+    assert_eq!(u2["cf"], arm(1, 1, 1, 1, 0, 1), "{u2}");
+    assert_eq!(
+        u2["cross_run"],
+        json!({"first": 0, "repeat": 1, "cf": 0}),
+        "{u2}"
+    );
+
+    let pooled = &out["yield"]["pooled"];
+    assert_eq!(
+        pooled["standard"]["first"],
+        arm(2, 2, 2, 2, 0, 0),
+        "{pooled}"
+    );
+    assert_eq!(
+        pooled["standard"]["repeat"],
+        arm(2, 3, 2, 0, 0, 0),
+        "{pooled}"
+    );
+    assert_eq!(pooled["standard"]["cf"], arm(2, 2, 2, 2, 1, 1), "{pooled}");
+    assert_eq!(
+        pooled["standard"]["cross_run"],
+        json!({"first": 0, "repeat": 1, "cf": 0}),
+        "{pooled}"
+    );
+    assert_eq!(pooled["deep"]["first"], arm(1, 1, 1, 1, 0, 0), "{pooled}");
+    assert_eq!(repo.read(YIELD_STORE_PATH), store, "the store is only read");
 }

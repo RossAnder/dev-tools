@@ -5,433 +5,13 @@
 use crate::common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
+use crate::review_harness::{
+    Repo, RunSpec, SCOPE, STORE, ceiling_cells, ceiling_cut, concerns, flat_files, strings,
+    with_concern, write_catalogue,
+};
 use common::{cli, git_available, git_command, sandbox};
 use serde_json::{Value as JsonValue, json};
-
-const SCOPE: &str = "t";
-
-const VOCABULARY: &str = r#"
-[signals."lang:rust"]
-kind = "stack"
-meaning = "Rust crates"
-detect = { files = ["**/Cargo.toml"] }
-
-[signals."framework:vue"]
-kind = "stack"
-meaning = "Vue apps"
-detect = { files = ["**/*.vue"] }
-
-[signals."docs-touched"]
-kind = "diff"
-meaning = "prose changed"
-detect = { files = ["**/*.md"] }
-
-[signals."schema-change"]
-kind = "diff"
-meaning = "a migration changed"
-detect = { files = ["**/migrations/**"] }
-
-[signals."churn-hotspot"]
-kind = "health"
-meaning = "files changed often"
-detect = { files = ["**"], window = 90, threshold = 3 }
-
-[signals."trust-boundary"]
-kind = "judged"
-meaning = "input crosses a boundary"
-hint = "parsers and auth"
-
-[concerns.logic]
-meaning = "wrong output"
-families = ["code"]
-
-[concerns.ripple]
-meaning = "stale callers"
-families = ["code"]
-
-[concerns.exploit]
-meaning = "an exploitable input"
-families = ["code"]
-
-[concerns.pattern]
-meaning = "off the converged pattern"
-families = ["code"]
-
-[concerns.dead-code]
-meaning = "unused code"
-families = ["code"]
-
-[concerns.comment-rot]
-meaning = "prose against behaviour"
-families = ["code"]
-
-[concerns.schema]
-meaning = "data model drift"
-families = ["code"]
-
-[concerns.plan-shape]
-meaning = "plan structure"
-families = ["plan"]
-
-[concerns.executability]
-meaning = "a task an agent cannot execute"
-families = ["plan"]
-"#;
-
-fn lens(
-    id: &str,
-    family: &str,
-    mode: &str,
-    activation: &str,
-    slice: &str,
-    tag: &str,
-    extra: &str,
-) -> String {
-    let produces = if mode == "mechanical" {
-        r#"["cleanup"]"#
-    } else {
-        r#"["defect", "cleanup", "advisory"]"#
-    };
-    let v1 = if family == "code" {
-        "v1_category = \"quality\"\n"
-    } else {
-        ""
-    };
-    format!(
-        "+++\nid = \"{id}\"\nstatus = \"stable\"\nfamilies = [\"{family}\"]\nmode = \"{mode}\"\n\
-         produces = {produces}\nowns = [\"{tag}\"]\nactivation = \"{activation}\"\nslice = \"{slice}\"\n\
-         {v1}{extra}+++\n## Question\nWhat does {id} ask?\n\n## Owns\n`{tag}` — owned here.\n\n\
-         ## Probes — {family}\n- one probe\n\n## Does not flag\n- confirmations\n"
-    )
-}
-
-fn check(id: &str) -> String {
-    format!(
-        "+++\nid = \"{id}\"\nstatus = \"stable\"\nfamilies = [\"plan\"]\nexecutor = \"cell\"\n\
-         produces = [\"defect\"]\nactivation = \"floor\"\n+++\n## Runs\nA check.\n\n\
-         ## Interpreting the result\nRead it.\n"
-    )
-}
-
-fn facet(id: &str, signal: &str) -> String {
-    format!(
-        "+++\nid = \"{id}\"\nstatus = \"stable\"\nfamilies = [\"code\"]\n\
-         apply_when = {{ signals = [\"{signal}\"] }}\nattaches_to = [\"correctness\"]\n+++\n\
-         ## General\nStack notes.\n\n### For correctness\n- a pitfall\n"
-    )
-}
-
-/// The fixture catalogue: two floor lenses per family, signal and candidate
-/// lenses of both code modes, one plan executor lens, two cell-run checks,
-/// and two root-scoped facets.
-fn write_catalogue(builtin: &Path) {
-    let entries = [
-        (
-            "lenses/correctness.md",
-            lens(
-                "correctness",
-                "code",
-                "judgement",
-                "floor",
-                "per-subsystem",
-                "logic",
-                "",
-            ),
-        ),
-        (
-            "lenses/ripple.md",
-            lens(
-                "ripple",
-                "code",
-                "mechanical",
-                "floor",
-                "whole-scope",
-                "ripple",
-                "",
-            ),
-        ),
-        (
-            "lenses/security.md",
-            lens(
-                "security",
-                "code",
-                "judgement",
-                "signal",
-                "per-subsystem",
-                "exploit",
-                "apply_when = { signals = [\"trust-boundary\"] }\n",
-            ),
-        ),
-        (
-            "lenses/domain-model.md",
-            lens(
-                "domain-model",
-                "code",
-                "judgement",
-                "signal",
-                "per-subsystem",
-                "schema",
-                "apply_when = { signals = [\"schema-change\"] }\n",
-            ),
-        ),
-        (
-            "lenses/idioms.md",
-            lens(
-                "idioms",
-                "code",
-                "judgement",
-                "candidate",
-                "whole-scope",
-                "pattern",
-                "",
-            ),
-        ),
-        (
-            "lenses/hygiene.md",
-            lens(
-                "hygiene",
-                "code",
-                "mechanical",
-                "candidate",
-                "whole-scope",
-                "dead-code",
-                "",
-            ),
-        ),
-        (
-            "lenses/doc-drift.md",
-            lens(
-                "doc-drift",
-                "code",
-                "judgement",
-                "candidate",
-                "per-file",
-                "comment-rot",
-                "apply_when = { signals = [\"docs-touched\"] }\n",
-            ),
-        ),
-        (
-            "lenses/plan-structure.md",
-            lens(
-                "plan-structure",
-                "plan",
-                "judgement",
-                "floor",
-                "whole-scope",
-                "plan-shape",
-                "",
-            ),
-        ),
-        (
-            "lenses/plan-executor.md",
-            lens(
-                "plan-executor",
-                "plan",
-                "executor",
-                "floor",
-                "per-task",
-                "executability",
-                "",
-            ),
-        ),
-        ("checks/falsifiability.md", check("falsifiability")),
-        ("checks/two-control-probe.md", check("two-control-probe")),
-        ("facets/rust.md", facet("rust", "lang:rust")),
-        ("facets/vue.md", facet("vue", "framework:vue")),
-    ];
-    for (rel, text) in entries {
-        let path = builtin.join(rel);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-    }
-    fs::write(builtin.join("vocabulary.toml"), VOCABULARY).unwrap();
-}
-
-struct Repo {
-    _dir: tempfile::TempDir,
-    _catalogue: tempfile::TempDir,
-    root: PathBuf,
-    builtin: PathBuf,
-}
-
-/// A run row as `run start` would leave it, with the signals a test needs.
-struct RunSpec<'a> {
-    id: &'a str,
-    family: &'a str,
-    depth: &'a str,
-    changed_lines: Option<i64>,
-    scope: &'a [&'a str],
-    signals: &'a str,
-}
-
-impl Repo {
-    /// A git sandbox holding `files`, all tracked, and the fixture catalogue.
-    fn new(files: &[&str]) -> Option<Self> {
-        if !git_available() {
-            eprintln!("skipping: git is not available");
-            return None;
-        }
-        let (dir, root) = sandbox();
-        let catalogue = tempfile::tempdir().unwrap();
-        let builtin = catalogue.path().join("review-v2-lenses");
-        write_catalogue(&builtin);
-        for rel in files {
-            let path = root.join(rel);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, "fn f() {}\n").unwrap();
-        }
-        let out = git_command(&root).args(["add", "-A"]).output().unwrap();
-        assert!(
-            out.status.success(),
-            "git add: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        Some(Self {
-            _dir: dir,
-            _catalogue: catalogue,
-            root,
-            builtin,
-        })
-    }
-
-    fn run_row(&self, run: &RunSpec) -> String {
-        let scope: Vec<String> = run.scope.iter().map(|s| format!("{s:?}")).collect();
-        let changed = run
-            .changed_lines
-            .map(|n| format!("changed_lines = {n}\n"))
-            .unwrap_or_default();
-        format!(
-            "[[runs]]\nid = \"{}\"\ncommand = \"review-v2\"\nfamily = \"{}\"\ndepth = \"{}\"\n\
-             started = \"2026-10-12T10:00:00Z\"\nbase = \"abc\"\nscope = [{}]\n{changed}\
-             signals = {}\ncatalogue = {{ builtin = \"{}\" }}\n\n",
-            run.id,
-            run.family,
-            run.depth,
-            scope.join(", "),
-            run.signals,
-            self.builtin.to_string_lossy().replace('\\', "/"),
-        )
-    }
-
-    /// Seeds the `--scope t` store with `runs`.
-    fn seed(&self, runs: &[RunSpec]) -> PathBuf {
-        let path = self
-            .root
-            .join(".claude/review-v2")
-            .join(format!("{SCOPE}.toml"));
-        self.seed_at(&path, runs);
-        path
-    }
-
-    fn seed_at(&self, path: &Path, runs: &[RunSpec]) {
-        let mut text = String::from("schema_version = 1\n\n");
-        for run in runs {
-            text.push_str(&self.run_row(run));
-        }
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-    }
-
-    fn tomlctl(&self) -> common::Command {
-        let mut cmd = cli(&self.root);
-        cmd.env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE");
-        cmd
-    }
-
-    /// `review plan --propose`: the cell rows and the trailing summary.
-    fn propose(&self, store: &[&str], run: &str, extra: &[&str]) -> (Vec<JsonValue>, JsonValue) {
-        let out = self
-            .tomlctl()
-            .args(["review", "plan", "--run", run, "--propose"])
-            .args(store)
-            .args(extra)
-            .assert()
-            .success();
-        let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-        let mut rows: Vec<JsonValue> = stdout
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|l| serde_json::from_str(l).expect("every line is JSON"))
-            .collect();
-        let summary = rows.pop().expect("a summary line");
-        assert!(
-            summary.get("proposal").is_some(),
-            "the last line is the summary: {summary}"
-        );
-        (rows, summary["proposal"].clone())
-    }
-
-    fn payload(&self, rows: &[JsonValue]) -> PathBuf {
-        let path = self.root.join(".claude/payload.ndjson");
-        let text: String = rows.iter().map(|r| format!("{r}\n")).collect();
-        fs::write(&path, text).unwrap();
-        path
-    }
-
-    fn plan_cmd(&self, run: &str, rows: &[JsonValue]) -> assert_cmd::assert::Assert {
-        let payload = self.payload(rows);
-        self.tomlctl()
-            .args(["review", "plan", "--scope", SCOPE, "--run", run, "--ndjson"])
-            .arg(payload)
-            .assert()
-    }
-
-    fn plan(&self, run: &str, rows: &[JsonValue]) -> JsonValue {
-        let out = self.plan_cmd(run, rows).success();
-        serde_json::from_slice(&out.get_output().stdout).expect("plan prints JSON")
-    }
-
-    fn cover(&self, cell: &str, status: &str, note: &str) -> assert_cmd::assert::Assert {
-        self.tomlctl()
-            .args([
-                "review", "cover", cell, "--scope", SCOPE, "--status", status, "--note", note,
-            ])
-            .assert()
-    }
-
-    fn store(&self) -> toml::Value {
-        let path = self
-            .root
-            .join(".claude/review-v2")
-            .join(format!("{SCOPE}.toml"));
-        toml::from_str(&fs::read_to_string(path).unwrap()).unwrap()
-    }
-
-    /// Stamps the store's first run finished and returns the store's bytes.
-    fn finish_first_run(&self, path: &Path) -> Vec<u8> {
-        let mut doc = self.store();
-        doc["runs"][0]
-            .as_table_mut()
-            .unwrap()
-            .insert("finished".into(), "2026-10-12T11:00:00Z".into());
-        fs::write(path, toml::to_string(&doc).unwrap()).unwrap();
-        fs::read(path).unwrap()
-    }
-}
-
-fn concerns(row: &JsonValue) -> Vec<String> {
-    row["concerns"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c.as_str().unwrap().to_string())
-        .collect()
-}
-
-fn strings(value: &JsonValue) -> Vec<String> {
-    value
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c.as_str().unwrap().to_string())
-        .collect()
-}
-
-const STORE: &[&str] = &["--scope", SCOPE];
 
 #[cfg(unix)]
 #[test]
@@ -550,21 +130,13 @@ fn propose_respects_scaled_ceiling() {
         "max(3, ceil(250 / 100)) = 3: {summary}"
     );
     assert!(rows.len() <= 3, "{} cells over a ceiling of 3", rows.len());
-    assert!(
-        !rows
-            .iter()
-            .any(|r| concerns(r).contains(&"doc-drift".to_string())),
-        "doc-drift's four per-file cells cannot fit"
+    let drift = with_concern(&rows, "doc-drift");
+    assert_eq!(
+        drift.len(),
+        1,
+        "doc-drift's four per-file slices merge into the one cell left: {rows:?}"
     );
-    let unselected = &summary["unselected"];
-    assert!(
-        unselected
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|u| u["concern"] == "doc-drift" && u["reason"] == "ceiling"),
-        "a matched candidate past the ceiling is listed: {unselected}"
-    );
+    assert!(!ceiling_cut(&summary, "doc-drift"), "{summary}");
 
     let (rows, summary) = repo.propose(STORE, "U2", &[]);
     assert_eq!(
@@ -603,14 +175,20 @@ fn propose_after_a_planned_wave_lists_only_uncovered_concerns_as_ceiling_cuts() 
         signals: r#"[{ name = "docs-touched", source = "detector", roots = ["src"] }]"#,
     }]);
     let (rows, first) = repo.propose(STORE, "U1", &[]);
-    assert!(ceiling_cut(&first, "doc-drift"), "{first}");
-    let planned: Vec<String> = rows.iter().flat_map(concerns).collect();
+    assert!(!with_concern(&rows, "doc-drift").is_empty(), "{first}");
+    // The wave leaves doc-drift out, so the next proposal finds no room for it.
+    let kept: Vec<JsonValue> = rows
+        .iter()
+        .filter(|r| !concerns(r).contains(&"doc-drift".to_string()))
+        .cloned()
+        .collect();
+    let planned: Vec<String> = kept.iter().flat_map(concerns).collect();
     assert!(!planned.is_empty());
-    let pad = (rows.len()..3).map(|i| {
+    let pad = (kept.len()..3).map(|i| {
         json!({"slice": ["src/**"], "concerns": [format!("probe:pad-{i}")], "agent": "review-finder",
                "reason": "fills the ceiling", "question": "Is the ceiling spent?"})
     });
-    let wave: Vec<JsonValue> = rows.iter().cloned().chain(pad).collect();
+    let wave: Vec<JsonValue> = kept.into_iter().chain(pad).collect();
     repo.plan("U1", &wave);
 
     let (rows, second) = repo.propose(STORE, "U1", &[]);
@@ -771,17 +349,15 @@ fn propose_adds_reverse_order_repeat_cells_at_standard() {
         "the hotspot is sliced on its own: {correctness_slices:?}"
     );
 
-    let is_floor = |r: &JsonValue| {
-        let ids = concerns(r);
-        ids.contains(&"correctness".to_string()) || ids.contains(&"ripple".to_string())
-    };
+    let sweeper = |r: &JsonValue| r["agent"] == "review-sweeper";
+    let is_floor = |r: &JsonValue| concerns(r).contains(&"correctness".to_string());
     let holds_hotspot = |r: &JsonValue| {
         let slice = strings(&r["slice"]);
         slice.contains(&"src/a.rs".to_string()) || slice.contains(&"src/**".to_string())
     };
     let due: Vec<&&JsonValue> = firsts
         .iter()
-        .filter(|r| is_floor(r) || holds_hotspot(r))
+        .filter(|r| !sweeper(r) && (is_floor(r) || holds_hotspot(r)))
         .collect();
     assert!(
         firsts.iter().any(|r| !is_floor(r) && holds_hotspot(r)),
@@ -791,12 +367,20 @@ fn propose_adds_reverse_order_repeat_cells_at_standard() {
         firsts.iter().any(|r| !is_floor(r) && !holds_hotspot(r)),
         "a cell owed no repeat is in the fixture: {rows:?}"
     );
+    assert!(
+        firsts.iter().any(|r| sweeper(r)),
+        "a sweeper cell is in the fixture: {rows:?}"
+    );
     assert_eq!(
         repeats.len(),
         due.len(),
-        "one repeat per floor or hotspot cell: {rows:?}"
+        "one repeat per floor or hotspot judgement cell: {rows:?}"
     );
-    for first in due {
+    assert!(
+        !repeats.iter().any(|r| sweeper(r)),
+        "a sweeper cell never repeats: {rows:?}"
+    );
+    for first in &due {
         let mut reversed = strings(&first["slice"]);
         reversed.reverse();
         assert!(
@@ -806,11 +390,14 @@ fn propose_adds_reverse_order_repeat_cells_at_standard() {
             "no reverse-order repeat of {first}"
         );
     }
-    let ripple_repeat = repeats
+    let hot_first = repeats
         .iter()
-        .find(|r| concerns(r).contains(&"ripple".to_string()))
-        .unwrap();
-    assert_eq!(strings(&ripple_repeat["slice"]), vec!["lib/**", "src/**"]);
+        .position(|r| !holds_hotspot(r))
+        .unwrap_or(repeats.len());
+    assert!(
+        repeats[hot_first..].iter().all(|r| !holds_hotspot(r)),
+        "hotspot repeats come before the rest: {repeats:?}"
+    );
 }
 
 #[test]
@@ -886,31 +473,6 @@ fn plan_executor_cells_batch_tasks_outside_ceiling() {
     assert_eq!(checks["agent"], "review-finder");
 }
 
-fn ceiling_cells(rows: &[JsonValue]) -> usize {
-    rows.iter()
-        .filter(|r| r["agent"] != "plan-executor")
-        .count()
-}
-
-fn with_concern<'a>(rows: &'a [JsonValue], id: &str) -> Vec<&'a JsonValue> {
-    rows.iter()
-        .filter(|r| concerns(r).contains(&id.to_string()))
-        .collect()
-}
-
-fn ceiling_cut(summary: &JsonValue, concern: &str) -> bool {
-    summary["unselected"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|u| u["concern"] == concern && u["reason"] == "ceiling")
-}
-
-/// `count` files directly under `src/`, named in path order.
-fn flat_files(count: usize) -> Vec<String> {
-    (0..count).map(|i| format!("src/f{i:03}.rs")).collect()
-}
-
 #[test]
 fn propose_never_exceeds_ceiling() {
     let mut files: Vec<String> = (0..24)
@@ -983,8 +545,8 @@ fn propose_merges_small_floor_slices_before_cutting_signal_lenses() {
         "the twelve one-directory slices merge: {correctness:?}"
     );
     assert!(
-        (correctness.len() * 2) <= 8,
-        "the floor lens fits half the budget of 16 with its repeats: {correctness:?}"
+        correctness.len() <= 7,
+        "the floor lens's first pass fits half of the 15 cells left beside ripple's: {correctness:?}"
     );
     assert!(
         !with_concern(&rows, "security").is_empty(),
@@ -1042,12 +604,13 @@ fn propose_caps_sweeper_slice_by_file_count() {
     repo.seed(&[RunSpec {
         id: "U1",
         family: "code",
-        depth: "quick",
+        depth: "standard",
         changed_lines: Some(2000),
         scope: &["src/**"],
         signals: "[]",
     }]);
     let (rows, summary) = repo.propose(STORE, "U1", &[]);
+    assert_eq!(summary["mechanical_pool"], 4, "ceil(16 / 4): {summary}");
     let ripple = with_concern(&rows, "ripple");
     assert_eq!(ripple.len(), 3, "90 files at 40 a cell: {ripple:?}");
     let mut swept: Vec<String> = Vec::new();
@@ -1063,7 +626,7 @@ fn propose_caps_sweeper_slice_by_file_count() {
     }
     swept.sort();
     assert_eq!(swept, files, "the chunks cover the scope in path order");
-    assert!(ceiling_cells(&rows) <= 6, "{rows:?}");
+    assert!(ceiling_cells(&rows) <= 16, "{rows:?}");
     assert_eq!(summary["over_cap"], json!([]), "{summary}");
 }
 
@@ -1283,11 +846,12 @@ fn plan_ndjson_replay_is_unchanged() {
     let Some(repo) = Repo::new(&["src/a.rs", "src/b.rs"]) else {
         return;
     };
+    // A ceiling of 4: the test appends four cells over three waves.
     repo.seed(&[RunSpec {
         id: "U1",
         family: "code",
         depth: "quick",
-        changed_lines: Some(100),
+        changed_lines: Some(400),
         scope: &["src/**"],
         signals: "[]",
     }]);

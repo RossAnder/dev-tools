@@ -654,6 +654,23 @@ fn executable_cleanup_routes_to_verifier() {
 }
 
 #[test]
+fn cleanup_fix_files_with_executable_code_route_to_verifier() {
+    let repo = Repo::new();
+    let mut multi = cleanup("docs/guide.md", 3, "change", Some("`--fast`"));
+    multi["fix_files"] = json!(["src/lib.rs", "src/other.rs"]);
+    let plain = cleanup("docs/guide.md", 3, "change", Some("`--fast`"));
+    let out = repo.added("U1", "C1", &[multi, plain]);
+
+    let routes: Vec<&str> = out["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["route"].as_str().unwrap())
+        .collect();
+    assert_eq!(routes, ["verifier", "checker"]);
+}
+
+#[test]
 fn critical_defect_at_deep_routes_to_panel() {
     let repo = Repo::new();
     let deep = repo.added(

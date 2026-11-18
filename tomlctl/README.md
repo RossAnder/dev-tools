@@ -396,7 +396,9 @@ downstream flow-command templates can feature-gate at boot without parsing
                "plan_run_records", "authored_files", "agent_usage",
                "review_finding_read", "decision_class", "ui_look",
                "inputs_plan_ledger", "plan_request",
-               "generated_config"],
+               "generated_config", "review_propose_kinds",
+               "review_plan_ceiling", "review_escalations",
+               "review_stats_yield"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -615,3 +617,7 @@ Feature meanings:
 | `inputs_plan_ledger` | `inputs` reads and writes the plan ledger the implement engine uses to ask the user its questions |
 | `plan_request` | the `plan request` group records a running worker's requests for a file or a spec correction, and the lane check reads the grants they produce |
 | `generated_config` | `.claude/generated.toml` declares generators and their outputs; `plan check`, `plan emit gate-list` and the worker view read it |
+| `review_propose_kinds` | `review plan --propose` slices by kind, applies the signal-evidence and changed-with-tests rules, and takes `--context-free` and `--reserve` |
+| `review_plan_ceiling` | `review plan` append refuses cells past the run's ceiling unless `--over-ceiling-file` directs an override, recorded in the run's `ceiling_overrides` |
+| `review_escalations` | `review escalation record` stores a wave's escalations on their cells and `review escalation fix` mints a finding blocked on evidence from one |
+| `review_stats_yield` | `review stats` reports per-class audit counts and `--yield` reports what repeat-pass and context-free cells add beyond the first pass |

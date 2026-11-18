@@ -28,7 +28,7 @@ use super::catalogue::run_catalogue;
 use super::fields::{self, BlockedOn, Family, FindingStatus, Kind, Record, Route};
 use super::invalid;
 use super::matching::{self, Site};
-use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
+use super::store::{self, Cell, Finding, Minted, Run, Store, Target, Verdict};
 use super::target;
 use super::tier::Tier;
 use crate::cli::{ReadIntegrityArgs, ReviewStore, WriteIntegrityArgs};
@@ -804,7 +804,16 @@ fn convert(
     let run = target_run(current, advisory, named)?;
     let root = repo_or_cwd_root()?;
     let slug = add::store_slug(target);
-    let row = replacement_row(&root, slug.as_deref(), current, advisory, run, kind, src)?;
+    let given = one_object(src, VERB, "replacement")?;
+    let row = replacement_row(
+        &root,
+        slug.as_deref(),
+        current,
+        &Source::Advisory(advisory),
+        run,
+        kind,
+        given,
+    )?;
     let run_id = run.id.clone();
     let today_iso = today.to_string();
 
@@ -823,7 +832,13 @@ fn convert(
                 .find(|f| f.id == id)
                 .expect("judge applies only to a stored finding");
             target_run(&locked, advisory, named)?;
-            let row = finish_row(row.clone(), advisory, &run_id, &locked.findings, &today_iso);
+            let row = finish_row(
+                row.clone(),
+                &Source::Advisory(advisory),
+                &run_id,
+                &locked.findings,
+                &today_iso,
+            );
             let minted = store::mint(doc, Minted::Findings, std::slice::from_ref(&row))?;
             let new_id = minted.into_iter().next().expect("one row mints one id");
             Ok((Step::Apply, Some((new_id, row))))
@@ -859,35 +874,19 @@ fn convert(
                 &[("converted_to", &new_id)],
                 None,
             );
-            let file = row["file"].as_str().unwrap_or_default();
-            let citation = match row.get("line").and_then(JsonValue::as_u64) {
-                Some(line) => format!("{file}:{line}"),
-                None => file.to_string(),
-            };
-            store.verdicts.push(Verdict {
-                finding: new_id.clone(),
-                run: run_id.clone(),
-                by: "orchestrator".to_string(),
-                seat: None,
-                verdict: "confirmed".to_string(),
-                severity: String::new(),
-                citation,
-                rationale: format!("converted from advisory {id} at triage"),
-                rest: toml::map::Map::new(),
-            });
+            store.verdicts.push(orchestrator_verdict(
+                &new_id,
+                &run_id,
+                &row,
+                format!("converted from advisory {id} at triage"),
+            ));
             outcome.applied.push(json!({
                 "id": id,
                 "from": from,
                 "status": "converted",
                 "converted_to": new_id,
             }));
-            outcome.minted.push(json!({
-                "id": new_id,
-                "kind": row["kind"],
-                "severity": row.get("severity").cloned().unwrap_or(JsonValue::Null),
-                "route": row["route"],
-                "status": row["status"],
-            }));
+            outcome.minted.push(minted_entry(&new_id, &row));
             Ok(outcome)
         },
     )
@@ -961,28 +960,93 @@ fn target_run<'a>(store: &'a Store, advisory: &Finding, named: Option<&str>) -> 
     Ok(run)
 }
 
-/// The replacement as given, defaulted from the advisory's lens, anchor,
-/// summary and edit target, validated through the field catalogue and routed by its edit
-/// target under `run`'s catalogue and depth. The fields that need the store
-/// under the lock come later. `slug` is the store's flow, which decides
-/// whether the record-target rules apply.
-fn replacement_row(
+/// What a finding minted at triage comes from: the advisory `--convert`
+/// replaces, or the escalation `id` that `review escalation fix` answers,
+/// raised in `cell` of a `family` run. The minted row is filed in its cell.
+pub(super) enum Source<'a> {
+    Advisory(&'a Finding),
+    Escalation {
+        id: &'a str,
+        cell: &'a Cell,
+        family: Family,
+    },
+}
+
+impl Source<'_> {
+    fn verb(&self) -> &'static str {
+        match self {
+            Self::Advisory(_) => VERB,
+            Self::Escalation { .. } => super::escalation::FIX,
+        }
+    }
+
+    fn family(&self) -> Family {
+        match self {
+            Self::Advisory(advisory) => advisory.family,
+            Self::Escalation { family, .. } => *family,
+        }
+    }
+
+    fn cell_id(&self) -> &str {
+        match self {
+            Self::Advisory(advisory) => &advisory.cell,
+            Self::Escalation { cell, .. } => &cell.id,
+        }
+    }
+
+    /// The fields a row left out takes from its source.
+    fn defaults(&self) -> Vec<(&'static str, JsonValue)> {
+        match self {
+            Self::Advisory(advisory) => vec![
+                ("lens", json!(advisory.lens)),
+                ("file", json!(advisory.file)),
+                ("line", advisory.line.map_or(JsonValue::Null, |l| json!(l))),
+                ("symbol", json!(advisory.symbol)),
+                ("summary", json!(advisory.summary)),
+                (
+                    "target",
+                    advisory
+                        .text("target")
+                        .map_or(JsonValue::Null, |t| json!(t)),
+                ),
+            ],
+            Self::Escalation { cell, .. } => vec![(
+                "lens",
+                cell.concerns.first().map_or(JsonValue::Null, |c| json!(c)),
+            )],
+        }
+    }
+}
+
+/// The single object `src` holds, refused under `verb` when it holds more or
+/// none; `what` names the object in the refusal.
+pub(super) fn one_object(src: &str, verb: &str, what: &str) -> Result<Map<String, JsonValue>> {
+    let rows = crate::items::parse_ndjson_objects(&read_ndjson_source(src)?)?;
+    let mut rows = rows.into_iter();
+    let (Some((_, row)), None) = (rows.next(), rows.next()) else {
+        return Err(invalid(format!(
+            "{verb}: --ndjson must hold exactly one {what} object"
+        )));
+    };
+    Ok(row)
+}
+
+/// The row as given, defaulted from its source, validated through the field
+/// catalogue against the source's cell and routed by its edit target under
+/// `run`'s catalogue and depth. The fields that need the store under the lock
+/// come later. `slug` is the store's flow, which decides whether the
+/// record-target rules apply.
+pub(super) fn replacement_row(
     root: &Path,
     slug: Option<&str>,
     store: &Store,
-    advisory: &Finding,
+    source: &Source<'_>,
     run: &Run,
     kind: Kind,
-    src: &str,
+    mut row: Map<String, JsonValue>,
 ) -> Result<Map<String, JsonValue>> {
-    let rows = crate::items::parse_ndjson_objects(&read_ndjson_source(src)?)?;
-    let mut rows = rows.into_iter();
-    let (Some((_, mut row)), None) = (rows.next(), rows.next()) else {
-        return Err(invalid(format!(
-            "{VERB}: --ndjson must hold exactly one replacement object"
-        )));
-    };
-
+    let verb = source.verb();
+    let family = source.family();
     let mut reasons = Vec::new();
     match row.get("kind").and_then(JsonValue::as_str) {
         None => {
@@ -995,44 +1059,49 @@ fn replacement_row(
         )),
     }
     if row.contains_key("same_as") {
-        reasons.push(format!(
-            "`same_as` cannot be supplied; the replacement is linked to {} through `related`",
-            advisory.id
-        ));
+        reasons.push(match source {
+            Source::Advisory(advisory) => format!(
+                "`same_as` cannot be supplied; the replacement is linked to {} through `related`",
+                advisory.id
+            ),
+            Source::Escalation { .. } => {
+                "`same_as` cannot be supplied; the finding is verified on its own".to_string()
+            }
+        });
     }
-    let defaults = [
-        ("lens", json!(advisory.lens)),
-        ("file", json!(advisory.file)),
-        ("line", advisory.line.map_or(JsonValue::Null, |l| json!(l))),
-        ("symbol", json!(advisory.symbol)),
-        ("summary", json!(advisory.summary)),
-        (
-            "target",
-            advisory
-                .text("target")
-                .map_or(JsonValue::Null, |t| json!(t)),
-        ),
-    ];
-    for (key, value) in defaults {
+    for (key, value) in source.defaults() {
         let empty = value.is_null() || value.as_str().is_some_and(str::is_empty);
         if !empty && !row.contains_key(key) {
             row.insert(key.into(), value);
         }
     }
-    let cell = store.cells.iter().find(|c| c.id == advisory.cell);
-    reasons.extend(add::field_refusals(root, &row, advisory.family, cell));
+    let cell = match source {
+        Source::Advisory(advisory) => store.cells.iter().find(|c| c.id == advisory.cell),
+        Source::Escalation { cell, .. } => Some(*cell),
+    };
+    reasons.extend(add::field_refusals(root, &row, family, cell));
     if reasons.is_empty() {
-        reasons.extend(add::record_refusals(slug, &row, kind, advisory.family));
+        reasons.extend(add::record_refusals(slug, &row, kind, family));
     }
     if reasons.is_empty() {
-        reasons.extend(add::text_refusals(root, &row, kind, advisory.family));
+        reasons.extend(add::text_refusals(root, &row, kind, family));
     }
     if !reasons.is_empty() {
-        let refused = json!({"id": advisory.id, "reasons": reasons});
-        return Err(invalid(format!(
-            "{VERB}: the replacement for {} was refused; nothing was written:\n{refused}",
-            advisory.id
-        )));
+        return Err(match source {
+            Source::Advisory(advisory) => {
+                let refused = json!({"id": advisory.id, "reasons": reasons});
+                invalid(format!(
+                    "{verb}: the replacement for {} was refused; nothing was written:\n{refused}",
+                    advisory.id
+                ))
+            }
+            Source::Escalation { id, .. } => {
+                let refused = json!({"id": id, "reasons": reasons});
+                invalid(format!(
+                    "{verb}: the finding for escalation {id} was refused; nothing was written:\n{refused}"
+                ))
+            }
+        });
     }
 
     let globs = run_catalogue(root, run)?.routing().compile()?;
@@ -1043,37 +1112,79 @@ fn replacement_row(
 }
 
 /// Stamps the bookkeeping `review add` computes: the hosting `run`, the
-/// advisory's cell as provenance, the anchor, and `related` naming the
-/// advisory first, then the replacement's other anchor candidates.
-fn finish_row(
+/// source's cell as provenance, the anchor, and `related` naming an advisory
+/// source first, then the row's other anchor candidates.
+pub(super) fn finish_row(
     mut row: Map<String, JsonValue>,
-    advisory: &Finding,
+    source: &Source<'_>,
     run: &str,
     pool: &[Finding],
     today: &str,
 ) -> JsonValue {
+    let family = source.family();
     let site = Site {
-        family: advisory.family,
+        family,
         file: str_of(&row, "file").unwrap_or_default(),
         symbol: str_of(&row, "symbol").unwrap_or_default(),
         line: add::line_of(&row),
     };
     let anchor = matching::anchor(&site);
-    let mut related = vec![advisory.id.clone()];
+    let mut related = match source {
+        Source::Advisory(advisory) => vec![advisory.id.clone()],
+        Source::Escalation { .. } => Vec::new(),
+    };
     for candidate in matching::candidates(pool, &site) {
         if !related.contains(&candidate.id) {
             related.push(candidate.id.clone());
         }
     }
     row.insert("run".into(), json!(run));
-    row.insert("cell".into(), json!(advisory.cell));
+    row.insert("cell".into(), json!(source.cell_id()));
     row.insert("seen_in".into(), json!([run]));
-    row.insert("family".into(), json!(advisory.family.as_str()));
+    row.insert("family".into(), json!(family.as_str()));
     row.insert("anchor".into(), json!(anchor));
-    row.insert("related".into(), json!(related));
+    if !related.is_empty() {
+        row.insert("related".into(), json!(related));
+    }
     row.insert("status".into(), json!(FindingStatus::Unverified.as_str()));
     row.insert("first_seen".into(), json!(today));
     JsonValue::Object(row)
+}
+
+/// The `orchestrator` verdict a minted row carries, cited at its file and line.
+pub(super) fn orchestrator_verdict(
+    finding: &str,
+    run: &str,
+    row: &JsonValue,
+    rationale: String,
+) -> Verdict {
+    let file = row["file"].as_str().unwrap_or_default();
+    let citation = match row.get("line").and_then(JsonValue::as_u64) {
+        Some(line) => format!("{file}:{line}"),
+        None => file.to_string(),
+    };
+    Verdict {
+        finding: finding.to_string(),
+        run: run.to_string(),
+        by: "orchestrator".to_string(),
+        seat: None,
+        verdict: "confirmed".to_string(),
+        severity: String::new(),
+        citation,
+        rationale,
+        rest: toml::map::Map::new(),
+    }
+}
+
+/// The `{id, kind, severity, route, status}` a minted row is reported as.
+pub(super) fn minted_entry(id: &str, row: &JsonValue) -> JsonValue {
+    json!({
+        "id": id,
+        "kind": row["kind"],
+        "severity": row.get("severity").cloned().unwrap_or(JsonValue::Null),
+        "route": row["route"],
+        "status": row["status"],
+    })
 }
 
 #[cfg(test)]

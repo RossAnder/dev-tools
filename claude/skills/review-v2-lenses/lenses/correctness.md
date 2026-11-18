@@ -7,6 +7,7 @@ produces = ["defect", "cleanup", "advisory"]
 owns = ["logic", "edge-cases", "missing-handling", "error-paths", "races-ordering", "resource-lifetimes", "cross-layer-invariants"]
 activation = "floor"
 slice = "per-subsystem"
+kinds = ["code", "other"]
 methods = ["trace", "sweep"]
 v1_category = "quality"
 +++

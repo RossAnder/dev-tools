@@ -158,7 +158,19 @@ pub(crate) struct Cell {
     pub(crate) sealed: bool,
     pub(crate) note: String,
     pub(crate) ruled_out: Vec<RuledOut>,
+    pub(crate) escalations: Vec<Escalation>,
     pub(crate) rest: Table,
+}
+
+/// A question a wave's agent raised past its slice, stored on its cell. `n` is
+/// 1-based within the cell; `finding` is empty while the escalation is open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Escalation {
+    pub(crate) n: u32,
+    pub(crate) wave: u32,
+    pub(crate) text: String,
+    pub(crate) status: String,
+    pub(crate) finding: String,
 }
 
 /// A site the cell judged deliberate, so another cell's finding on it is
@@ -756,6 +768,7 @@ const CELL_CORE: &[&str] = &[
     "sealed",
     "note",
     "ruled_out",
+    "escalations",
 ];
 
 fn cell_from_toml(t: &Table, at: &str) -> Result<Cell> {
@@ -778,6 +791,7 @@ fn cell_from_toml(t: &Table, at: &str) -> Result<Cell> {
             .unwrap_or(false),
         note: text(t, "note"),
         ruled_out: nested(t, "ruled_out", at, ruled_out_from_toml)?,
+        escalations: nested(t, "escalations", at, escalation_from_toml)?,
         rest: rest(Record::Cell, t, CELL_CORE),
     })
 }
@@ -805,7 +819,32 @@ fn cell_to_toml(cell: &Cell) -> TomlValue {
         "ruled_out",
         cell.ruled_out.iter().map(ruled_out_to_toml),
     );
+    put_tables(
+        &mut t,
+        "escalations",
+        cell.escalations.iter().map(escalation_to_toml),
+    );
     ordered(Record::Cell, t, &cell.rest)
+}
+
+fn escalation_from_toml(t: &Table, at: &str) -> Result<Escalation> {
+    Ok(Escalation {
+        n: count(t, "n", at)?.ok_or_else(|| anyhow!("{at}: `n` is required"))?,
+        wave: count(t, "wave", at)?.unwrap_or(0),
+        text: text(t, "text"),
+        status: text(t, "status"),
+        finding: text(t, "finding"),
+    })
+}
+
+fn escalation_to_toml(e: &Escalation) -> Table {
+    let mut t = Table::new();
+    put_count(&mut t, "n", Some(e.n));
+    put_count(&mut t, "wave", Some(e.wave));
+    put_text(&mut t, "text", &e.text);
+    put_text(&mut t, "status", &e.status);
+    put_text(&mut t, "finding", &e.finding);
+    t
 }
 
 fn ruled_out_from_toml(t: &Table, at: &str) -> Result<RuledOut> {

@@ -10,7 +10,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - [Roles](#roles)
 - [Routing](#routing)
 - [Run lifecycle](#run-lifecycle) — `sync-v1`; the `run` verbs (`start`, `update`, `finish`, `list`, `show`) are [review-runs.md](review-runs.md)
-- [Coverage](#coverage) — `survey`, `plan`, `cover`
+- [Coverage](#coverage) — `survey`, `plan`, `escalation`, `cover`
 - [Findings and verdicts](#findings-and-verdicts) — `add`, `verdict`, `resolve`
 - [Plan records](#plan-records) — flow mode, `target`, `tier`, `proof`, `apply` are [review-dispositions.md](review-dispositions.md#plan-records)
 - [Reads](#reads) — `list`, `show`, `digest`, `recheck-targets`, `report`, `stats`
@@ -23,7 +23,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
 - **Run directory.** `.review-v2-runs/<store-key>/U<n>/` at the repo root, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.review-v2-runs/` when none is there. It and every `--out` must resolve, symlinks followed, under `.review-v2-runs/` or `.claude/`; `run start`, `plan --propose` and `report` take `--allow-outside` to override that.
 - **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
-- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `settle`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `recheck-targets`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
+- **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `escalation`, `cover`, `add`, `verdict`, `resolve`, `reproduce`, `apply`, `triage`, `settle`, `export-v1`, `schedule`, `reconcile`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`run list`, `run show`, `list`, `show`, `anchor`, `reproduce-status`, `digest`, `recheck-targets`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`; `report` also takes `--allow-outside`, for its `--out`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1`, `stats` and `reconcile` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
 - **Replays are harmless.** `cover`, `verdict`, `resolve`, `reproduce`, `sync-v1`, `triage`, `settle` and `reconcile` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
@@ -52,6 +52,7 @@ catalogue = { project = ".claude/review-lenses", tree_sha = "…" }  # + builtin
 signals = [ { name = "lang:rust", source = "detector", roots = ["tomlctl"] } ]
 waivers = [ { concern = "security", reason = "no input handling in scope" } ]
 rechecks = "U0"                    # plan family: the run whose applied edits this run re-checks
+ceiling_overrides = [ { wave = 3, ceiling = 24, planned = 22, added = 6, reason = "the user wants the hot-path cells" } ]  # computed; written only by plan --over-ceiling-file
 
 [[cells]]
 id = "C1"
@@ -65,6 +66,7 @@ bound = [ { concern = "correctness", hash = "9c1e…", path = "…", methods = [
 status = "covered"                 # assigned | covered | thin | uncovered
 sealed = true
 ruled_out = [ { file = "tomlctl/src/review/add.rs", symbol = "prepare", reason = "the early return is deliberate" } ]  # set by cover --ruled-out
+escalations = [ { n = 1, wave = 1, text = "the retry bound lives in a file outside the slice", status = "open", finding = "" } ]  # computed; set by escalation record and fix
 
 [[findings]]
 id = "F1"
@@ -127,6 +129,8 @@ The finding fields an agent supplies, with their caps in characters. Every other
 
 `review add`, not the catalogue, holds the `line` and `plan_section` requirements, since they depend on the mode, so `review schema` lists neither as required. It also holds the **mechanical-cleanup exception**: a `cleanup` row carrying `old` may name any lens the run's catalogue marks `mode = "mechanical"` for the run's family, from any cell, whether or not the cell covers it; it is routed like any other cleanup. In flow mode `plan_section`, `anchor_old` and `anchor_new` are refused; see [Plan records](review-dispositions.md#plan-records). `tier`, `applied`, `applying` and `addressed` are computed.
 
+**Computed record fields.** A cell's `escalations` is a list of `{n, wave, text, status, finding}`: `n` counts from 1 within the cell, `wave` is the cell's wave, `status` is `open` or `fixed`, and `finding` names the finding a `fixed` escalation minted and is empty while it is `open`. The escalation's id is `<cell>:<n>`. A run's `ceiling_overrides` is a list of `{wave, ceiling, planned, added, reason}`, one entry for each wave `review plan --ndjson --over-ceiling-file` appended past the run's ceiling. Neither is supplied on a row; `review escalation` writes the first and `review plan` the second.
+
 `effort` is `trivial`, `small`, `medium` or `large`. A row still supplying the retired shape field (`edits` or `needs-plan`) is refused, naming `blocked_on` as its replacement. Paths (`file`, `target_file`, `instances`, `fix_files`) are repo-relative and `/`-separated, with no `..` and no absolute part.
 
 A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `question` for a `probe:` concern, `pass` (1 or 2) and `facets` edits (`+id` / `-id`). A verdict row takes `finding`, `by`, `verdict`, `citation` and `rationale` (≤600; aim for 450), plus `seat` (1–3, panel only), `severity` (defects only) and `unblocks` (bool) with `fix_sketch` (≤800), each refused without the other; `unsettled` is the checker's alone. `tomlctl review schema` emits the same rules as JSON Schema.
@@ -161,7 +165,7 @@ A flow-mode finding's `target` shows in every role but `checker` and `backlog`; 
 - `advisory` → `none`.
 - `defect` → `verifier`, or `panel` for a `critical` defect in a `deep` run.
 - `cleanup` on a `plan`-family run → `verifier`, always: the checker's projection hides a flow-mode row's `target` and edit.
-- any other `cleanup` → `verifier` when any edited path (`target_file` or `file`, and every `instances` path) matches the vocabulary's `[routing].executable` globs, or matches its `[routing].tests` globs with `direction = remove`; otherwise `checker`.
+- any other `cleanup` → `verifier` when any edited path (`target_file` or `file`, and every `instances` and `fix_files` path) matches the vocabulary's `[routing].executable` globs, or matches its `[routing].tests` globs with `direction = remove`; otherwise `checker`.
 - A checker's `unsettled` verdict re-routes the finding to `verifier`.
 
 ## Run lifecycle
@@ -203,15 +207,20 @@ tomlctl review survey --slug <slug> --run U1
 
 Two modes, exactly one per call.
 
-`--propose` prints the default coverage map as NDJSON and writes nothing to the store: one cell row per line (`slice`, `concerns`, `agent`, `reason = "proposed"`, `pass` on a repeat), then a last `{"proposal":{…}}` line with `run`, `family`, `depth`, `changed_lines`, `ceiling`, `cells`, `executor_cells`, `agents`, `hotspots`, `unselected` (`[{concern, reason}]`), `unsliced`, `over_cap`, `disabled` and, when the task store is empty, `tasks`. With `--out` the NDJSON goes to that file and stdout carries `{ok, out}` merged with the summary.
+`--propose` prints the default coverage map as NDJSON and writes nothing to the store: one cell row per line (`slice`, `concerns`, `agent`, `reason = "proposed"`, `pass` on a repeat), then a last `{"proposal":{…}}` line with `run`, `family`, `depth`, `changed_lines`, `ceiling`, `reserve`, `mechanical_pool`, `context_free`, `cells`, `executor_cells`, `agents`, `hotspots`, `unselected` (`[{concern, reason}]`), `unsliced`, `over_cap`, `disabled` and, when the task store is empty, `tasks`. With `--out` the NDJSON goes to that file and stdout carries `{ok, out}` merged with the summary. `reserve` echoes `--reserve`; `mechanical_pool` is the number of cells the sweeper tier was allowed; `context_free` is the number of context-free correctness cells proposed (0 without `--context-free`).
 
-The proposal never emits more cells than `ceiling` minus the run's non-executor cells already planned, check cells included. Floor-lens slices merge toward half that budget, counted after repeats, before any later tier is admitted, and a lens that joins an existing cell's bundle adds no cell and is never cut for `ceiling`; a sweeper slice is split at 40 files, each part a cell counted against the ceiling. When the budget still cannot hold the cells, slices keep merging past both targets, down to one whole-scope cell per lens, and each sweeper cell left over 40 files is listed under `over_cap` as `{concerns, slice, files}`. A check cut for the budget appears in `unselected` as `check:<id>` with reason `ceiling`, as a cut lens does under its id.
+The proposal never emits more cells than `ceiling` minus the run's non-executor cells already planned and minus `--reserve`, check cells included. Cells are admitted in phases. First the judgement lenses, the context-free cells and the check cells, one cell held back for each floor sweeper; floor-lens slices merge toward half that room, and a lens that joins an existing cell's bundle adds no cell and is never cut for `ceiling`. Second the mechanical pool, the sweeper lenses, which share about a quarter of the ceiling (`ceil(ceiling / 4)`, at least 1) or only their held-back cells once a matched judgement lens was cut; a sweeper slice is split at 40 files, each part a cell counted against the pool. Last the repeat passes, from what room is left, and none while a signal-matched lens is cut for `ceiling`. When the room still cannot hold the cells, slices keep merging past those targets, down to one whole-scope cell per lens, and each sweeper cell left over 40 files is listed under `over_cap` as `{concerns, slice, files}`: it is a sweeper cell the pool could not split finer, not a cell past the ceiling. A check cut for the room appears in `unselected` as `check:<id>` with reason `ceiling`, as a cut lens does under its id.
 
-`--ndjson` appends cells as the next wave, status `assigned`, binding each concern's content hash, path, methods and `v1_category` and attaching facets. It skips a `{"proposal":…}` line, so an edited proposal file is written back as is. When the run's newest wave is unsealed, its cells are all still `assigned`, and they are exactly the incoming rows — compared on `slice` in order, `concerns`, `pass`, `question` and `agent` — the call is a replay: it prints that wave's cells with `unchanged: true` and mints nothing. A partial overlap, or a wave with any cell sealed, mints a new wave. Prints `{ok, run, wave, cells: [{id, agent, concerns, pass, facets}], refused, accounting: {unselected, unsliced, disabled}, unchanged}`.
+**Slicing.** A judgement lens on a code or perf run reads only the file kinds it declares (`code` when it declares none; kinds come from the vocabulary's `[routing]` globs: `code`, `test`, `lockfile`, `other`), and its slices keep kinds apart. Two slice rules join `per-subsystem` and `per-file`: `signal-evidence` slices only the in-scope files the lens's matched signals point at (their evidence paths, or files under their roots), grouped by subsystem, and falls back to `per-subsystem` when none is pointed at; `changed-with-tests` slices the changed code files by subsystem and adds each subsystem's tracked test files. On a plan run both fall back to `per-subsystem`. A subsystem is a file's deepest stack root, else its top directory.
+
+`--context-free` adds the context-free correctness cells (`review-finder-cf`, standard and deep only; a quick run is refused), covering the code-kind slices `correctness` was admitted with, merged down to `max(1, ceil(ceiling / 6))` cells.
+
+`--ndjson` appends cells as the next wave, status `assigned`, binding each concern's content hash, path, methods and `v1_category` and attaching facets. It skips a `{"proposal":…}` line, so an edited proposal file is written back as is. Counting the run's non-executor cells already planned plus the wave's non-executor rows, a wave that would pass the run's ceiling is refused whole, naming the count, the ceiling and `--over-ceiling-file`; with `--over-ceiling-file` the wave lands and the run gains a `ceiling_overrides` entry `{wave, ceiling, planned, added, reason}`, `reason` being the file's text, and the envelope carries `ceiling_override: true`. A replay is never refused and records nothing. When the run's newest wave is unsealed, its cells are all still `assigned`, and they are exactly the incoming rows — compared on `slice` in order, `concerns`, `pass`, `question` and `agent` — the call is a replay: it prints that wave's cells with `unchanged: true` and mints nothing. A partial overlap, or a wave with any cell sealed, mints a new wave. Prints `{ok, run, wave, cells: [{id, agent, concerns, pass, facets}], refused, accounting: {unselected, unsliced, disabled}, ceiling, unchanged}`, plus `ceiling_override: true` when the wave went past the ceiling.
 
 ```bash
-tomlctl review plan --slug <slug> --run U1 --propose --accept-signals trust-boundary,hot-path --lens -doc-drift --lens +contrarian --out <run-dir>/proposal.ndjson
+tomlctl review plan --slug <slug> --run U1 --propose --accept-signals trust-boundary,hot-path --lens -doc-drift --lens +contrarian --context-free --reserve 2 --out <run-dir>/proposal.ndjson
 tomlctl review plan --slug <slug> --run U1 --ndjson <run-dir>/proposal.ndjson
+tomlctl review plan --slug <slug> --run U1 --ndjson <run-dir>/extra.ndjson --over-ceiling-file <run-dir>/payloads/over-ceiling.txt
 ```
 
 | Flag | Value | Meaning | Default |
@@ -223,8 +232,41 @@ tomlctl review plan --slug <slug> --run U1 --ndjson <run-dir>/proposal.ndjson
 | `--accept-signals` | `a,b` | Judged signals accepted for the proposal; each must be a `judged` vocabulary signal. Excludes `--ndjson`. | none |
 | `--lens` | `+id` \| `-id` | Force a lens into or out of the proposal. Repeatable; a hyphen-led value is accepted. Excludes `--ndjson`. | none |
 | `--out` | path | Write the proposal here instead of stdout. Excludes `--ndjson`. | stdout |
+| `--context-free` | bool | Propose the context-free correctness cells too; standard and deep runs only. Excludes `--ndjson`. | off |
+| `--reserve` | N | Leave N cells of the ceiling free for cells added after the proposal. Excludes `--ndjson`. | 0 |
+| `--over-ceiling-file` | path | Append a wave past the run's ceiling, recording the user's reason read from the file. Excludes `--propose`. | none |
 
 A cell row is refused when a `slice` entry is not repo-relative, its `concerns` do not bind (1–3 enabled lenses of one mode and the run's family, one `probe:<slug>` with a `question`, or `check:<id>` entries), or its `agent` is not the one its concerns run on. The one exception is `review-finder-cf`, the finder run without CLAUDE.md, accepted in place of `review-finder` on a cell whose concerns are exactly `["correctness"]`.
+
+### `tomlctl review escalation record`
+
+Escalations are the questions a wave's agents raised past their slices, kept on their cells so triage can name them after a session break. An escalation's id is `<cell>:<n>`, `n` counting from 1 within the cell.
+
+`record` stores a batch on the cells named, each `open`, and prints `{ok, recorded: [{id, cell, n, wave, text, status}], skipped}`. A row whose (cell, text) is already stored is skipped, so a replay writes nothing. The batch is all or nothing: a row with an unknown key, a blank or non-string `cell` or `text`, or a cell not in the run refuses the whole call with every reason, and so does an empty batch or an unknown run.
+
+```bash
+tomlctl review escalation record --slug <slug> --run U1 --ndjson <run-dir>/payloads/escalations.ndjson
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` / `--scope` | name | The store. | required, one of |
+| `--run` | run id | The run whose cells the escalations belong to. | required |
+| `--ndjson` | `-` \| path | One `{cell, text}` object per line. | required |
+
+### `tomlctl review escalation fix`
+
+Takes one `open` escalation and mints the finding the orchestrator wrote for it, through `triage --convert`'s mint path, into the escalating cell: `unverified`, routed to the verifier whatever its kind, with an `orchestrator` verdict; the escalation becomes `fixed` with `finding` set. The row must be a `defect` or `cleanup` with `blocked_on = "evidence"` and a non-blank `blocked_missing`, so it reaches `/apply-v2` through its settle route. Prints `{ok, escalation, status, minted}`. It refuses a malformed id, an unknown cell or escalation, an escalation already `fixed` (naming its finding), a finished run, and a row that fails those rules, writing nothing.
+
+```bash
+tomlctl review escalation fix C3:1 --slug <slug> --ndjson <run-dir>/payloads/C3-1-finding.ndjson
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| *(positional)* | `<cell>:<n>` | The escalation fixed. | required |
+| `--slug` / `--scope` | name | The store. | required, one of |
+| `--ndjson` | `-` \| path | The finding as one JSON object. | required |
 
 ### `tomlctl review cover`
 
@@ -414,14 +456,16 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 
 ### `tomlctl review stats`
 
-Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, apply?, escapes?, calibration?, plan_outcomes?}`.
+Rates per lens, probe, run or model over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, apply?, escapes?, calibration?, plan_outcomes?, yield?}`.
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
-- **`--by run`** rows also carry `store`, `command`, `depth`, `started`, `finished`, `waves` (derived from the run's cells, as `run list` does), `agents` and `waivers` (`concerns`, `files`).
+- **`audit_classes`** on every `--by lens`, `probe`, `run` and `model` row splits `audited` and `overturned` by what the audit judged: `{confirmed_defect, refuted_defect, checked_cleanup, other}`, each `{audited, overturned, rate}`. A row's class comes from its kind and the deciding verifying verdict: a `defect` the verifier or panel left standing is `confirmed_defect`, a refuted one `refuted_defect`, a `cleanup` decided by the checker `checked_cleanup`, and anything else (an advisory, or a cleanup the verifier decided) `other`. The classes sum to `audited` and `overturned`, which keep their totals.
+- **`--by run`** rows also carry `store`, `command`, `depth`, `started`, `finished`, `waves` (derived from the run's cells, as `run list` does), `agents`, `waivers` (`concerns`, `files`) and `ceiling_overrides` (`{count, over}`: the waves the user let past the run's ceiling, and the cells past it in all, summing `planned + added - ceiling` of each entry).
 - **`--by model`** rows are keyed by the model of the verifying role that decided each finding — `models.verifier` for `verifier` and `panel`, `models.checker` for `checker`, read from the run that verdict names — and carry `roles`, `runs`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned` and `audit_overturn_rate`. A run without `models`, or without the role, keys as `unknown`.
 - **`plan_outcomes`** (`--plan-outcomes`; `--slug` or `--all`, flow stores only, plan family only): per run and in `total`, `tiers` (tier → disposition → count; dispositions `applied`, `applied-disclosed` for cited, `user-accepted`, `user-vetoed` for a dismissed `user` row or a dismissed non-advisory tiered row of a run started at or after the plan's first `[[approval]]`, `user-answered` for a `question` row resolved without an edit, `author-addressed` for a resolved row carrying `addressed` and no `applied`, else the status), `veto_rate` (vetoed over accepted plus vetoed; `user-answered` counts on neither side), `growth` (`edits`, net `chars_added`, `entries_added`, `entries_removed`), `recheck_yield` (findings minted by a run with `rechecks`), and `cost` (`agents`, `minutes`); each run also names `rechecks`. A rate or yield with nothing to count is `null`.
 - **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
 - **`apply`** (`--apply`): the native counterpart of `outcomes`, read from the store alone with no v1 ledger opened. `outcomes` holds one row per lens and kind with any natively applied finding — `{lens, kind, scheduled, resolved, reopened, reproductions}` — where `scheduled` counts findings at that status, `resolved` resolved findings that keep an `apply_flow`, `reopened` open findings whose `reopen_reason` starts `apply: `, and `reproductions` maps each verdict (`gone`, `reproduces`, `unsettled`) to the findings whose current reproduction has it. `reproductions` is `{rows, findings}`, each a verdict → count map: `rows` over every reproduction row, `findings` over each finding's current one. A reproduction of a finding `--family` drops is not counted. `blocked` is `{lens, agent}`, one row per lens and per agent of the finding's cell (`unknown` when the cell names none): `key`, `findings` (every kind), `blocked`, `blocked_rate`, `blocked_on` (each block; an answered block is read from `unblocked_from`, else from `unblocked_by`, and a verifier unblock stored without `unblocked_from` counts under `unrecorded`), `verifier_unblocked`, `verifier_unblock_rate` and the row's `settle` counts. `settle` counts settle outcomes over the view: `mechanical`, `cited` and `user` accepts by tier, `refuted` and `deferred`.
+- **`yield`** (`--yield`): what the first-pass, repeat and context-free arms each found, as `{runs, pooled}`. `runs` holds one row per run with `store`, `run` and `depth`; `pooled` maps each depth to the sum of its runs. Each row carries one entry per arm, `first`, `repeat` and `cf`, of `{cells, findings, verified, unique, applied, scheduled}`, and `cross_run`, an arm → count map. A finding's arm is its cell's: `cf` for a `review-finder-cf` cell, `repeat` for a cell with `pass` 2 or more, else `first`, which also holds a finding with no known cell. `verified` counts findings the verifying side left standing. A finding is clustered with every finding of the same run linked by `same_as` or `merged_into`, in either direction, so a first-pass row the orchestrator merged into a repeat row still counts for the first pass. An arm's `unique` counts clusters with a verified member in that arm; the `repeat` and `cf` arms are credited only when no first-pass member of the cluster is verified. `applied` and `scheduled` read the cluster's apply state (`resolved` or `scheduled`) and are counted per credited cluster. A finding linked to another run's finding is left out of the clusters and counted only in `cross_run` under its arm.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
 
@@ -430,6 +474,7 @@ tomlctl review stats --all --by lens
 tomlctl review stats --slug <slug> --outcomes --escapes --calibration --exemplars 3
 tomlctl review stats --all --apply
 tomlctl review stats --all --plan-outcomes --by model
+tomlctl review stats --all --yield
 ```
 
 | Flag | Value | Meaning | Default |
@@ -441,6 +486,7 @@ tomlctl review stats --all --plan-outcomes --by model
 | `--outcomes` | bool | Add the v1 apply outcomes. | off |
 | `--apply` | bool | Add the native apply outcomes, reproductions, blocked rates and settle outcomes. | off |
 | `--escapes` | bool | Add the coverage escapes. | off |
+| `--yield` | bool | Add the per-arm yield per run and pooled per depth. | off |
 | `--calibration` | bool | Add the calibration exemplars. | off |
 | `--exemplars` | N | Exemplars per area; needs `--calibration`. | 5 |
 

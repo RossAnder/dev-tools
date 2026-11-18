@@ -45,7 +45,8 @@ Common fields:
 | `produces` | yes | kinds from `defect`, `cleanup`, `advisory` |
 | `owns` | yes | non-empty list of concern tags from the vocabulary |
 | `activation` | yes | `floor` \| `signal` \| `candidate` \| `opt-in` |
-| `slice` | yes | `whole-scope` \| `per-subsystem` \| `per-file` \| `per-task` |
+| `slice` | yes | `whole-scope` \| `per-subsystem` \| `per-file` \| `per-task` \| `signal-evidence` (the roots and evidence files of the lens's matched signals, per-subsystem when none carry files) \| `changed-with-tests` (changed code files plus the tracked test files under the same subsystem) |
+| `kinds` | no | file kinds a judgement lens reads, from `code`, `test`, `other`; absent means code for a per-subsystem or per-file lens. Mechanical and whole-scope lenses ignore it. Lockfiles never reach a judgement lens's slices, and a lens with no scope file of its kinds is unmatched |
 | `apply_when` | no | table: `signals` (vocabulary names), `paths` (globs), `min_depth`, `always_at` (`quick` \| `standard` \| `deep`) |
 | `after_wave` | no | non-negative integer; the lens is composed only after that wave |
 | `methods` | no | method ids the lens cites |
@@ -173,7 +174,7 @@ When `files`, `manifest` and `contains` are all present, a file must pass each o
 
 ### Routing
 
-`[routing]` holds `executable` globs (source whose edits change behaviour) and `tests` globs. `review add` routes every plan-family cleanup row to the Opus verifier, whatever its paths, since the checker's projection hides a flow-mode row's record edit. Otherwise it routes a cleanup row to the verifier when its edit target, or any of its `instances`, is a test path and the direction is `remove`, or is a non-test executable path. Every other cleanup goes to the Haiku checker. A test path is never treated as executable. A project `[routing]` appends to both lists.
+`[routing]` holds `executable` globs (source whose edits change behaviour), `tests` globs and `lockfiles` globs (dependency lockfiles, which leave every judgement lens's slices). `review add` routes every plan-family cleanup row to the Opus verifier, whatever its paths, since the checker's projection hides a flow-mode row's record edit. Otherwise it routes a cleanup row to the verifier when its edit target, or any of its `instances`, is a test path and the direction is `remove`, or is a non-test executable path. Every other cleanup goes to the Haiku checker. A test path is never treated as executable. A project `[routing]` appends to both lists.
 
 ## Project layer
 

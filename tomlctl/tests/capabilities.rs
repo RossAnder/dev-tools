@@ -1875,6 +1875,12 @@ fn capabilities_features_contains_every_plan_feature() {
         // Mid-run worker requests and the generator config.
         "plan_request",
         "generated_config",
+        // Review cell proposals, the plan ceiling, escalations and yield
+        // stats.
+        "review_propose_kinds",
+        "review_plan_ceiling",
+        "review_escalations",
+        "review_stats_yield",
     ];
     for name in expected {
         assert!(

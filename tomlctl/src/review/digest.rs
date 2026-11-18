@@ -960,6 +960,59 @@ fn coverage(store: &Store, run: &Run) -> String {
             one_line(&waiver.reason)
         ));
     }
+
+    let overrides = run
+        .rest
+        .get("ceiling_overrides")
+        .and_then(TomlValue::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(TomlValue::as_table)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !overrides.is_empty() {
+        md.push_str("\n## Ceiling overrides\n\n");
+        let int =
+            |t: &toml::Table, key: &str| t.get(key).and_then(TomlValue::as_integer).unwrap_or(0);
+        for entry in overrides {
+            let reason = entry
+                .get("reason")
+                .and_then(TomlValue::as_str)
+                .unwrap_or("");
+            md.push_str(&format!(
+                "- wave {}: {} planned + {} added over a ceiling of {} — {}\n",
+                int(entry, "wave"),
+                int(entry, "planned"),
+                int(entry, "added"),
+                int(entry, "ceiling"),
+                one_line(reason)
+            ));
+        }
+    }
+
+    let mut lines = Vec::new();
+    for cell in store.cells.iter().filter(|c| c.run == run.id) {
+        for e in &cell.escalations {
+            let status = if e.finding.is_empty() {
+                e.status.clone()
+            } else {
+                format!("{}, {}", e.status, e.finding)
+            };
+            lines.push(format!(
+                "- {}:{} ({status}) — {}\n",
+                cell.id,
+                e.n,
+                one_line(&e.text)
+            ));
+        }
+    }
+    if !lines.is_empty() {
+        md.push_str("\n## Escalations\n\n");
+        for line in lines {
+            md.push_str(&line);
+        }
+    }
     md
 }
 

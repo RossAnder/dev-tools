@@ -711,6 +711,42 @@ fn report_writes_file_and_prints_counts() {
 }
 
 #[test]
+fn report_shows_ceiling_overrides_and_escalations_only_when_present() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let waivers = format!(
+        "{ALL_WAIVED}\nceiling_overrides = [{{ wave = 2, ceiling = 6, planned = 6, added = 2, reason = \"user wants both\" }}]"
+    );
+    let rows = format!(
+        "{}[[cells.escalations]]\nn = 1\nwave = 1\ntext = \"does the caller pass the old limit?\"\nstatus = \"open\"\n\n\
+         [[cells.escalations]]\nn = 2\nwave = 1\ntext = \"is the lock held?\"\nstatus = \"fixed\"\nfinding = \"F9\"\n\n",
+        cell("C1", 1, "review-finder", "covered")
+            .trim_end_matches('\n')
+            .to_string()
+            + "\n"
+    );
+    repo.seed(&waivers, &rows);
+    repo.report();
+    let text = fs::read_to_string(repo.root.join(REPORT)).unwrap();
+    for part in [
+        "## Ceiling overrides",
+        "wave 2: 6 planned + 2 added over a ceiling of 6 — user wants both",
+        "## Escalations",
+        "C1:1 (open) — does the caller pass the old limit?",
+        "C1:2 (fixed, F9) — is the lock held?",
+    ] {
+        assert!(text.contains(part), "missing {part:?}:\n{text}");
+    }
+
+    repo.seed(ALL_WAIVED, &report_rows());
+    repo.report();
+    let text = fs::read_to_string(repo.root.join(REPORT)).unwrap();
+    assert!(!text.contains("## Ceiling overrides"), "{text}");
+    assert!(!text.contains("## Escalations"), "{text}");
+}
+
+#[test]
 fn report_groups_blocked_findings_by_blocked_on_outside_the_severity_groups() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;

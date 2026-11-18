@@ -22,6 +22,7 @@ mod catalogue_cmd;
 mod cells;
 mod cover;
 mod digest;
+mod escalation;
 mod export;
 pub(crate) mod facade;
 mod query;
@@ -132,6 +133,13 @@ pub(crate) enum ReviewOp {
     /// evidence: accepted with its tier and fix, refuted, or deferred.
     Settle(settle::ReviewSettleArgs),
 
+    /// Store the escalations a wave's agents raised on their cells, with ids
+    /// `<cell>:<n>` triage can name.
+    Escalation {
+        #[command(subcommand)]
+        op: escalation::ReviewEscalationOp,
+    },
+
     /// Write the record edits open plan findings on a v2 flow carry, by tier,
     /// each compare-and-set against its `expect`.
     Apply(apply::ReviewApplyArgs),
@@ -184,6 +192,7 @@ pub(crate) fn dispatch(op: ReviewOp) -> Result<()> {
         ReviewOp::Report(args) => args.run(),
         ReviewOp::Triage(args) => args.run(),
         ReviewOp::Settle(args) => args.run(),
+        ReviewOp::Escalation { op } => op.run(),
         ReviewOp::Apply(args) => args.run(),
         ReviewOp::Stats(args) => args.run(),
         ReviewOp::ExportV1(args) => args.run(),

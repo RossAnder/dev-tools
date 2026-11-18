@@ -172,13 +172,39 @@ status = "open"
 
 struct Repo {
     _dir: tempfile::TempDir,
+    _catalogue: Option<tempfile::TempDir>,
     root: PathBuf,
     tasks: PathBuf,
 }
 
+/// The `[routing]` table of the catalogue a run records.
+const ROUTING: &str = "[routing]\nexecutable = [\"src/**/*.rs\", \"lib/**/*.rs\"]\n\
+    tests = [\"tests/**\"]\nlockfiles = [\"Cargo.lock\"]\n";
+
 impl Repo {
     fn new(findings: &[String]) -> Self {
         Self::with(findings, false, true)
+    }
+
+    /// A repo whose run records a built-in catalogue carrying [`ROUTING`].
+    fn with_catalogue(findings: &[String]) -> Self {
+        let catalogue = tempfile::tempdir().unwrap();
+        let builtin = catalogue.path().join("review-v2-lenses");
+        fs::create_dir_all(builtin.join("lenses")).unwrap();
+        fs::write(builtin.join("vocabulary.toml"), ROUTING).unwrap();
+        let builtin = builtin.to_string_lossy().replace('\\', "/");
+        let mut repo = Self::with(findings, false, true);
+        let store = repo.root.join(REVIEW_STORE);
+        let text = fs::read_to_string(&store).unwrap().replacen(
+            "started = \"2026-10-01T10:00:00Z\"\n",
+            &format!(
+                "started = \"2026-10-01T10:00:00Z\"\ncatalogue = {{ builtin = \"{builtin}\" }}\n"
+            ),
+            1,
+        );
+        fs::write(store, text).unwrap();
+        repo._catalogue = Some(catalogue);
+        repo
     }
 
     fn with(findings: &[String], audit: bool, plan_store: bool) -> Self {
@@ -209,6 +235,7 @@ impl Repo {
         }
         Self {
             _dir: dir,
+            _catalogue: None,
             root,
             tasks,
         }
@@ -989,5 +1016,199 @@ fn scheduled_fix_row_carries_one_gate_owned_check() {
     assert_eq!(
         entry["behaviour"].as_str(),
         Some("every finding this milestone fixes no longer reproduces")
+    );
+}
+
+/// A cleanup of a prose file whose `edit` is `edit`.
+fn doc_cleanup(id: &str, file: &str, edit: &str) -> String {
+    format!(
+        r#"
+[[findings]]
+id = "{id}"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "{file}"
+line = 1
+summary = "the generated docs drift from the code"
+edit = {edit:?}
+direction = "change"
+old = "Adds a row."
+effort = "trivial"
+status = "open"
+"#
+    )
+}
+
+fn seed(repo: &Repo, files: &[&str]) {
+    for file in files {
+        let path = repo.root.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text = if file.ends_with(".md") {
+            "Adds a row.\n".to_string()
+        } else {
+            "pub fn add() {}\n".to_string()
+        };
+        fs::write(path, text).unwrap();
+    }
+}
+
+#[test]
+fn a_doc_fix_naming_a_code_fix_path_needs_its_task() {
+    let repo = Repo::with_catalogue(&[
+        bug("F48", "src/request.rs", "add"),
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what src/request.rs does now that add counts from zero",
+        ),
+    ]);
+    seed(&repo, &["src/request.rs", "docs/generated.md"]);
+    let out = repo.schedule(&["F62,F48"]);
+    let doc = repo.tasks_doc();
+    let code_id = row(&doc, &scheduled_ref(&out, "F48"))["id"]
+        .as_integer()
+        .unwrap();
+    let doc_ref = scheduled_ref(&out, "F62");
+    let doc_id = row(&doc, &doc_ref)["id"].as_integer().unwrap();
+    assert_eq!(
+        row(&doc, &doc_ref)["needs"].as_array().unwrap(),
+        &[Value::Integer(code_id)]
+    );
+    assert_eq!(
+        out["ordered"],
+        serde_json::json!([{
+            "task": doc_id, "needs": code_id, "finding": "F62", "names": "src/request.rs"
+        }])
+    );
+    assert_eq!(out["ordering_skipped"], serde_json::json!([]));
+    let constraint = format!(
+        "Task {code_id} changes src/request.rs::add; once it is done, check this edit \
+         against that code and return failed if the finding no longer holds."
+    );
+    assert!(
+        strings(&spec(&doc, &doc_ref)["constraints"]).contains(&constraint.as_str()),
+        "{:?}",
+        spec(&doc, &doc_ref)["constraints"]
+    );
+}
+
+#[test]
+fn a_doc_fix_naming_an_unrelated_path_is_not_ordered() {
+    let repo = Repo::with_catalogue(&[
+        bug("F48", "src/request.rs", "add"),
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what src/response.rs returns",
+        ),
+    ]);
+    seed(&repo, &["src/request.rs", "docs/generated.md"]);
+    let out = repo.schedule(&["F48,F62"]);
+    let doc = repo.tasks_doc();
+    assert!(
+        row(&doc, &scheduled_ref(&out, "F62"))["needs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(out["ordered"], serde_json::json!([]));
+}
+
+#[test]
+fn a_basename_two_code_fixes_share_orders_nothing() {
+    let repo = Repo::with_catalogue(&[
+        bug("F48", "src/request.rs", "add"),
+        bug("F49", "lib/request.rs", "add"),
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what request.rs does now",
+        ),
+    ]);
+    seed(
+        &repo,
+        &["src/request.rs", "lib/request.rs", "docs/generated.md"],
+    );
+    let out = repo.schedule(&["F48,F49,F62"]);
+    let doc = repo.tasks_doc();
+    assert!(
+        row(&doc, &scheduled_ref(&out, "F62"))["needs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(out["ordered"], serde_json::json!([]));
+}
+
+#[test]
+fn a_unique_basename_orders_the_doc_fix() {
+    let repo = Repo::with_catalogue(&[
+        bug("F48", "src/request.rs", "add"),
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what request.rs does now",
+        ),
+    ]);
+    seed(&repo, &["src/request.rs", "docs/generated.md"]);
+    let out = repo.schedule(&["F48,F62"]);
+    assert_eq!(out["ordered"][0]["names"], "request.rs");
+}
+
+#[test]
+fn a_run_without_a_catalogue_schedules_unordered_and_says_so() {
+    let repo = Repo::new(&[
+        bug("F48", "src/request.rs", "add"),
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what src/request.rs does now",
+        ),
+    ]);
+    seed(&repo, &["src/request.rs", "docs/generated.md"]);
+    let out = repo.schedule(&["F48,F62"]);
+    let doc = repo.tasks_doc();
+    assert!(
+        row(&doc, &scheduled_ref(&out, "F62"))["needs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(out["ordered"], serde_json::json!([]));
+    let skipped = out["ordering_skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    assert_eq!(skipped[0]["run"], "U1");
+    assert!(skipped[0]["reason"].as_str().unwrap().contains("catalogue"));
+}
+
+#[test]
+fn an_ordering_edge_that_closes_a_cycle_is_dropped() {
+    let code = defect(Defect {
+        id: "F48",
+        file: "src/request.rs",
+        symbol: "add",
+        effort: "small",
+        blocked: "",
+        depends_on: &["F62"],
+    });
+    let repo = Repo::with_catalogue(&[
+        code,
+        doc_cleanup(
+            "F62",
+            "docs/generated.md",
+            "describe what src/request.rs does now",
+        ),
+    ]);
+    seed(&repo, &["src/request.rs", "docs/generated.md"]);
+    let out = repo.schedule(&["F62,F48"]);
+    assert_eq!(out["ordered"], serde_json::json!([]));
+    assert_eq!(
+        out["dropped_deps"],
+        serde_json::json!([{"finding": "F62", "interacts_with": "F48", "skipped": "cycle"}])
     );
 }

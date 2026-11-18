@@ -177,7 +177,7 @@ Does it compute the right thing?
 "#;
 
 /// Run `U1`, carrying one undecided judged signal, with `C1` sealed over
-/// `src/a.rs` and `C2` still assigned over `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
+/// `src/a.rs`, holding the open escalation `C1:1`, and `C2` still assigned over `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
 /// cleanup. `F1` was reproduced `gone`, `F3` is scheduled to an apply-flow task that no longer exists,
 /// and `F4` is an open defect blocked on evidence.
 /// `{base}` and `{builtin}` are filled in by the fixture.
@@ -215,6 +215,12 @@ concern = "correctness"
 hash = "9c1e0123456789abcdef"
 path = "lenses/correctness.md"
 v1_category = "quality"
+
+[[cells.escalations]]
+n = 1
+wave = 1
+text = "does the caller in src/b.rs pass the old limit?"
+status = "open"
 
 [[cells]]
 id = "C2"
@@ -1018,6 +1024,37 @@ fn cases() -> Vec<Case> {
                 "src/a.rs:1",
             ],
             "ok",
+        ),
+        write(
+            &[
+                "review",
+                "escalation",
+                "record",
+                "--slug",
+                S,
+                "--run",
+                "U1",
+                "--ndjson",
+                "-",
+            ],
+            "recorded",
+        )
+        .stdin(r#"{"cell":"C1","text":"does the caller in src/b.rs bound the limit?"}"#),
+        write(
+            &[
+                "review",
+                "escalation",
+                "fix",
+                "C1:1",
+                "--slug",
+                S,
+                "--ndjson",
+                "-",
+            ],
+            "minted",
+        )
+        .stdin(
+            r#"{"kind":"defect","file":"src/a.rs","line":1,"summary":"the old limit reaches src/b.rs","failure_scenario":"a caller is cut short","severity":"minor","fix":"pass the new limit","effort":"small","counter":"none read","grade":"medium","evidence":["src/a.rs:1"],"blocked_on":"evidence","blocked_missing":"whether src/b.rs passes the old limit"}"#,
         ),
         read(&["review", "anchor", "F1", "--slug", S], One, "id"),
         read(

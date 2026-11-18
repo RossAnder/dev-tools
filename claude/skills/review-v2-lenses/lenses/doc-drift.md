@@ -8,6 +8,7 @@ owns = ["comment-rot", "prose-drift", "missing-docs"]
 activation = "candidate"
 apply_when = { signals = ["docs-touched"] }
 slice = "per-file"
+kinds = ["code", "test", "other"]
 v1_category = "quality"
 +++
 

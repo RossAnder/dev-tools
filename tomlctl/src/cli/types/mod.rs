@@ -226,6 +226,11 @@ pub(crate) const FEATURES: &[&str] = &[
     "inputs_plan_ledger",
     "plan_request",
     "generated_config",
+    // Review cell proposals, the plan ceiling, escalations and yield stats.
+    "review_propose_kinds",
+    "review_plan_ceiling",
+    "review_escalations",
+    "review_stats_yield",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

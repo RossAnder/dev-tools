@@ -712,3 +712,8 @@ tests = [
   "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/*.test.js", "**/*.spec.js",
   "**/*Tests.cs", "**/*Test.cs", "**/*Tests/**",
 ]
+lockfiles = [
+  "**/Cargo.lock", "**/bun.lock", "**/bun.lockb", "**/package-lock.json", "**/yarn.lock",
+  "**/pnpm-lock.yaml", "**/packages.lock.json", "**/poetry.lock", "**/uv.lock", "**/go.sum",
+  "**/Gemfile.lock", "**/composer.lock",
+]

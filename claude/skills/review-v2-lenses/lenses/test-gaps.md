@@ -6,7 +6,7 @@ mode = "judgement"
 produces = ["defect", "cleanup", "advisory"]
 owns = ["missing-tests", "weak-assertions"]
 activation = "candidate"
-slice = "per-subsystem"
+slice = "changed-with-tests"
 apply_when = { signals = ["finding-hotspot"] }
 v1_category = "testability"
 +++
