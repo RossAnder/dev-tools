@@ -595,7 +595,7 @@ action = "Restart the glimpse pane so it runs the glimpse milestone A's gate rei
 when = "After milestone A's commit, before the first /implement-v2 run that posts a plan request."
 done_when = "glimpse shows the mid-run-requests flow without a parse error."
 source_task = 2
-done = false
+done = true
 
 [[attempt]]
 task = 1
