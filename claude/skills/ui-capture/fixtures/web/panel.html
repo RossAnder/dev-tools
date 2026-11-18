@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en" data-state="web-01">
+<head>
+<meta charset="utf-8">
+<title>Series</title>
+<style>
+:root { --ink: #1a1a1a; --muted: #6f6a63; --line: #d9d5cf; --chip: #e7e4e0; --page: #ffffff; }
+* { box-sizing: border-box; }
+body { margin: 24px; background: var(--page); color: var(--ink); font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+.panel { display: flex; flex-direction: column; width: 100%; max-width: 480px; max-height: calc(100vh - 48px); border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.count { color: var(--muted); }
+.add { margin-left: auto; font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--ink); border-radius: 3px; background: #fff; color: var(--ink); }
+.rows { flex: 0 1 auto; min-height: 0; }
+.rows.scrolls { overflow-y: auto; }
+.row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.fold { flex: none; width: 12px; color: var(--muted); font-size: 12px; }
+.label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw { flex: none; display: flex; gap: 3px; }
+.sw i { display: block; width: 18px; height: 18px; border-radius: 3px; }
+.empty { padding: 8px 12px; color: var(--muted); }
+.notice { flex: none; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--chip); color: var(--ink); font-size: 13px; }
+.panel.fillWindow { height: calc(100vh - 48px); }
+.row.unclippedLabel .label { flex: none; overflow: visible; text-overflow: clip; }
+.foot.heldBand { flex: none; height: 48px; border-top: 1px solid var(--line); }
+.row.stretchTiles .label { flex: none; }
+.row.stretchTiles .sw { flex: 1 1 auto; }
+.row.stretchTiles .sw i { flex: 1 1 0; width: auto; }
+.row.boxedFold .fold { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 1px solid var(--ink); border-radius: 2px; color: var(--ink); font-weight: 700; font-size: 12px; line-height: 14px; }
+</style>
+</head>
+<body>
+<script>
+(function () {
+  var palettes = {
+    'Primary': ['#7e92be', '#6a80b0', '#5a6f9e', '#4a5d88', '#3a4b72'],
+    'Alternate': ['#739f7c', '#62906c', '#537f5d', '#446d4e', '#365a3f'],
+    'Accent warm': ['#e5715a', '#d5604a', '#c0513c', '#a8432f', '#8d3624'],
+    'Accent cool': ['#7fb3c4', '#68a1b4', '#548ea1', '#437a8c', '#346675'],
+    'Neutral': ['#e7e4e0', '#c9c4bd', '#a29c94', '#6f6a63', '#3d3a36'],
+    'Positive': ['#93b77a', '#7fa666', '#6c9455', '#5a8045', '#486b36'],
+    'Caution': ['#e8c26a', '#d9b057', '#c49b45', '#a98336', '#8c6b29'],
+    'Critical': ['#d9727c', '#c95f6a', '#b54e59', '#9c3f4a', '#82323c']
+  };
+  var longLabel = 'Quarterly revenue by sales region, adjusted for currency movement and seasonal returns, fiscal 2026';
+  var eight = ['Primary', 'Alternate', 'Accent warm', 'Accent cool', 'Neutral', 'Positive', 'Caution', 'Critical'];
+  var notice = 'Accent warm step 1 is below 3:1 on white.';
+
+  function series(name, label) { return { label: label || name, colours: palettes[name] }; }
+  function list(names) { return names.map(function (n) { return series(n); }); }
+
+  var states = {
+    'web-01': { series: [] },
+    'web-02': { series: list(['Primary']), panel: 'fillWindow' },
+    'web-03': { series: list(['Primary']) },
+    'web-04': { series: list(eight), notice: notice },
+    'web-05': { series: [series('Accent warm', longLabel)], row: 'unclippedLabel' },
+    'web-06': { series: [series('Primary'), series('Accent warm', longLabel), series('Neutral')] },
+    'web-07': { series: list(eight), foot: 'heldBand' },
+    'web-08': { series: list(eight), notice: notice },
+    'web-09': { series: list(eight), notice: notice, row: 'stretchTiles' },
+    'web-10': { series: list(eight), notice: notice },
+    'web-11': { series: list(['Primary', 'Alternate', 'Accent warm', 'Neutral']), row: 'boxedFold', folds: ['−', '+', '+', '+'] }
+  };
+
+  function pick() {
+    var fromHash = location.hash.replace(/^#/, '');
+    if (states.hasOwnProperty(fromHash)) return fromHash;
+    var fromAttr = document.documentElement.dataset.state;
+    return states.hasOwnProperty(fromAttr) ? fromAttr : 'web-01';
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function draw() {
+    var name = pick();
+    var state = states[name];
+    document.documentElement.dataset.state = name;
+    var old = document.querySelector('.panel');
+    if (old) old.remove();
+
+    var panel = el('section', 'panel' + (state.panel ? ' ' + state.panel : ''));
+    var head = el('div', 'head');
+    head.appendChild(el('h2', '', 'Series'));
+    head.appendChild(el('span', 'count', String(state.series.length)));
+    var add = el('button', 'add', 'Add');
+    add.type = 'button';
+    head.appendChild(add);
+    panel.appendChild(head);
+
+    var rows = el('div', 'rows');
+    if (state.series.length === 0) {
+      rows.appendChild(el('div', 'empty', 'No series yet.'));
+    }
+    state.series.forEach(function (s, i) {
+      var row = el('div', 'row' + (state.row ? ' ' + state.row : ''));
+      row.appendChild(el('span', 'fold', state.folds ? state.folds[i] : '▸'));
+      var label = el('span', 'label', s.label);
+      label.title = s.label;
+      row.appendChild(label);
+      var sw = el('span', 'sw');
+      s.colours.forEach(function (c) {
+        var tile = el('i');
+        tile.style.background = c;
+        sw.appendChild(tile);
+      });
+      row.appendChild(sw);
+      rows.appendChild(row);
+    });
+    panel.appendChild(rows);
+
+    if (state.notice) panel.appendChild(el('div', 'notice', state.notice));
+    if (state.foot) panel.appendChild(el('div', 'foot ' + state.foot));
+
+    document.body.appendChild(panel);
+    rows.classList.toggle('scrolls', rows.scrollHeight > rows.clientHeight + 1);
+  }
+
+  window.addEventListener('hashchange', draw);
+  window.addEventListener('resize', function () {
+    var rows = document.querySelector('.rows');
+    if (!rows) return;
+    rows.classList.remove('scrolls');
+    rows.classList.toggle('scrolls', rows.scrollHeight > rows.clientHeight + 1);
+  });
+  draw();
+})();
+</script>
+</body>
+</html>

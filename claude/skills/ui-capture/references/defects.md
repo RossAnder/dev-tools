@@ -116,4 +116,4 @@ Counts: an error shown only by a red border; a status shown only by a dot's colo
 
 ## Controls
 
-A control state carries one of these defects planted on purpose. A control should plant one clear instance of one class, at a size a careful judge would catch: a label that overflows its card by a third of its width, a 60 px reserved band, a border stepped by one column. A control must come back with at least one `yes`; when the judge finds no defect in it, the judge says so, and its answers on the other states cannot be trusted.
+A control state carries one of these defects planted on purpose. A control should plant one clear instance of one class, at a size a careful judge would catch: a label that overflows its card by a third of its width, a 60 px reserved band, a border stepped by one column. A control must come back with at least one `yes`; the judge is not told which states are controls; the orchestrator reads each control's verdict, and a control the judge passes means its answers on the other states cannot be trusted.

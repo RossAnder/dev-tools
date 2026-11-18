@@ -42,3 +42,6 @@
 
 # Per-machine Claude Code permissions
 .claude/settings.local.json
+
+# The UI capture command's output
+/.ui-capture/

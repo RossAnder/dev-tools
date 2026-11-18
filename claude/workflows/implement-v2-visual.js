@@ -49,7 +49,7 @@ const RETURN_SCHEMA = {
           defects: { type: 'array', items: DEFECT_SCHEMA },
           note: { type: 'string' },
         },
-        required: ['state', 'control', 'verdict', 'defects', 'note'],
+        required: ['state', 'verdict', 'defects', 'note'],
         additionalProperties: false,
       },
     },
@@ -139,9 +139,28 @@ a.states.forEach((state) => {
 
 const notePath = (n) => `docs/flows/${a.slug}/notes/run/visual-${a.milestone}-${a.round}-${n}.md`
 
+// A prompt must not show which states are controls: no flag, states in name
+// order, and a control carrying the looks of the clean states on its surface
+// (the name up to its last '-'), or every look when none shares that surface.
+// A look's number is its 1-based position in `a.looks`, the same in every prompt.
+const surfaceOf = (name) => {
+  const cut = name.lastIndexOf('-')
+  return cut < 0 ? name : name.slice(0, cut)
+}
+const numbered = a.looks.map((look, i) => ({ k: i + 1, look }))
+const looksOf = (u) => {
+  if (!u.control) return numbered.filter(({ look }) => look.states.includes(u.state)).map(({ k }) => k)
+  const surface = surfaceOf(u.state)
+  const sameSurface = (s) => a.states.includes(s) && surfaceOf(s) === surface
+  if (!a.states.some(sameSurface)) return numbered.map(({ k }) => k)
+  return numbered.filter(({ look }) => look.states.some(sameSurface)).map(({ k }) => k)
+}
+const byName = (x, y) => (x.state < y.state ? -1 : x.state > y.state ? 1 : 0)
+
 const inspectorPrompt = (group, n) => {
-  const names = new Set(group.map((u) => u.state))
-  const looks = a.looks.filter((l) => l.states.some((s) => names.has(s)))
+  const lines = [...group].sort(byName).map((u) => ({ state: u.state, ks: looksOf(u) }))
+  const carried = new Set(lines.flatMap(({ ks }) => ks))
+  const looks = numbered.filter(({ k }) => carried.has(k))
   return `slug: ${a.slug}
 milestone: ${a.milestone}
 round: ${a.round}
@@ -149,9 +168,9 @@ capture_dir: ${a.capture_dir}
 design: ${a.design}
 note: ${notePath(n)}
 states:
-${group.map((u) => `- ${u.state} (control: ${u.control})`).join('\n')}
+${lines.map(({ state, ks }) => `- ${state}: looks ${ks.length ? ks.join(', ') : 'none'}`).join('\n')}
 looks:
-${looks.length ? looks.map((l) => `- ${JSON.stringify({ task: l.task, accept: l.accept, behaviour: l.behaviour, states: l.states })}`).join('\n') : '- none'}
+${looks.length ? looks.map(({ k, look }) => `- ${k}: ${JSON.stringify({ task: look.task, accept: look.accept, behaviour: look.behaviour })}`).join('\n') : '- none'}
 
 Judge these states as your procedure says, write your note at that path, and return only \`{states}\`, one entry per state above in its order.`
 }

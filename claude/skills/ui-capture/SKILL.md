@@ -73,7 +73,7 @@ Every state captured as an image has a key in `geometry.json`, its array empty w
 
 ## Controls
 
-A milestone may name some of its states as controls. A control state carries a defect planted on purpose, so a judge that finds nothing in it is a judge that is not looking, and its answers on the other states cannot be trusted. The capture command captures a control like any other state; the project builds the planted defect into the state itself.
+A milestone may name some of its states as controls. A control state carries a defect planted on purpose, so a judge that finds nothing in it is a judge that is not looking, and its answers on the other states cannot be trusted. The capture command captures a control like any other state; the project builds the planted defect into the state itself. The judge is not told which states are controls, so a control it fails is a defect it found without being told one was there. A control is judged against the look entries of the clean states that share its name up to the last `-`, so a project names each state `<surface>-<n>`, such as `settings-03`, with a control taking its surface's prefix.
 
 ## Judging a capture
 

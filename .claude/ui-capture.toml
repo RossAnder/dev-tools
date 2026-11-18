@@ -1,0 +1,3 @@
+command = "bash claude/skills/ui-capture/fixtures/capture.sh"
+out = ".ui-capture"
+paths = ["claude/skills/ui-capture/fixtures/**"]

@@ -47,12 +47,16 @@ const lineOf = (prompt, key) => {
   return m ? m[1] : null
 }
 
-// The `- <state> (control: <bool>)` lines of a prompt, as [state, control] pairs.
-const statesOf = (prompt) => [...prompt.matchAll(/^- ([^ \n]+) \(control: (true|false)\)$/gm)].map((m) => [m[1], m[2] === 'true'])
-const looksOf = (prompt) => {
-  const block = prompt.split(/^looks:$/m)[1].split('\n\n')[0]
-  return block.split('\n').filter((l) => l.startsWith('- {')).map((l) => JSON.parse(l.slice(2)))
-}
+// The `- <state>: looks <k>, <k>` lines of a prompt, as [state, look numbers] pairs.
+const statesOf = (prompt) => [...prompt.matchAll(/^- ([^ :\n]+): looks (none|\d+(?:, \d+)*)$/gm)]
+  .map((m) => [m[1], m[2] === 'none' ? [] : m[2].split(', ').map(Number)])
+const looksBlock = (prompt) => prompt.split(/^looks:\n/m)[1].split('\n\n')[0]
+// The `- <k>: {...}` lines of a prompt's looks block, as [k, look] pairs.
+const looksOf = (prompt) => looksBlock(prompt).split('\n')
+  .map((l) => l.match(/^- (\d+): (\{.*\})$/))
+  .filter(Boolean)
+  .map((m) => [Number(m[1]), JSON.parse(m[2])])
+const shown = ({ task, accept, behaviour }) => ({ task, accept, behaviour })
 
 const visualArgs = (extra) => ({
   slug: 'demo',
@@ -66,11 +70,12 @@ const visualArgs = (extra) => ({
   ...extra,
 })
 
-// Each inspector passes every clean state and fails every control, writing the note its prompt names.
-const judging = (verdictOf = (state, control) => (control ? 'fail' : 'pass')) => (prompt) => ({
-  states: statesOf(prompt).map(([state, control]) => ({
+// Each inspector passes every clean state and fails every control, writing the
+// note its prompt names. The prompt does not say which states are controls, so
+// the test passes its own control list.
+const judging = (controls, verdictOf = (state, control) => (control ? 'fail' : 'pass')) => (prompt) => ({
+  states: statesOf(prompt).map(([state]) => [state, controls.includes(state)]).map(([state, control]) => ({
     state,
-    control,
     verdict: verdictOf(state, control),
     defects: control ? [{ class: 'overlap', location: '#panel', detail: 'two panels overlap' }] : [],
     note: lineOf(prompt, 'note'),
@@ -84,13 +89,14 @@ test('implement-v2-visual: the script names its meta and reads no clock or rando
 
 test('implement-v2-visual: ten states and two controls make three groups of at most four, a control in two of them', async () => {
   const states = Array.from({ length: 10 }, (_, i) => `s${i}`)
-  const rt = runtime(judging())
-  const out = await rt.run(visualArgs({ states, controls: ['c0', 'c1'] }))
+  const controls = ['c0', 'c1']
+  const rt = runtime(judging(controls))
+  const out = await rt.run(visualArgs({ states, controls }))
   assert.equal(rt.calls.length, 3)
   assert.ok(rt.calls.every((c) => c.opts.agentType === 'ui-inspector'))
   const groups = rt.calls.map((c) => statesOf(c.prompt))
   assert.ok(groups.every((g) => g.length >= 1 && g.length <= 4))
-  assert.deepEqual(groups.map((g) => g.filter(([, control]) => control).length), [1, 1, 0])
+  assert.deepEqual(groups.map((g) => g.filter(([s]) => controls.includes(s)).length), [1, 1, 0])
   assert.deepEqual(groups.flat().map(([s]) => s).sort(), [...states, 'c0', 'c1'].sort())
   assert.deepEqual(rt.calls.map((c) => lineOf(c.prompt, 'note')), [
     'docs/flows/demo/notes/run/visual-B-1-1.md',
@@ -111,15 +117,57 @@ test('implement-v2-visual: a prompt carries the launch fields and only the looks
     { task: 4, accept: 1, behaviour: 'never shown', states: ['other'] },
   ]
   const states = ['wide', 'a', 'b', 'c', 'other']
-  const rt = runtime(judging())
+  const rt = runtime(judging([]))
   await rt.run(visualArgs({ states, controls: [], looks }))
   assert.equal(rt.calls.length, 2)
   const [first, second] = rt.calls.map((c) => c.prompt)
   assert.equal(lineOf(first, 'capture_dir'), 'target/ui-capture/B-1/')
   assert.equal(lineOf(first, 'design'), 'docs/flows/demo/design/ui-B.md')
   assert.equal(lineOf(first, 'round'), '1')
-  assert.deepEqual(looksOf(first), [looks[0]])
-  assert.deepEqual(looksOf(second), [looks[1]])
+  assert.deepEqual(statesOf(first), [['a', []], ['b', []], ['c', []], ['wide', [1]]])
+  assert.deepEqual(statesOf(second), [['other', [2]]])
+  assert.deepEqual(looksOf(first), [[1, shown(looks[0])]])
+  assert.deepEqual(looksOf(second), [[2, shown(looks[1])]])
+})
+
+test('implement-v2-visual: a prompt whose states carry no look prints an empty looks block', async () => {
+  const rt = runtime(judging(['planted']))
+  await rt.run(visualArgs({ looks: [] }))
+  assert.equal(rt.calls.length, 1)
+  assert.deepEqual(statesOf(rt.calls[0].prompt), [['narrow', []], ['planted', []], ['wide', []]])
+  assert.equal(looksBlock(rt.calls[0].prompt), '- none')
+})
+
+test('implement-v2-visual: a control carries every look and no prompt says which states are controls', async () => {
+  const looks = [
+    { task: 5, accept: 0, behaviour: 'the panel wraps its labels', states: ['web-01', 'web-03'] },
+    { task: 6, accept: 1, behaviour: 'the status bar stays one row', states: ['tui-01'] },
+  ]
+  const controls = ['web-02', 'tui-02', 'odd']
+  const rt = runtime(judging(controls))
+  const out = await rt.run(visualArgs({ states: ['web-01', 'web-03', 'tui-01'], controls, looks }))
+  const carried = new Map()
+  rt.calls.forEach(({ prompt }) => {
+    assert.doesNotMatch(prompt, /control/)
+    const lines = statesOf(prompt)
+    const names = lines.map(([s]) => s)
+    assert.deepEqual(names, [...names].sort())
+    lines.forEach(([s, ks]) => carried.set(s, ks))
+    assert.doesNotMatch(looksBlock(prompt), /"states"/)
+    const wanted = [...new Set(lines.flatMap(([, ks]) => ks))].sort((x, y) => x - y)
+    assert.deepEqual(looksOf(prompt), wanted.map((k) => [k, shown(looks[k - 1])]))
+  })
+  assert.deepEqual(Object.fromEntries(carried), {
+    'web-01': [1],
+    'web-03': [1],
+    'tui-01': [2],
+    'web-02': [1],
+    'tui-02': [2],
+    odd: [1, 2],
+  })
+  assert.deepEqual(out.states.filter((s) => s.verdict === 'fail').map((s) => s.state), controls)
+  assert.deepEqual(out.states.filter((s) => s.control).map((s) => s.state), controls)
+  assert.deepEqual(out.errors, [])
 })
 
 test('implement-v2-visual: a dead inspector\'s states come back no-return and a thrown one\'s error', async () => {
@@ -128,7 +176,7 @@ test('implement-v2-visual: a dead inspector\'s states come back no-return and a 
     const n = lineOf(prompt, 'note')
     if (n.endsWith('-1.md')) return null
     if (n.endsWith('-2.md')) throw new Error('boom')
-    return judging()(prompt)
+    return judging(['c'])(prompt)
   })
   const out = await rt.run(visualArgs({ states, controls: ['c'] }))
   assert.equal(rt.calls.length, 2)
@@ -149,7 +197,7 @@ test('implement-v2-visual: a dead inspector\'s states come back no-return and a 
 
 test('implement-v2-visual: a state the inspector leaves out is missing, and a wrong note path is kept with an error', async () => {
   const rt = runtime((prompt) => ({
-    states: [{ state: 'wide', control: false, verdict: 'unsure', defects: [], note: 'elsewhere.md' }],
+    states: [{ state: 'wide', verdict: 'unsure', defects: [], note: 'elsewhere.md' }],
   }))
   const out = await rt.run(visualArgs())
   const [wide, narrow, planted] = out.states

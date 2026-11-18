@@ -1,0 +1,24 @@
+╭─ Tasks · milestone B ────────────────────────────────────────────────────────╮
+│ ID  ST  TITLE                                                          FILES │
+│ ──────────────────────────────────────────────────────────────────────────── │
+│ 10  ✓   Write the capture contract                                         1 │
+│ 11  ○   Build the web fixture panel                                        2 │
+│ 12  ●   Build the terminal fixture panel                                   3 │
+│ 13  ✓   Declare the fixtures capture command                               4 │
+│ 14  ○   Link the inspector into the config dir                             5 │
+│ 15  ●   Draft the defect rubric                                            1 │
+│ 16  ✓   Add the geometry report                                            2 │
+│ 17  ○   Wire the visual pass                                               3 │
+│ 18  ●   Record the control verdicts                                        4 │
+│ 19  ✓   Measure the catch rate                                             5 │
+│ 20  ○   Write the capture contract                                         1 │
+│ 21  ●   Build the web fixture panel                                        2 │
+│ 22  ✓   Build the terminal fixture panel                                   3 │
+│ 23  ○   Declare the fixtures capture command                               4 │
+│ 24  ●   Link the inspector into the config dir                             5 │
+│ 25  ✓   Draft the defect rubric                                            1 │
+│ 26  ○   Add the geometry report                                            2 │
+│ 27  ●   Wire the visual pass                                               3 │
+│         … 7 more                                                             │
+│ j/k move  enter open  q quit                                        25 tasks │
+╰──────────────────────────────────────────────────────────────────────────────╯
