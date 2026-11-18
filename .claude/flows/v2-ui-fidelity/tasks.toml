@@ -19,6 +19,10 @@ rationale = "The harness sees and judges the UI it builds, shows layout options 
 id = "B"
 rationale = "The visual pass is proven on two dev-tools fixtures, a web panel captured as images and a terminal panel captured as text grids, each with clean states the inspector passes and planted-defect controls it fails, and the catch rate is reported."
 
+[[checkpoints]]
+id = "apply-1"
+rationale = "Fix F42,F43,F44,F45,F46,F47,F48,F50,F51,F52,F53,F54,F55,F57,F59,F60,F61,F62,F63,F65,F66,F67,F68,F69,F72,F73 from .claude/flows/v2-ui-fidelity/review-v2.toml"
+
 [[file_notes]]
 ref = "write-the-ui-capture-contract-and-defect-rubric"
 file = "claude/skills/ui-capture/SKILL.md"
@@ -153,6 +157,148 @@ note = "(new)"
 ref = "build-the-terminal-fixture-panel"
 file = "claude/skills/ui-capture/fixtures/tui/tui-09.txt"
 note = "(new)"
+
+[[finding_links]]
+ref = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F42"]
+settles = []
+
+[[finding_links]]
+ref = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F43"]
+settles = []
+
+[[finding_links]]
+ref = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = [
+    "F44",
+    "F50",
+    "F52",
+]
+settles = []
+
+[[finding_links]]
+ref = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = [
+    "F45",
+    "F46",
+]
+settles = []
+
+[[finding_links]]
+ref = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F47"]
+settles = []
+
+[[finding_links]]
+ref = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = [
+    "F48",
+    "F72",
+]
+settles = []
+
+[[finding_links]]
+ref = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F51"]
+settles = []
+
+[[finding_links]]
+ref = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = [
+    "F53",
+    "F59",
+]
+settles = []
+
+[[finding_links]]
+ref = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F54"]
+settles = []
+
+[[finding_links]]
+ref = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F55"]
+settles = []
+
+[[finding_links]]
+ref = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F57"]
+settles = []
+
+[[finding_links]]
+ref = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F60"]
+settles = []
+
+[[finding_links]]
+ref = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F61"]
+settles = []
+
+[[finding_links]]
+ref = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F62"]
+settles = []
+
+[[finding_links]]
+ref = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F63"]
+settles = []
+
+[[finding_links]]
+ref = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = [
+    "F65",
+    "F69",
+]
+settles = []
+
+[[finding_links]]
+ref = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F66"]
+settles = []
+
+[[finding_links]]
+ref = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F67"]
+settles = []
+
+[[finding_links]]
+ref = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F68"]
+settles = []
+
+[[finding_links]]
+ref = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F73"]
+settles = []
+
+[[finding_links]]
+ref = "list-this-repos-fixture-controls-under-controls-in-claudeui-capturetoml"
+store = ".claude/flows/v2-ui-fidelity/review-v2.toml"
+fixes = ["F72"]
+settles = []
 
 [[specs]]
 ref = "add-an-optional-class-to-plan-decisions"
@@ -1464,6 +1610,710 @@ at = "c604b9be1a6c513292cbea75d1830eea92507367"
 neg_rc = 0
 verdict = "holds"
 
+[[specs]]
+ref = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+outcome = """F42: the failure no longer happens: A task spec holds an accept entry with run_by = "look", states = ["empty-cart"] and the empty check owner_problem requires. spec_block takes the accept.check.is_empty() branch, prints "Check: none yet" and skips the Run by line, so the rendered plan shows a complete judged acceptance as an unfinished check and never names the states it is judged on, contradicting plan check, which treats the empty check as the entry's shape."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F42's anchor holds"
+check = "tomlctl review anchor F42 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+outcome = """F43: the failure no longer happens: `tomlctl inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","items":["8"],"prompt":"Which?","choice":"text"}'` (a worker that drops the flow) succeeds and mints I1. The /implement-v2 drain reads plan questions with `inputs list --ledger plan --flow <slug>`, so the flow-less question is never found: the parked task is reset or re-asked without it and the question sits orphaned."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F43's anchor holds"
+check = "tomlctl review anchor F43 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+outcome = """
+F44: the change is made: accept-owner-invalid row omits look from the run_by owners, though RUN_BY_OWNERS now includes it
+F50: the change is made: tasks-store.md says a look/states accept entry raises tasks.toml to schema_version 2; the writer stamps 3, and the schema_version row omits 3
+F52: the change is made: plan milestone update prose omits ui_states, ui_controls and after from the fields a call may change and the [[changes]] fields it writes"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F44's anchor holds"
+check = "tomlctl review anchor F44 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F50's anchor holds"
+check = "tomlctl review anchor F50 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F52's anchor holds"
+check = "tomlctl review anchor F52 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+outcome = """
+F45: the failure no longer happens: A page whose header sits partly above the top edge (h1 {position:relative; top:-14px} with body margin 0) renders visibly cut, but `above = rect.bottom + scrollY < -TOLERANCE` is false because the bottom is on screen, while left/right use the partial test. geometry.json reports nothing for the header, so the cut reads as a clean measurement, the case SKILL.md says must not happen.
+F46: the failure no longer happens: <div style="visibility:hidden"><div style="visibility:visible;width:100px;white-space:nowrap">long label</div></div>: the child is painted and overflows its box, but rendered() returns false for the parent (visibility !== 'visible') and mine.skip propagates to every descendant. geometry.json reports nothing, while an identical sibling outside the hidden parent is reported as overflow."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F45's anchor holds"
+check = "tomlctl review anchor F45 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F46's anchor holds"
+check = "tomlctl review anchor F46 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+outcome = "F47: the change is made: RETURN_SCHEMA still offers inspectors a `control` boolean, a leftover of labelled controls that no code reads and that tells the inspector controls exist"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "F47's removed text is gone from its edit target"
+check = "tomlctl review anchor F47 --slug v2-ui-fidelity --gone"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.premises]]
+claim = "F47's anchor holds"
+check = "tomlctl review anchor F47 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+outcome = """
+F48: the change is made: The contract's key table never says which keys are required, so `out` reads optional while the visual pass refuses a declaration without it
+F72: the failure no longer happens: A code review of this flow with the ui-change signal runs capture.sh without --only (checks/ui-capture.md:26), so control web-05 lands beside the clean states. The ui-visual finder must report each geometry entry as a defect (ui-visual.md:33), major by :70. The finding confirms (the overflow is real), and if picked at triage /apply-v2 fixes panel.html's unclippedLabel row, deleting the plant: the next visual pass sees a clean control, reads the inspector as unsound, and the milestone cannot commit. Every later UI review of the repo re-raises all nine controls."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+    "Decision on F72: A controls list in .claude/ui-capture.toml, read by the check: works for --scope runs and later flows, but documented in the ui-capture skill the inspector loads, so blinding then rests on the prompt alone.",
+]
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F48's anchor holds"
+check = "tomlctl review anchor F48 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F72's anchor holds"
+check = "tomlctl review anchor F72 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+outcome = "F51: the change is made: README capability meanings for decision_class and ui_look describe a question field and a look record the binary does not have"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F51's anchor holds"
+check = "tomlctl review anchor F51 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+outcome = """
+F53: the change is made: CLAUDE.md groups intent-fidelity with the capture-based UI lenses; it reads the brief and user decisions, never captures, and runs on every flow-bound code run
+F59: the change is made: CLAUDE.md misstates two user decisions: the pass captures every ui_state and control, and a worker asks on a compromise or hard-to-unwind choice"""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F53's anchor holds"
+check = "tomlctl review anchor F53 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F59's anchor holds"
+check = "tomlctl review anchor F59 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+outcome = "F54: the change is made: New detect key ui_capture_paths is accepted by the catalogue and survey but the lens skill's detector docs still say any key beyond six is refused"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F54's anchor holds"
+check = "tomlctl review anchor F54 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+outcome = "F55: the failure no longer happens: Task 33 declares tui-07 as 'the third's title running through the right border so that row has no │ in column 79' (class 4), and the worker note says it does. The grid's row 5 holds the title in columns 10-78 and │ in column 79, so the box edge is unbroken. The control instead reads as a FILES-column overwrite plus a cut without ellipsis, near-duplicating tui-05, so the visual pass never checks that an inspector catches a broken right border."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "Row 5 (file line 6) of tui-07.txt still ends with the right border U+2502 in column 79"
+check = "sed -n '6p' claude/skills/ui-capture/fixtures/tui/tui-07.txt | grep -q '│$'"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+outcome = "F57: the failure no longer happens: A planner follows ui-layout.md section 5. Its example names states descriptively ('settings-short-window', line 93), and its Controls paragraph suggests a clipped label with no naming rule, so the planner declares control 'settings-narrow-clipped'. The name tells the inspector where the planted defect is (D37). Its prefix up to the last '-', 'settings-narrow', matches no clean state, so implement-v2-visual.js:155 gives it every look in the milestone, other surfaces' included. It then fails on looks it cannot show, which D41 rejected as 'the proof measures nothing'."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F57's anchor holds"
+check = "tomlctl review anchor F57 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+outcome = "F60: the change is made: No test drives amend_report's new silent one-way branch: reverting it to unanswered_decisions alone passes every existing test"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F60's anchor holds"
+check = "tomlctl review anchor F60 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+outcome = "F61: the change is made: The control-state case asserts only the class, so dropping ui_findings' control-state explanation would still pass"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F61's anchor holds"
+check = "tomlctl review anchor F61 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+outcome = "F62: the change is made: toEntries' return-validation branches (no states array, bad verdict, unasked or doubled state, empty note, backslash note path) have no test"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F62's anchor holds"
+check = "tomlctl review anchor F62 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+outcome = "F63: the change is made: A ui_capture_paths detector without files is untested: making it select every changed file, as Detect::selects does, would pass"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F63's anchor holds"
+check = "tomlctl review anchor F63 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+outcome = """
+F65: the failure no longer happens: Worker writes a prompt such as "the panel's width" into `tomlctl inputs add --json '{..."prompt":"<prompt>"...}'` as the step shows; the apostrophe closes the single-quoted string, bash reports an unexpected EOF or passes a truncated argument, and no question is posted, so the worker has no id to message or wait on.
+F69: the failure no longer happens: A worker posts a plan question; the user types their own answer in AskUserQuestion, so the orchestrator relays it by questions.md step 3 as `tomlctl inputs answer <qid> --text '<words>'`. The question reads handled, the worker takes the answered branch and runs `tomlctl inputs list --kind answer --where answers=<qid> --get picked`, which exits 1 with "--get path `picked` matches no field" because a text answer has only `text`. The worker has no pick to carry on with and the user's answer is lost for this run."""
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F65's anchor holds"
+check = "tomlctl review anchor F65 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "F69's anchor holds"
+check = "tomlctl review anchor F69 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+outcome = "F66: the change is made: An already-handled question is sent to step 3, whose first command `inputs answer` refuses a handled question"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F66's anchor holds"
+check = "tomlctl review anchor F66 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+outcome = "F67: the change is made: First sentence calls every non-pass block a capture failure, contradicting the later rule that a first timeout is retried, not failed"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F67's anchor holds"
+check = "tomlctl review anchor F67 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+outcome = "F68: the change is made: `inputs list --ledger` help omits the `plan` ledger this change added to LEDGERS and to the user-inputs contract"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F68's anchor holds"
+check = "tomlctl review anchor F68 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+outcome = "F73: the change is made: The look pass has no answer for a look this capture cannot show, so a control answers it not met and fails, against D41 (reading B)"
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour the finding does not name.",
+]
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.premises]]
+claim = "F73's anchor holds"
+check = "tomlctl review anchor F73 --slug v2-ui-fidelity"
+at = "base"
+
+[specs.premises.probe]
+at = "a5451c561586370d04e4211cecd95208ca1af5f6"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "list-this-repos-fixture-controls-under-controls-in-claudeui-capturetoml"
+outcome = "The repo's .claude/ui-capture.toml lists every fixture control state under `controls`, so a review of this repo skips each control's planted defect"
+constraints = [
+    "The list is exactly milestone B's ui_controls, in this order: web-02, web-05, web-07, web-09, web-11, tui-02, tui-05, tui-07, tui-09",
+    "Change no other key of the declaration",
+    "Write the file only through tomlctl, never with the Write or Edit tool: it sits under .claude/, a protected path",
+]
+premises = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The declaration names the nine controls"
+check = '''o=$(tomlctl json get .claude/ui-capture.toml controls) && test "$(printf %s "$o" | grep -o '"[a-z]*-[0-9]*"' | sort -u | tr -d '\n')" = '"tui-02""tui-05""tui-07""tui-09""web-02""web-05""web-07""web-09""web-11"' '''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "every finding this milestone fixes no longer reproduces"
+check = "tomlctl review reproduce-status --flow v2-ui-fidelity --milestone apply-1 --slug v2-ui-fidelity --expect gone"
+kind = "forward"
+positive = ""
+writes_build = false
+run_by = "gate"
+
+[[specs.means]]
+text = """tomlctl set-json .claude/ui-capture.toml controls --json '["web-02","web-05","web-07","web-09","web-11","tui-02","tui-05","tui-07","tui-09"]' --no-write-integrity"""
+binding = "suggested"
+detail = "The declaration carries no .sha256 sidecar today, so --no-write-integrity keeps it that way; the file holds no comments, so tomlctl's whole-file rewrite loses nothing"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1533,6 +2383,20 @@ gate = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::te
 probe = "node --version"
 verdict = "holds"
 at = "c604b9be1a6c513292cbea75d1830eea92507367"
+
+[[milestones]]
+id = "apply-1"
+gates = [
+    "bash claude/skills/ui-capture/fixtures/capture.sh --list",
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --workspace --locked --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
 
 [[changes]]
 at = 2026-11-18T07:14:05Z
@@ -2008,6 +2872,213 @@ old = "deferred"
 new = "elaborated"
 actor = "orchestrator"
 reason = "elaborated: layouts stacked-rows and single-table picked (D35, D36, D42), blind controls with neutral names and prefix-matched looks (D37, D39, D41), 500 px floor left to the backlog (D38), out dir ignored (D40); rows 32-34 revised, 36 and 37 added; cold read ok with 4 points applied; all accept probes healthy, gate probes hold"
+
+[[changes]]
+at = 2026-11-18T09:47:43Z
+ref = "milestone:apply-1"
+field = "*"
+old = ""
+new = "Fix F42,F43,F44,F45,F46,F47,F48,F50,F51,F52,F53,F54,F55,F57,F59,F60,F61,F62,F63,F65,F66,F67,F68,F69,F72,F73 from .claude/flows/v2-ui-fidelity/review-v2.toml"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F42,F43,F44,F45,F46,F47,F48,F50,F51,F52,F53,F54,F55,F57,F59,F60,F61,F62,F63,F65,F66,F67,F68,F69,F72,F73"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+field = "*"
+old = ""
+new = 'plan view renders a run_by = "look" accept entry as "Check: none yet" and drops its run_by and states'
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F42"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+field = "*"
+old = ""
+new = "validate admits a `plan` ledger record with no `flow`, though the inputs contract requires one; only `scope` is refused"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F43"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+field = "*"
+old = ""
+new = "accept-owner-invalid row omits look from the run_by owners, though RUN_BY_OWNERS now includes it (and 2 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F44, F50, F52"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+field = "*"
+old = ""
+new = "Offscreen check flags a box only when it lies wholly above the viewport, so an element cut off at the top edge is never reported (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F45, F46"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+field = "*"
+old = ""
+new = "RETURN_SCHEMA still offers inspectors a `control` boolean, a leftover of labelled controls that no code reads and that tells the inspector controls exist"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F47"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+field = "*"
+old = ""
+new = "The contract's key table never says which keys are required, so `out` reads optional while the visual pass refuses a declaration without it (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F48, F72"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+field = "*"
+old = ""
+new = "README capability meanings for decision_class and ui_look describe a question field and a look record the binary does not have"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F51"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+field = "*"
+old = ""
+new = "CLAUDE.md groups intent-fidelity with the capture-based UI lenses; it reads the brief and user decisions, never captures, and runs on every flow-bound code run (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F53, F59"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+field = "*"
+old = ""
+new = "New detect key ui_capture_paths is accepted by the catalogue and survey but the lens skill's detector docs still say any key beyond six is refused"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F54"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+field = "*"
+old = ""
+new = "Control tui-07 keeps the right border intact: its long title stops at column 78 with │ still in column 79, so the declared through-the-border defect is absent"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F55"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+field = "*"
+old = ""
+new = "The layout step declares states and controls with no <surface>-<n> naming rule, so a descriptive control name leaks its defect and gets every look (D37, D41)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F57"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+field = "*"
+old = ""
+new = "No test drives amend_report's new silent one-way branch: reverting it to unanswered_decisions alone passes every existing test"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F60"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+field = "*"
+old = ""
+new = "The control-state case asserts only the class, so dropping ui_findings' control-state explanation would still pass"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F61"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+field = "*"
+old = ""
+new = "toEntries' return-validation branches (no states array, bad verdict, unasked or doubled state, empty note, backslash note path) have no test"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F62"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+field = "*"
+old = ""
+new = "A ui_capture_paths detector without files is untested: making it select every changed file, as Detect::selects does, would pass"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F63"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+field = "*"
+old = ""
+new = "Question is posted as inline single-quoted JSON, so a prompt or option containing an apostrophe breaks the shell command (and 1 more)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F65, F69"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+field = "*"
+old = ""
+new = "An already-handled question is sent to step 3, whose first command `inputs answer` refuses a handled question"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F66"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+field = "*"
+old = ""
+new = "First sentence calls every non-pass block a capture failure, contradicting the later rule that a first timeout is retried, not failed"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F67"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+field = "*"
+old = ""
+new = "`inputs list --ledger` help omits the `plan` ledger this change added to LEDGERS and to the user-inputs contract"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F68"
+
+[[changes]]
+at = 2026-11-18T09:47:46Z
+ref = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+field = "*"
+old = ""
+new = "The look pass has no answer for a look this capture cannot show, so a control answers it not met and fails, against D41 (reading B)"
+actor = "orchestrator"
+reason = "apply .claude/flows/v2-ui-fidelity/review-v2.toml: F73"
+
+[[changes]]
+at = 2026-11-18T09:48:49Z
+ref = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+field = "spec.premises"
+old = """[{"claim":"F55's anchor holds","check":"tomlctl review anchor F55 --slug v2-ui-fidelity","at":"base","probe":{"at":"a5451c561586370d04e4211cecd95208ca1af5f6","neg_rc":1,"verdict":"fails"}}]"""
+new = """[{"claim":"Row 5 (file line 6) of tui-07.txt still ends with the right border U+2502 in column 79","check":"sed -n '6p' claude/skills/ui-capture/fixtures/tui/tui-07.txt | grep -q '│$'","at":"base"}]"""
+actor = "orchestrator"
+reason = "premise 0 broken in effect: the anchor's symbol `tui-07` is the file name and never occurs inside the file, so `review anchor F55` fails whatever the code; the defect itself holds at HEAD (row 5 still ends in U+2502 at column 79), so the premise now checks that directly"
+
+[[changes]]
+at = 2026-11-18T09:54:47Z
+ref = "list-this-repos-fixture-controls-under-controls-in-claudeui-capturetoml"
+field = "*"
+old = ""
+new = "List this repo's fixture controls under `controls` in .claude/ui-capture.toml"
+actor = "orchestrator"
+reason = "task 43 (F72) added the optional `controls` declaration key that review lenses read to skip planted-defect states; its note reports this repo's own declaration does not list the fixture controls yet, so a review here would still raise web-05's planted defect, which is F72's failure scenario"
 
 [[items]]
 id = 1
@@ -3024,3 +4095,545 @@ After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::
 acceptance = ""
 agent = "plan-worker-lite"
 commit = "01a5de120799b978629c05e9476200f1c5579489"
+
+[[items]]
+id = 38
+ref = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+title = 'plan view renders a run_by = "look" accept entry as "Check: none yet" and drops its run_by and states'
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/view.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = 'F42: plan view renders a run_by = "look" accept entry as "Check: none yet" and drops its run_by and states'
+detail = """
+F42:
+Fix: In spec_block, test accept.run_by == RUN_BY_LOOK before the empty-check branch: print "  - Run by: look" and "  - States: <comma-joined code-quoted states>" instead of "Check: none yet"; keep the existing branches for every other owner. Import RUN_BY_LOOK from crate::tasks::schema alongside RUN_BY_COVERED.
+Failure scenario: A task spec holds an accept entry with run_by = "look", states = ["empty-cart"] and the empty check owner_problem requires. spec_block takes the accept.check.is_empty() branch, prints "Check: none yet" and skips the Run by line, so the rendered plan shows a complete judged acceptance as an unfinished check and never names the states it is judged on, contradicting plan check, which treats the empty check as the entry's shape."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 39
+ref = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+title = "validate admits a `plan` ledger record with no `flow`, though the inputs contract requires one; only `scope` is refused"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/inputs.rs",
+    "tomlctl/tests/inputs.rs",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F43: validate admits a `plan` ledger record with no `flow`, though the inputs contract requires one; only `scope` is refused"
+detail = """
+F43:
+Fix: In `validate`, replace the plan-ledger guard with one that requires `flow`: when `optional_str(row, "ledger")? == Some("plan")` and `!row.contains_key("flow")`, refuse with "a `plan` ledger record names the `flow` whose tasks it concerns" (the existing flow+scope refusal above it then also covers `scope`). Add the flow-less plan question to the refusal cases in `a_target_needs_its_ledger_and_one_of_flow_or_scope` or the `inputs_plan_ledger_questions_target_a_flow_task` integration test, and state the requirement in the inputs reference's Target bullet.
+Failure scenario: `tomlctl inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","items":["8"],"prompt":"Which?","choice":"text"}'` (a worker that drops the flow) succeeds and mints I1. The /implement-v2 drain reads plan questions with `inputs list --ledger plan --flow <slug>`, so the flow-less question is never found: the parked task is reset or re-asked without it and the question sits orphaned."""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 40
+ref = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+title = "accept-owner-invalid row omits look from the run_by owners, though RUN_BY_OWNERS now includes it (and 2 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F44: accept-owner-invalid row omits look from the run_by owners, though RUN_BY_OWNERS now includes it
+F50: tasks-store.md says a look/states accept entry raises tasks.toml to schema_version 2; the writer stamps 3, and the schema_version row omits 3
+F52: plan milestone update prose omits ui_states, ui_controls and after from the fields a call may change and the [[changes]] fields it writes"""
+detail = '''
+F44:
+Edit (change): Change the owner list to `worker`, `gate`, `covered` or `look`, matching RUN_BY_OWNERS. At the instance, tasks-store.md line 116, change `or `covered`. `covered_by`` to `or `covered`, or `look`. `covered_by`` so the list matches.
+Old text: An `accept` entry's `run_by` is not `worker`, `gate` or `covered`;
+Instances: claude/skills/tomlctl/references/tasks-store.md
+
+F50:
+Edit (change): Line 128: change `raises \`schema_version\` to \`2\`` to `raises \`schema_version\` to \`3\``, matching tasks/schema.rs SCHEMA_VERSION = 3 and holds_v3_keys. Also the `schema_version` row of the root-keys table (line 28): add that every write stamps it `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`, else `2` while it holds audit/id_high_water/finding_links/specs/milestones/changes, else `1`, and that a binary knowing only `2` refuses a `3` store. Make the same addition to the `schema_version` row in flow-contract-task-store/SKILL.md (line 69), which still names only 1 and 2.
+Old text: a store holding either raises `schema_version` to `2`.
+Instances: claude/skills/flow-contract-task-store/SKILL.md
+
+F52:
+Edit (change): plan/milestone.rs refuses a no-op only when none of goal, gate, clear-gate, gate-probe, ui-state, ui-control, clear-ui, after, clear-after, defer or elaborated is passed, and pushes `[[changes]]` rows for `ui_states`, `ui_controls` and `after` with compact-JSON old/new. Change line 319 to `a call changing none of goal, gates, gate probes, after, UI states or controls, deferral or elaboration is refused`, and line 321-322 to list `goal`, `gates`, `gate_probes`, `after`, `ui_states`, `ui_controls`, `elaboration`, `defer_reason`, with `A gates, gate_probes, after, ui_states or ui_controls row's old and new are compact JSON`.
+Old text: with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `defer_reason`. A `gates`
+or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`.'''
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 41
+ref = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+title = "Offscreen check flags a box only when it lies wholly above the viewport, so an element cut off at the top edge is never reported (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/ui-capture/scripts/geometry-probe.js"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F45: Offscreen check flags a box only when it lies wholly above the viewport, so an element cut off at the top edge is never reported
+F46: A visibility:hidden ancestor marks its whole subtree skip, so a visibility:visible descendant that is drawn is never measured"""
+detail = """
+F45:
+Fix: In uiCaptureGeometry make the top edge partial like the left edge: `var above = rect.top + scrollY < -TOLERANCE;` and keep the wholly-out exemption using a separate wholly-above test, e.g. `var whollyOut = rect.right <= 0 || rect.left >= viewW || rect.bottom + scrollY <= 0;`. Optionally plant a top-cut element in render.sh's self-test.
+Failure scenario: A page whose header sits partly above the top edge (h1 {position:relative; top:-14px} with body margin 0) renders visibly cut, but `above = rect.bottom + scrollY < -TOLERANCE` is false because the bottom is on screen, while left/right use the partial test. geometry.json reports nothing for the header, so the cut reads as a clean measurement, the case SKILL.md says must not happen.
+
+F46:
+Fix: Only display:none (getClientRects empty) and opacity 0 hide a subtree; visibility is inherited and overridable. In uiCaptureGeometry, when the element fails rendered() only because style.visibility !== 'visible', skip this element's own checks and items but do not set mine.skip, so descendants are judged by their own computed visibility. E.g. split rendered() into hidesSubtree(el, style) (SKIP_TAGS, display none, opacity 0, no client rects) and a per-element visibility test.
+Failure scenario: <div style="visibility:hidden"><div style="visibility:visible;width:100px;white-space:nowrap">long label</div></div>: the child is painted and overflows its box, but rendered() returns false for the parent (visibility !== 'visible') and mine.skip propagates to every descendant. geometry.json reports nothing, while an identical sibling outside the hidden parent is reported as overflow."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 42
+ref = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+title = "RETURN_SCHEMA still offers inspectors a `control` boolean, a leftover of labelled controls that no code reads and that tells the inspector controls exist"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/implement-v2-visual.js"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F47: RETURN_SCHEMA still offers inspectors a `control` boolean, a leftover of labelled controls that no code reads and that tells the inspector controls exist"
+detail = """
+F47:
+Edit (remove): Delete the `control: { type: 'boolean' },` property from RETURN_SCHEMA.properties.states.items.properties. toEntries never reads `s.control` (the index takes `control` from the Workflow's own units), ui-inspector.md never mentions controls, and the fake inspector in claude/workflows/tests/visual.test.mjs returns no `control`, so the property is dead and only advertises to a blinded inspector that some of its states are planted.
+Old text: control: { type: 'boolean' },"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 43
+ref = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+title = "The contract's key table never says which keys are required, so `out` reads optional while the visual pass refuses a declaration without it (and 1 more)"
+effort = "M"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/ui-capture/references/defects.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F48: The contract's key table never says which keys are required, so `out` reads optional while the visual pass refuses a declaration without it
+F72: Review UI lenses get no list of planted-defect control states, so a control's planted defect (web-05's 6 geometry entries) is raised as a review defect"""
+detail = """
+F48:
+Edit (change): State requiredness in the declaration table, which owns the config's shape: change the `command` row to begin "Required." and the `out` row to "Required. The default output directory, relative to the repo root; the visual pass builds each round's directory under it. A caller that passes `--out` overrides it." and the `paths` row to begin "Optional.". Today implement-v2-engine/references/visual.md step 1 refuses a declaration lacking `command` or `out`, the review check (review-v2-lenses/checks/ui-capture.md) needs only `command`, and tomlctl's ui_capture::load_paths reads only `paths`, so a project that omits `out` as the table permits passes plan check and review and stalls only after a milestone's gate passes.
+Old text: | `out` | The default output directory, relative to the repo root. A caller that passes `--out` overrides it. |
+
+F72:
+Fix: Lens text, whatever the source: in ui-visual.md Rubric/Measured geometry and interaction.md Defect rubric add: 'A state the ui-capture baseline lists under controls carries a defect planted on purpose. Do not report its planted defect or its geometry entries; skip it and count it in the coverage note as a control.' Check: the Fence mapping records the entry as '<run dir>/ui-capture; controls: <state>, ...' and the finder paragraph (:53) says control states are skipped. ui-capture SKILL.md:76 and defects.md:119: scope 'the judge is not told' to the visual pass's ui-inspector; a review lens judges the change, not the inspector, and is told. Open: where the check reads the control list (options).
+Failure scenario: A code review of this flow with the ui-change signal runs capture.sh without --only (checks/ui-capture.md:26), so control web-05 lands beside the clean states. The ui-visual finder must report each geometry entry as a defect (ui-visual.md:33), major by :70. The finding confirms (the overflow is real), and if picked at triage /apply-v2 fixes panel.html's unclippedLabel row, deleting the plant: the next visual pass sees a clean control, reads the inspector as unsound, and the milestone cannot commit. Every later UI review of the repo re-raises all nine controls."""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 44
+ref = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+title = "README capability meanings for decision_class and ui_look describe a question field and a look record the binary does not have"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/README.md",
+    "tomlctl/src/cli/types/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "F51: README capability meanings for decision_class and ui_look describe a question field and a look record the binary does not have"
+detail = """
+F51:
+Edit (change): No inputs question carries a class; the feature is the optional `class` on plan decisions. Rewrite `decision_class` as: a plan decision may carry `class` (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) via `plan decide`, stamping plan.toml `schema_version = 4`, and `plan gate` groups agent-assumed decisions by it. Rewrite `ui_look` as: milestones carry `ui_states`/`ui_controls` (`plan milestone add|update --ui-state/--ui-control/--clear-ui`), an accept entry may be `run_by = "look"` with `states`, `plan emit gate-list` prints `visual`, `plan check` reports the five UI classes, and tasks.toml is stamped `schema_version = 3`. Fix the comment above the list in cli/types/mod.rs the same way.
+Old text: | `decision_class` | a question carries a `decision_class`, so the plan and the engine can tell a structural call from one of taste, architecture, cost or UX |
+| `ui_look` | the plan records the UI look the user chose from the layout options shown before tasks are written |
+Instances: tomlctl/src/cli/types/mod.rs"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 45
+ref = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+title = "CLAUDE.md groups intent-fidelity with the capture-based UI lenses; it reads the brief and user decisions, never captures, and runs on every flow-bound code run (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["CLAUDE.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F53: CLAUDE.md groups intent-fidelity with the capture-based UI lenses; it reads the brief and user decisions, never captures, and runs on every flow-bound code run
+F59: CLAUDE.md misstates two user decisions: the pass captures every ui_state and control, and a worker asks on a compromise or hard-to-unwind choice"""
+detail = """
+F53:
+Edit (change): Rewrite to: `ui-visual` and `interaction` review a UI change from its captured states (the `ui-capture` skill's contract) rather than from source alone, activated by the `ui-change` signal; `intent-fidelity` holds a flow's built work against its brief and the decisions its user stated or confirmed, and `references/compose.md` adds it on every code-family run bound to a flow with `plan.toml`. All three live in `claude/skills/review-v2-lenses/lenses/`. Checked against intent-fidelity.md (activation opt-in, no apply_when, probes read brief.md and plan.toml only) and compose.md line 33.
+Old text: - **UI lenses.** `ui-visual`, `interaction` and `intent-fidelity` review a UI change from its captured states (the `ui-capture` skill's contract) rather than from source alone; they live in `claude/skills/review-v2-lenses/lenses/` and the engine composes them through `references/compose.md`.
+
+F59:
+Edit (change): Replace 'captures each state its look entries name' with 'captures each of the milestone's `ui_states` and `ui_controls`'. visual.md section 3 captures every state and every control, and no look entry ever names a control. Replace 'A worker that meets a taste, architecture, cost or UX call posts a question' with 'A worker that meets a compromise or a hard-to-unwind choice its spec does not settle posts a question'. That is D9's trigger, as plan-worker-deep.md 'Asking the user' implements it.
+Old text: captures each state its look entries name by the `ui-capture` skill's contract (`claude/skills/ui-capture/`) and the saved Workflow `claude/workflows/implement-v2-visual.js` fans `ui-inspector` agents out over the captured states; the inspector judges against the chosen design and never edits code. A worker that meets a taste, architecture, cost or UX call posts a question"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 46
+ref = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+title = "New detect key ui_capture_paths is accepted by the catalogue and survey but the lens skill's detector docs still say any key beyond six is refused"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/review-v2-lenses/SKILL.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F54: New detect key ui_capture_paths is accepted by the catalogue and survey but the lens skill's detector docs still say any key beyond six is refused"
+detail = """
+F54:
+Edit (change): In SKILL.md Detectors, add `ui_capture_paths` to the key list and a bullet: `ui_capture_paths` - a boolean, allowed only on a diff signal; when true, a changed path is selected when it matches a `paths` glob of the project's `.claude/ui-capture.toml` or the signal's `files` (with no `files`, only the capture paths), and a capture config that cannot be read records the signal `unknown`. Source: review/catalogue.rs DETECT_KEYS and the ui_capture_paths match (diff-only, boolean), review/survey.rs diff_signal.
+Old text: The detect keys are `files`, `contains`, `manifest`, `count`, `window` and `threshold`; any other key is refused.
+Target file: claude/skills/review-v2-lenses/SKILL.md"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 47
+ref = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+title = "Control tui-07 keeps the right border intact: its long title stops at column 78 with │ still in column 79, so the declared through-the-border defect is absent"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/ui-capture/fixtures/tui/tui-07.txt"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F55: Control tui-07 keeps the right border intact: its long title stops at column 78 with │ still in column 79, so the declared through-the-border defect is absent"
+detail = """
+F55:
+Fix: Rewrite row 5 (line 6) of tui-07.txt so the title's characters fill columns 10 to 79, replacing the │ in column 79 with a title character (for example the 70-character title 'Rework the capture contract so every project declares its own state na', so column 79 holds 'a'), keeping the line exactly 80 characters, UTF-8 and LF, and every other row unchanged.
+Failure scenario: Task 33 declares tui-07 as 'the third's title running through the right border so that row has no │ in column 79' (class 4), and the worker note says it does. The grid's row 5 holds the title in columns 10-78 and │ in column 79, so the box edge is unbroken. The control instead reads as a FILES-column overwrite plus a cut without ellipsis, near-duplicating tui-05, so the visual pass never checks that an inspector catches a broken right border."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 48
+ref = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+title = "The layout step declares states and controls with no <surface>-<n> naming rule, so a descriptive control name leaks its defect and gets every look (D37, D41)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/ui-layout.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F57: The layout step declares states and controls with no <surface>-<n> naming rule, so a descriptive control name leaks its defect and gets every look (D37, D41)"
+detail = """
+F57:
+Fix: In ui-layout.md section 5, under States, add: name every state `<surface>-<n>` by the ui-capture skill's Controls section, one surface prefix per surface, so that a control's name says nothing about its defect and the control takes its own surface's looks. Under Controls, add that a control takes its surface's prefix and the next free number, never a name that describes the planted defect. Change the look-entry example's states to `["settings-01", "settings-02", "settings-04"]`.
+Failure scenario: A planner follows ui-layout.md section 5. Its example names states descriptively ('settings-short-window', line 93), and its Controls paragraph suggests a clipped label with no naming rule, so the planner declares control 'settings-narrow-clipped'. The name tells the inspector where the planted defect is (D37). Its prefix up to the last '-', 'settings-narrow', matches no clean state, so implement-v2-visual.js:155 gives it every look in the milestone, other surfaces' included. It then fails on looks it cannot show, which D41 rejected as 'the proof measures nothing'."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 49
+ref = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+title = "No test drives amend_report's new silent one-way branch: reverting it to unanswered_decisions alone passes every existing test"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_stage.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F60: No test drives amend_report's new silent one-way branch: reverting it to unanswered_decisions alone passes every existing test"
+detail = """
+F60:
+Edit (add): Add a test beside this one: seed an approved PLAN with an edited brief, then `plan decide` a decision {provenance: agent-assumed, door: one-way, binds: ["1"]} with no `surfaced`. Assert `report["next"] == "plan decide"` and `report["blockers"] == [BRIEF_CHANGED, "one-way decisions agent-assumed and never surfaced: D1; surface each to the user with plan decide"]`. Reverting `amend_report` to `store::unanswered_decisions` makes stage print AMEND_NEXT for a plan `plan approve --amend` refuses, and this test fails.
+Old text: fn a_changed_brief_clears_another_check_error_before_naming_the_amend_it_would_refuse() {"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 50
+ref = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+title = "The control-state case asserts only the class, so dropping ui_findings' control-state explanation would still pass"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_check.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F61: The control-state case asserts only the class, so dropping ui_findings' control-state explanation would still pass"
+detail = """
+F61:
+Edit (change): After this call, read `Flow::with_tasks(&control).run()` and assert `report["findings"][0]["detail"]` contains "a control state is the inspector's to fail"; for the first (`list-full`) case assert its detail does not. That pins the control branch in `ui_findings`, which the class-only assertion cannot tell from the plain unknown-state branch.
+Old text: assert_reports_error(&Flow::with_tasks(&control), "plan/look-state-unknown");"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 51
+ref = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+title = "toEntries' return-validation branches (no states array, bad verdict, unasked or doubled state, empty note, backslash note path) have no test"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/workflows/tests/visual.test.mjs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F62: toEntries' return-validation branches (no states array, bad verdict, unasked or doubled state, empty note, backslash note path) have no test"
+detail = '''
+F62:
+Edit (add): Add a test after this one with a responder returning, per call: `{}` (assert every state `error` with error 'returned no states array'); states with verdict 'maybe' (status 'error'); an extra unasked state and a doubled state (assert errors name 'which it was not asked' and 'twice; the first kept', and the first entry's verdict kept); note '' (status 'ok', error 'wrote no note'); and note `C:\\repo\\docs\\flows\\demo\\notes\\run\\visual-B-1-1.md` (status 'ok', error null, note equal to the expected forward-slash path). The last pins namesNote's backslash and suffix rule, which every Windows inspector return goes through.
+Old text: test('implement-v2-visual: a state the inspector leaves out is missing, and a wrong note path is kept with an error', async () => {
+Target file: claude/workflows/tests/visual.test.mjs'''
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 52
+ref = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+title = "A ui_capture_paths detector without files is untested: making it select every changed file, as Detect::selects does, would pass"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/review_survey.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F63: A ui_capture_paths detector without files is untested: making it select every changed file, as Detect::selects does, would pass"
+detail = '''
+F63:
+Edit (add): Add `[signals.ui-only]\nkind = "diff"\nmeaning = "m"\ndetect = { ui_capture_paths = true }` to UI_CHANGE. In ui_capture_paths_select_declared_files_beside_the_globs assert `roots(&out, "ui-only") == Some(vec!["tui/src".to_string()])` (no web/, no server/); in ui_capture_paths_without_a_config_select_nothing_extra assert ui-only selects no root. A refactor of diff_signal's `selects` closure to `detect.selects(path) || globs.is_match(path)` makes a files-less detector select every changed file and fails the first assertion.
+Old text: fn ui_capture_paths_without_paths_select_nothing_extra() {'''
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 53
+ref = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+title = "Question is posted as inline single-quoted JSON, so a prompt or option containing an apostrophe breaks the shell command (and 1 more)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+F65: Question is posted as inline single-quoted JSON, so a prompt or option containing an apostrophe breaks the shell command
+F69: A worker reads only the answer's `picked`, so a free-text answer (inputs answer --text) gives it an error and no answer to carry on with"""
+detail = """
+F65:
+Fix: Have the worker stage the record with the Write tool as a JSON file in the session scratchpad (never under .claude/) and post it with `tomlctl inputs add --json @<path>`, which inputs add accepts, mirroring the staging questions.md step 3 already prescribes for words holding a quote or `$`. Same edit at claude/agents/plan-worker-deep.md line 57.
+Failure scenario: Worker writes a prompt such as "the panel's width" into `tomlctl inputs add --json '{..."prompt":"<prompt>"...}'` as the step shows; the apostrophe closes the single-quoted string, bash reports an unexpected EOF or passes a truncated argument, and no question is posted, so the worker has no id to message or wait on.
+
+F69:
+Fix: In step 4 of Asking the user, read the answer with `tomlctl inputs list --kind answer --where answers=<input-id> --where-not status=withdrawn --select picked,text --lines` and carry on with `picked` when present, otherwise with `text` as the user's own answer; write whichever it was in the note. The `--where-not status=withdrawn` keeps a withdrawn earlier answer from being read beside the live one. The section is the shared plan-worker-procedure block, so make the identical edit in plan-worker-lite.md.
+Failure scenario: A worker posts a plan question; the user types their own answer in AskUserQuestion, so the orchestrator relays it by questions.md step 3 as `tomlctl inputs answer <qid> --text '<words>'`. The question reads handled, the worker takes the answered branch and runs `tomlctl inputs list --kind answer --where answers=<qid> --get picked`, which exits 1 with "--get path `picked` matches no field" because a text answer has only `text`. The worker has no pick to carry on with and the user's answer is lost for this run."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 54
+ref = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+title = "An already-handled question is sent to step 3, whose first command `inputs answer` refuses a handled question"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/questions.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F66: An already-handled question is sent to step 3, whose first command `inputs answer` refuses a handled question"
+detail = """
+F66:
+Edit (change): Replace with: `Do not ask it again and do not relay it, since `inputs answer` refuses a handled question: go to step 3's decision binding with that answer, read by` (keep the rest of the sentence).
+Old text: Do not ask it again: go to step 3 with that answer, read by"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 55
+ref = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+title = "First sentence calls every non-pass block a capture failure, contradicting the later rule that a first timeout is retried, not failed"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/visual.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F67: First sentence calls every non-pass block a capture failure, contradicting the later rule that a first timeout is retried, not failed"
+detail = """
+F67:
+Edit (change): Change to: "A capture whose block is `fail`, or a second `timeout` (below), is a capture failure; `pass` and `flaky` (a pass) go on to the checks."
+Old text: A capture whose block is not `pass`, or `flaky` (a pass), is a capture failure."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 56
+ref = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+title = "`inputs list --ledger` help omits the `plan` ledger this change added to LEDGERS and to the user-inputs contract"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/cli/types/inputs.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F68: `inputs list --ledger` help omits the `plan` ledger this change added to LEDGERS and to the user-inputs contract"
+detail = """
+F68:
+Edit (change): Change the help string to "review|optimise|plan-review|backlog|plan", matching LEDGERS in tomlctl/src/inputs.rs and claude/skills/tomlctl/references/inputs.md.
+Old text: #[arg(long, help = "review|optimise|plan-review|backlog")]"""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 57
+ref = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+title = "The look pass has no answer for a look this capture cannot show, so a control answers it not met and fails, against D41 (reading B)"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/agents/ui-inspector.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "F73: The look pass has no answer for a look this capture cannot show, so a control answers it not met and fails, against D41 (reading B)"
+detail = """
+F73:
+Edit (change): In pass 3, add a fourth answer: judge whether the capture shows its `behaviour`: `met`, `not met`, `unsure` or `not shown`, with where in the capture you looked; `not shown` is for a look whose behaviour concerns a condition this capture does not show, and it is no defect and no unsure. In the Verdicts section's `pass` bullet, change 'every look entry the state carries is met' to 'every look entry the state carries is met or not shown'.
+Old text: judge whether the capture shows its `behaviour`: `met`, `not met` or `unsure`, with where in the capture you looked."""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+
+[[items]]
+id = 58
+ref = "list-this-repos-fixture-controls-under-controls-in-claudeui-capturetoml"
+title = "List this repo's fixture controls under `controls` in .claude/ui-capture.toml"
+effort = "S"
+status = "done"
+checkpoint = "apply-1"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [".claude/ui-capture.toml"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b684520af30e257f0fae0ce89e58e06ebc23c2ac"

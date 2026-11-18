@@ -1,8 +1,8 @@
-schema_version = 1
-last_updated = 2026-11-17
+schema_version = 2
+last_updated = 2026-11-18
 
 [id_high_water]
-U = 1
+U = 2
 
 [[runs]]
 id = "U1"
@@ -362,6 +362,574 @@ suppressed = 0
 
 [runs.audit]
 sampled = 4
+overturned = 0
+
+[[runs]]
+id = "U3"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-11-18T09:23:16Z"
+finished = "2026-11-18T09:46:23Z"
+base = "565754b52a1bb7df02987e4b41655d3c21fd1494"
+head = "01a5de120799b978629c05e9476200f1c5579489"
+scope = [
+    ".claude/ui-capture.toml",
+    ".gitignore",
+    "CLAUDE.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/ui-inspector.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-method/references/plan-records.md",
+    "claude/skills/tomlctl/references/inputs.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/fixtures/capture.sh",
+    "claude/skills/ui-capture/fixtures/tui/tui-01.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-02.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-03.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-04.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-05.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-06.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-07.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-08.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-09.txt",
+    "claude/skills/ui-capture/fixtures/web/panel.html",
+    "claude/skills/ui-capture/fixtures/web/states.txt",
+    "claude/skills/ui-capture/references/defects.md",
+    "claude/skills/ui-capture/scripts/geometry-probe.js",
+    "claude/skills/ui-capture/scripts/render.sh",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/inputs.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+changed_lines = 4678
+substrate = "workflow"
+agents = 39
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "5855b531c86a00ecadcadbbc8e214d39336116376d5d396010613f859ab198a0"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    ".",
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/ui-capture",
+]
+
+[[runs.signals]]
+name = "rename-or-removal"
+source = "detector"
+roots = [
+    "tomlctl/src",
+    "tomlctl/src/plan",
+    "tomlctl/src/tasks",
+]
+
+[[runs.signals]]
+name = "public-api-change"
+source = "detector"
+roots = ["claude/workflows"]
+
+[[runs.signals]]
+name = "async-concurrency"
+source = "detector"
+roots = [
+    "claude/workflows",
+    "claude/workflows/tests",
+]
+
+[[runs.signals]]
+name = "frontend"
+source = "detector"
+roots = ["claude/skills/ui-capture/fixtures/web"]
+
+[[runs.signals]]
+name = "ui-change"
+source = "detector"
+roots = [
+    "claude/skills/ui-capture/fixtures",
+    "claude/skills/ui-capture/fixtures/tui",
+    "claude/skills/ui-capture/fixtures/web",
+]
+
+[[runs.signals]]
+name = "docs-touched"
+source = "detector"
+roots = [
+    ".",
+    "claude/agents",
+    "claude/commands",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/tomlctl/references",
+    "claude/skills/ui-capture",
+    "claude/skills/ui-capture/references",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "tests-touched"
+source = "detector"
+roots = [
+    "claude/workflows/tests",
+    "tomlctl/tests",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/glimpse-v2-visibility",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/milestone-cadence",
+    ".claude/flows/milestones-by-dependency",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/review-v2-first-run-repairs",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/tomlctl-test-and-gate-cost",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-apply",
+    ".claude/flows/v2-harness-tuning",
+    ".claude/flows/v2-planning",
+    ".claude/flows/v2-ui-fidelity",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "claude/skills/ui-capture",
+    "claude/skills/ui-capture/references",
+    "config/nvim",
+    "docs/flows/glimpse-v2-visibility",
+    "docs/flows/glimpse-v2-visibility/design",
+    "docs/flows/glimpse-v2-visibility/notes",
+    "docs/flows/glimpse-v2-visibility/notes/run",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/flows/milestone-cadence",
+    "docs/flows/milestone-cadence/notes",
+    "docs/flows/milestone-cadence/notes/run",
+    "docs/flows/milestones-by-dependency",
+    "docs/flows/milestones-by-dependency/design",
+    "docs/flows/milestones-by-dependency/notes",
+    "docs/flows/milestones-by-dependency/notes/run",
+    "docs/flows/tomlctl-test-and-gate-cost",
+    "docs/flows/tomlctl-test-and-gate-cost/design",
+    "docs/flows/tomlctl-test-and-gate-cost/notes",
+    "docs/flows/tomlctl-test-and-gate-cost/notes/run",
+    "docs/flows/v2-apply",
+    "docs/flows/v2-apply/design",
+    "docs/flows/v2-apply/notes",
+    "docs/flows/v2-apply/notes/run",
+    "docs/flows/v2-harness-tuning",
+    "docs/flows/v2-harness-tuning/design",
+    "docs/flows/v2-harness-tuning/notes",
+    "docs/flows/v2-harness-tuning/notes/run",
+    "docs/flows/v2-ui-fidelity",
+    "docs/flows/v2-ui-fidelity/design",
+    "docs/flows/v2-ui-fidelity/notes",
+    "docs/flows/v2-ui-fidelity/notes/run",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "churn-hotspot"
+source = "detector"
+roots = [
+    "tomlctl/src",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/plan",
+    "tomlctl/src/review",
+    "tomlctl/src/tasks",
+    "tomlctl/tests",
+]
+evidence = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+
+[[runs.signals]]
+name = "finding-hotspot"
+source = "detector"
+roots = [
+    "tomlctl/src",
+    "tomlctl/src/cli/types",
+    "tomlctl/src/plan",
+    "tomlctl/src/review",
+    "tomlctl/src/tasks",
+    "tomlctl/tests",
+]
+evidence = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[[runs.signals]]
+name = "trust-boundary"
+source = "judged"
+accepted = false
+evidence = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/review/catalogue.rs",
+]
+
+[[runs.signals]]
+name = "new-seam"
+source = "judged"
+accepted = true
+evidence = [
+    "claude/skills/ui-capture/SKILL.md",
+    ".claude/ui-capture.toml",
+]
+
+[[runs.waivers]]
+concern = "interaction"
+reason = "the ui-change and frontend signals matched only claude/skills/ui-capture/fixtures, which are calibration fixtures that deliberately carry defects for the ui-inspector; the change ships no product UI surface whose captured states could be judged. C21 checks each fixture exhibits the state it declares"
+
+[[runs.waivers]]
+concern = "ui-visual"
+reason = "the ui-change and frontend signals matched only claude/skills/ui-capture/fixtures, which are calibration fixtures that deliberately carry defects for the ui-inspector; the change ships no product UI surface whose captured states could be judged. C21 checks each fixture exhibits the state it declares"
+
+[runs.baselines]
+lint-baseline = "C:/Users/rossa/AppData/Local/Temp/tmp.nPmVuG0tFd/c1.log"
+ui-capture = "C:/Users/rossa/AppData/Local/Temp/tmp.nPmVuG0tFd/c2.log"
+harness-gates = "none — no log returned; pass, 56 passed 0 failed"
+
+[runs.counts]
+cells = 16
+uncovered = 0
+defect = 9
+cleanup = 17
+advisory = 2
+refuted = 0
+suppressed = 0
+
+[runs.audit]
+sampled = 6
 overturned = 0
 
 [[cells]]
@@ -1042,6 +1610,977 @@ reason = "nearest plan-structure: follow-up for C17's two escalations, collected
 status = "covered"
 sealed = true
 note = "Read in full: brief.md, plan-v2-engine SKILL.md, tasks 19, 21, 22, 23, 24 (spec and body); design/*.md glob matched no file. Probe settled both gaps: grep of tasks.toml and plan.toml for visual:, ui-layout and the open-run text; read open-and-challenge.md section 6, elaborate.md sections 1 and 7, stage.rs open-run filter, records.rs run finish. Both gaps confirmed against task 21, the only task owning SKILL.md. 0 sites ruled out."
+
+[[cells]]
+id = "C19"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+concerns = [
+    "correctness",
+    "type-design",
+]
+agent = "review-finder"
+reason = "re-sliced by subsystem: the tomlctl plan engine (look entries, ui milestones, decision class) is a finding hotspot and gets its own correctness cell, bundled with type-design for the new schema fields; interaction and ui-visual dropped (waived)"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "17 slice files: diff 565754b5..01a5de12 read for all 11 source files, with full reads of the touched functions (gate_list, ui_findings, ui_scope_findings, check scope, patch_milestone, record_edit, approve, stage assess). Tests skimmed by name against acceptance filters. Traces: ui_states/ui_controls, decision class serialisers, schema version constants, skip_reason, glimpse model. 6 sites ruled out. The plan.md accept-owner-invalid staleness is already F44. 0 findings."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "type-design"
+hash = "ff31272a4651f0c676995ee8acf7faf90d912d161296e779488d89c35e9ca183"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/type-design.md"
+methods = ["trace"]
+v1_category = "architecture"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/emit.rs"
+symbol = "gate_list"
+reason = "look entries in a milestone without ui_states are dropped by documented contract (plan-engine.md visual row); plan check raises plan/look-without-states at the pick"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/approve.rs"
+symbol = "gate_report"
+reason = "class sort key `c as usize` matches VOCABULARY order: the vocabulary! macro declares variants and texts in one list with no explicit discriminants"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/records.rs"
+symbol = "record_value"
+reason = 'class reads "" when unset, as handover reason does; a review edit to "" is refused by vocab_value and expect "" falls back to the raw value'
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/milestone.rs"
+symbol = "patch_milestone"
+reason = "check_ui_disjoint refusal after earlier in-memory field writes is safe: the mutate_store closure errors and nothing is written, pinned by milestone_ui tests"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check.rs"
+symbol = "ui_scope_findings"
+reason = "malformed-config warning naming no row is kept by every scoped check; documented in plan.md and warning-only, so it never fails exit"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/store.rs"
+symbol = "unprobed_accept_edits"
+reason = "a look entry written by an applied finding never blocks review: probes::skip_reason excludes its empty check"
+
+[[cells]]
+id = "C20"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/inputs.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+concerns = [
+    "correctness",
+    "type-design",
+]
+agent = "review-finder"
+reason = "re-sliced by subsystem: tasks, inputs, review survey/catalogue and CLI types hold the three churn hotspots (tasks/update.rs, cli/types/mod.rs, tests/capabilities.rs), so they get a cell apart from the plan engine; interaction and ui-visual dropped (waived)"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "13 slice files read via diff 565754b5..01a5de12 with surrounding code (schema Accept/owner/stamp, add accept_entry, inputs validate, survey diff_signal/Detect, catalogue detect, ui_capture load_paths). Traces: owner()/RUN_BY_* and states/ui_* across tomlctl/src (2 searches, all sites read); flow-less plan record probed by command. 1 defect, 5 rule-outs. Lint baseline clean for slice."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "type-design"
+hash = "ff31272a4651f0c676995ee8acf7faf90d912d161296e779488d89c35e9ca183"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/type-design.md"
+methods = ["trace"]
+v1_category = "architecture"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/review/survey.rs"
+symbol = "diff_signal"
+reason = "a malformed ui-capture config makes the whole signal unknown even when `files` selects; test ui_capture_paths_from_a_malformed_config_are_unknown pins it"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/review/survey.rs"
+symbol = "capture_paths"
+reason = "reads the working-tree config, not the head's; same source plan check uses via ui_capture::load_paths, shared on purpose"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "accept_from_toml"
+reason = "`states` via str_array drops non-string entries silently, as design/precedent do; owner_problem in plan check then refuses an emptied look entry"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "holds_v3_keys"
+reason = "v3 keys need milestones or specs, so holds_v2_keys is true too; tasks remove's v2 test and the stamp ladder stay consistent"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "Accept"
+reason = "run_by stays a string closed set compared via consts; every owner() match (emit, view, probes) handles or defaults look correctly"
+
+[[cells]]
+id = "C21"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/ui-capture/**",
+    ".claude/ui-capture.toml",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+    "claude/agents/ui-inspector.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    ".gitignore",
+]
+concerns = ["correctness"]
+question = "Besides the scripts and the visual Workflow, check that each fixture actually exhibits the state and defect its states.txt or SKILL.md declares, since the fixtures calibrate the ui-inspector."
+agent = "review-finder"
+reason = "re-sliced: the ui-capture contract's executable code (render.sh, geometry-probe.js, capture.sh, the visual Workflow and its test) with the fixtures it renders; correctness alone because this is new shell/JS logic, not a product UI, so interaction and ui-visual are waived"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Read 21 files in full: capture.sh, render.sh, geometry-probe.js, SKILL.md, defects.md, panel.html, states.txt, 9 tui grids, ui-capture.toml, implement-v2-visual.js, visual.test.mjs (9/9 pass), ui-inspector.md, checks/ui-capture.md and .gitignore. Checked all 20 fixture states against the task 32/33 tables: 11 web PNGs plus geometry.json, and the column positions in the tui grids. 19 match. tui-07 does not (F55). Ran no Rust and no sweeps, because the slice has no Rust. Ruled out 3 sites."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/fixtures/web/panel.html"
+symbol = "web-09"
+reason = "stretched swatches also misalign across rows and the 480 px cap means the window width does not matter, but the planted class-1 stretch is plainly visible and was caught"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/scripts/render.sh"
+line = 259
+reason = "the 500 px viewport floor is backlog B-7106068f, already tracked"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/fixtures/capture.sh"
+symbol = "wanted"
+reason = "a repeated --only renders a state twice; the output is the same and the exit is still right"
+
+[[cells]]
+id = "C22"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+]
+concerns = ["correctness"]
+question = "Treat the prose as executable procedure: every tomlctl verb, flag and output key a step names must exist in the installed CLI and behave as the step assumes; flag steps whose order, gating or hand-off cannot work."
+agent = "review-finder"
+reason = "re-sliced: the harness orchestration prose (plan/implement engines, carriers, workers, questions) is the bulk of the change and runs as procedure, so it gets its own correctness cell"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "20 changed slice files read via diff (visual.md, questions.md, ui-layout.md in full). 24 CLI probes against installed tomlctl 0.24.0, in a scratch repo where writing: inputs add/answer/list paths, plan decide on an approved copy, run start/finish/abandon flags, gate-list visual, milestone ui flags, check classes, decision query, review plan --lens, catalogue, tasks parked->pending. 1 sweep (ledger help literals). 4 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-deep.md"
+symbol = "Asking the user"
+reason = "SendMessage to `main` from a Workflow-dispatched worker rests on decision D9 and its 2026-11-17 probe; not re-provable from the slice"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-deep.md"
+line = 55
+reason = "single-quoted --json prompt breaks on an apostrophe, but loudly (clap arg error) and the worker can restage via --json @path; negligible"
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/ui-layout.md"
+line = 29
+reason = "render.sh exit 2 also means bad usage, but the step's command form is fixed, so a usage error is not reachable"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/visual.md"
+line = 28
+reason = "visual round count mirrors the gate's changes-reason prefix count; a capture-failure task opens the same prefix, so it counts"
+
+[[cells]]
+id = "C23"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/tomlctl/references/inputs.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "tomlctl/README.md",
+    "CLAUDE.md",
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-method/references/plan-records.md",
+]
+concerns = [
+    "correctness",
+    "doc-drift",
+    "doc-consolidation",
+]
+agent = "review-finder"
+reason = "re-sliced: reference docs and catalogue entries that describe the tomlctl verbs and store shapes, bundled with doc-drift (taken from the ceiling cuts) and doc-consolidation (moved here from the whole-scope cell) since all three read prose against the code it describes"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "covered"
+sealed = true
+note = "13 slice files read in full (diff 565754b5..01a5de12). Claims checked against code: tasks/plan schema stamps, plan gate grouping and one-way refusal, gate-list visual, milestone ui flags and name rule, 5 UI plan-check classes, lane-check inputs exemption, inputs plan ledger, decision key order, capabilities, link scripts, compose.md; intent-fidelity commands run (both work). Sweeps: schema_version prose, ui_capture_paths docs, decision_class. 5 cleanups, 4 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-drift"
+hash = "a82f55abaaabf6458d1ccfa9648012857e7d6bff88d49e2345b2219794394bc9"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-drift.md"
+v1_category = "quality"
+
+[[cells.bound]]
+concern = "doc-consolidation"
+hash = "936ae9c8fa1da52e9ae9c7fe0577db09012102251d0935b14cc297a30b654171"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/doc-consolidation.md"
+methods = ["sweep"]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-lenses/lenses/ui-visual.md"
+line = 30
+reason = "Intro omits the `ui-capture: failed` baseline form, but the No capture probe already sends states with no output to a source read; low value."
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-lenses/lenses/interaction.md"
+line = 28
+reason = "Capture-contract paragraph repeats ui-visual's on purpose: a finder reads only its bound lens files, so each lens must be self-contained."
+
+[[cells.ruled_out]]
+file = "claude/skills/tomlctl/references/tasks-write.md"
+line = 153
+reason = "look/states refusal rules restated from tasks-store.md follow the converged per-key pattern the run_by rules already use in both files."
+
+[[cells.ruled_out]]
+file = "claude/skills/tomlctl/references/inputs.md"
+line = 97
+reason = "Plan-ledger target prose matches inputs.rs validate (scope refused, items strings); its silence on flow being required is escalated, not a doc fault here."
+
+[[cells]]
+id = "C24"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/cli/types/mod.rs",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack; one cell for all tomlctl Rust source (the two Rust correctness slices merged, tests left to the floor cells)"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Context-free: read the base..head diff of all 20 slice files plus surrounding code for owner() match sites (emit, view, probes), stage remedy table, inputs validate, survey selects, ui_capture::load_paths. Traced RUN_BY_LOOK and ui_states/ui_controls through serialisers, checks, emit and view; traced plan SCHEMA_VERSION/tasks SCHEMA_VERSION uses. 1 defect, 5 sites ruled out."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/review/survey.rs"
+symbol = "diff_signal"
+reason = "ui_capture_paths replacing a files-less detector's match-all with capture globs only is documented on Detect.ui_capture_paths"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/stage.rs"
+symbol = "remedy"
+reason = "new ui error classes fall through to PLAN_CHECK, the documented fallback for unknown classes"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/milestone.rs"
+symbol = "patch_milestone"
+reason = "disjoint check runs on merged lists before mutation lands; an Err aborts the store write"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/emit.rs"
+symbol = "gate_list"
+reason = "look entries collected but dropped when milestone has no ui_states; plan check errors that case as look-without-states"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "holds_v3_keys"
+reason = "stamp tiers 3/2/1 computed from content; from_toml refuses only above 3"
+
+[[cells]]
+id = "C25"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/ui-capture/**",
+    ".claude/ui-capture.toml",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack; the shell and JS capture code and visual Workflow"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Context-free correctness over the diff: read in full capture.sh, render.sh, geometry-probe.js, implement-v2-visual.js, visual.test.mjs, SKILL.md, panel.html, states.txt, ui-capture.toml; defects.md grepped; tui fixtures size-checked. 1 render.sh probe run on a planted page (2 defects reproduced), recorded PNG sizes checked against states.txt. 4 sites ruled out. No sweep needed: no removed or renamed names in the slice."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/workflows/implement-v2-visual.js"
+line = 133
+reason = "Control round-robin then clean fill never overflows: controls <= units <= 4*groupCount; every unit lands in exactly one group, so results.get never misses"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/scripts/render.sh"
+symbol = "decode_attribute"
+reason = "&amp; is decoded last, so &amp;quot; etc. round-trip; JSON is ASCII-escaped and newlines carried as U+0001, so one-line sed lift is sound"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/scripts/render.sh"
+line = 259
+reason = "Viewport loop dies after 3 mismatches rather than writing a wrong-viewport report; recorded PNGs measured at the asked WxH"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/fixtures/capture.sh"
+line = 53
+reason = "Unknown --only state exits 1 before capturing, matching SKILL.md's rule that an unknown state is a failure"
+
+[[cells]]
+id = "C26"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/ui-inspector.md",
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+]
+concerns = ["correctness"]
+question = "context-free variant: diff only, no pack, no prior findings"
+agent = "review-finder-cf"
+reason = "context-free correctness pass over the diff, independent of the pack; the harness procedure prose and catalogue entries (tomlctl reference docs left to the floor cell)"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Context-free correctness over the base..head diff of all 15 slice entries (24 files): new files (questions.md, visual.md, ui-layout.md, ui-inspector.md, ui-capture check, 3 lenses) read in full, the rest by hunk. 9 command checks run against tomlctl (inputs list/answer/add flags, free-text answer read, handled re-answer, lane exemptions, where-in, one-way query, review plan --lens, catalogue load, plan check rules). 1 sweep (ledger help strings). 6 sites ruled out. Prose-only slice; the rust facet had no code to bind."
+
+[[cells.bound]]
+concern = "correctness"
+hash = "7f806130477f6c8b53fee4d1d134425c86c8eb78d582c7ea1077a9e49aa836e5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/correctness.md"
+methods = [
+    "trace",
+    "sweep",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/questions.md"
+symbol = "The writes during a live run"
+reason = "lane-check exemption of .claude/inputs.toml holds: tomlctl/src/plan/lane.rs out_of_lane exempts INPUTS_STORE and its sidecar"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-lite.md"
+line = 59
+reason = "wait loop's `inputs list --where id=.. --where status=handled --get id` filters and prints empty when unhandled, exit 0; verified in a scratch repo"
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/elaborate.md"
+symbol = "Before the flip"
+reason = "one-way-door query with --array decision and --where surfaced=false runs on a real plan.toml and filters as written"
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-engine/references/compose.md"
+line = 33
+reason = "`review plan --lens +id|-id` syntax exists in tomlctl help, so `--lens +intent-fidelity` is accepted"
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-lenses/vocabulary.toml"
+symbol = "signals.ui-change"
+reason = "ui_capture_paths is a known diff-signal detect key in tomlctl review/catalogue.rs; catalogue loads with the three new lenses"
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/ui-layout.md"
+line = 79
+reason = "plan/ui-controls-missing and plan/ui-accept-structural exist in tomlctl plan/check.rs; milestone update takes --ui-state/--ui-control"
+
+[[cells]]
+id = "C27"
+run = "U3"
+wave = 1
+slice = [
+    ".claude/ui-capture.toml",
+    ".gitignore",
+    "CLAUDE.md",
+    "claude/agents/plan-cold-reader.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/ui-inspector.md",
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/plan-v2-engine/SKILL.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-method/references/plan-records.md",
+    "claude/skills/tomlctl/references/inputs.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/fixtures/capture.sh",
+    "claude/skills/ui-capture/fixtures/tui/tui-01.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-02.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-03.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-04.txt",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+agent = "review-sweeper"
+reason = "proposed sweeper slice, with hygiene (cut at the ceiling) bundled in since it is the same mechanical mode over the same files"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "thin"
+sealed = true
+note = "C27 ripple + hygiene, slice of 47 entries, diff 565754b..01a5de1. PRIOR: 0 rows on all 47 entries. NAMES: 128 backticked names the slice diff removed; each reappears in an added line, so none is a deleted symbol. Probes run: 23 cited capability names checked against `tomlctl capabilities --get features`, all present; ui-inspector wiring via implement-v2-visual.js and visual.md, wired; 22 lens and check ids in catalogue, all present; ui-capture config keys read by consumers, not dead; removed flags and check ids (accept-no-check, --ledger, plan-review) still defined in tomlctl/src. Candi…(+207)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "a3eb120d3cde6f3ff9eae8fd72260f2c1e6541a5f043ee76386c993ae1ff25d7"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-deep.md"
+line = 4
+reason = "WebSearch and WebFetch granted but unused in body; lite/deep pair shares one tool list by design (facets/claude-harness.md), so broad grant is deliberate"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-lite.md"
+line = 4
+reason = "WebSearch and WebFetch granted but unused in body; lite/deep pair shares one tool list by design (facets/claude-harness.md), so broad grant is deliberate"
+
+[[cells]]
+id = "C28"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/ui-capture/fixtures/tui/tui-05.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-06.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-07.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-08.txt",
+    "claude/skills/ui-capture/fixtures/tui/tui-09.txt",
+    "claude/skills/ui-capture/fixtures/web/panel.html",
+    "claude/skills/ui-capture/fixtures/web/states.txt",
+    "claude/skills/ui-capture/references/defects.md",
+    "claude/skills/ui-capture/scripts/geometry-probe.js",
+    "claude/skills/ui-capture/scripts/render.sh",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+    "scripts/link-v2-review.ps1",
+    "scripts/link-v2-review.sh",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/inputs.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+agent = "review-sweeper"
+reason = "proposed sweeper slice, with hygiene (cut at the ceiling) bundled in since it is the same mechanical mode over the same files"
+facets = [
+    "claude-harness",
+    "rust",
+]
+status = "thin"
+sealed = true
+note = "Slice of 46 entries, 0 prior findings across all entries. Diff base 565754b..01a5de12, removed-line scan of slice (rust, README, scripts, tests); no symbol renamed outright, so NAMES = RUN_BY_OWNERS (3→4), SCHEMA_VERSION (plan 3→4, tasks 2→3), ACCEPT_FIELDS, LEDGERS (4→5), review_finding_read, the --clear-after refusal text. Sweeps run: 6 (tomlctl sweep on RUN_BY_OWNERS, ACCEPT_FIELDS, LEDGERS, review_finding_read, new check classes, new feature names). Clean: 5. Found: 1 — tomlctl sweep of accept-owner wording gave plan.md:559 (F44, change; instance tasks-store.md:116). Ungrepped: SCHE…(+135)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "a3eb120d3cde6f3ff9eae8fd72260f2c1e6541a5f043ee76386c993ae1ff25d7"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C29"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+]
+concerns = [
+    "ripple",
+    "hygiene",
+]
+agent = "review-sweeper"
+reason = "proposed sweeper slice, with hygiene (cut at the ceiling) bundled in since it is the same mechanical mode over the same files"
+facets = ["rust"]
+status = "covered"
+sealed = true
+note = "Slice: 5 test files, diff 565754b..01a5de12 read in full. Diff is additions only, so NAMES is empty: 0 removed or renamed names, no tree-wide sweep needed. Probes: 4 greps (new helper names in tests/, UI_CHANGE and ui_capture_paths tree-wide, duplicate helper search). Ripple: no removed names, no new seams, no stale refs. Hygiene: all new helpers and consts have call sites in their file. No findings. Escalated: store_doc in plan_records.rs:297 and tasks_import.rs:665 (same name, possibly same body; sharing needs judgement). PRIOR: none in slice. Rule-outs: none."
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+v1_category = "completeness"
+
+[[cells.bound]]
+concern = "hygiene"
+hash = "a3eb120d3cde6f3ff9eae8fd72260f2c1e6541a5f043ee76386c993ae1ff25d7"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/hygiene.md"
+methods = [
+    "sweep",
+    "trace",
+]
+v1_category = "quality"
+
+[[cells]]
+id = "C30"
+run = "U3"
+wave = 1
+slice = [
+    ".claude/ui-capture.toml",
+    "CLAUDE.md",
+    "claude/agents/**",
+    "claude/commands/**",
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/implement-v2-engine/**",
+    "claude/skills/plan-v2-engine/**",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/review-v2-lenses/lenses/intent-fidelity.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "claude/skills/review-v2-method/references/plan-records.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/references/defects.md",
+    "claude/workflows/implement-v2-visual.js",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/src/tasks/schema.rs",
+]
+concerns = ["intent-fidelity"]
+agent = "review-finder"
+reason = "intent-fidelity alone, held against the flow's brief and decisions, over the files that carry the behaviour the brief asked for (procedure prose, the ui-capture contract, the look-entry schema and checks) rather than the whole 81-file scope with two other lenses"
+status = "covered"
+sealed = true
+note = "Brief read: Intent, 4 non-goals, 13 criteria. 24 user-owned decisions read. 18 bind the slice and were traced: 16 honoured, D41 open (F56), D9's trigger misstated in CLAUDE.md (F59). D35, D36, D38 and D42 bind fixtures outside the slice. Read in full: ui-capture.toml, the visual Workflow, ui-inspector, visual.md, questions.md, ui-layout.md and the ui-capture SKILL; diffs of the rest. 4 non-goals swept, none crossed. Out of reach: B's catch rate (run notes). 4 sites ruled out."
+
+[[cells.bound]]
+concern = "intent-fidelity"
+hash = "64b174e3d75774d51fb27e99bacb612888f326c62b59eb2369f93f7c96692d75"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/intent-fidelity.md"
+methods = ["trace"]
+v1_category = "completeness"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/view.rs"
+symbol = "decision_counts"
+reason = "by_class counts totals, not vetoes, but D6 asks only that each decision record a class; vetoed per class is queryable through items list --where"
+
+[[cells.ruled_out]]
+file = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+line = 156
+reason = "survivors past the eight-question budget recorded agent-assumed follows D6's budget and D8's follow-up rounds as stated"
+
+[[cells.ruled_out]]
+file = "claude/agents/plan-worker-deep.md"
+symbol = "Asking the user"
+reason = "one question per run, then park: a later choice reaches the user at the drain, never decided silently, consistent with D9 and D11"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check.rs"
+symbol = "ui_scope_findings"
+reason = "warns, never refuses, on a UI-path milestone with no ui_states, as D3 (user-stated) chose"
+
+[[cells]]
+id = "C31"
+run = "U3"
+wave = 1
+slice = [
+    "claude/skills/ui-capture/SKILL.md",
+    ".claude/ui-capture.toml",
+    "claude/skills/ui-capture/references/defects.md",
+    "claude/skills/ui-capture/scripts/render.sh",
+    "claude/skills/ui-capture/scripts/geometry-probe.js",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/catalogue.rs",
+]
+concerns = [
+    "contrarian",
+    "architecture",
+    "seams",
+]
+agent = "review-finder"
+reason = "new-seam accepted: the stack-neutral ui-capture contract and the look-entry schema other code builds on; contrarian moved off the whole-scope cell onto the seam itself, bundled with architecture and seams (both cut at the ceiling) which read the same boundary"
+status = "covered"
+sealed = true
+note = "14 slice files read in full or by diff (565754b5..01a5de12), plus ui_capture.rs, plan/check.rs ui_scope_findings, ui-inspector.md, fixtures/capture.sh and visual.test.mjs for the seams. Lenses run: contrarian (steelman over 5 directions), architecture, seams. 3 findings, 5 sites ruled out. Seams: probe takes root, Workflow is args-only with tests, render.sh has a browser override; no hidden dependency found."
+
+[[cells.bound]]
+concern = "contrarian"
+hash = "d66046b428a86f2f01bbcb8c49687b04ee9e3d2743ecf8aaad01010e3f602a9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/contrarian.md"
+methods = ["steelman"]
+
+[[cells.bound]]
+concern = "architecture"
+hash = "c3f1c3c0719c47fbe78bcb58775ff5fbbc29a98995b82da1909e775640280f1d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/architecture.md"
+v1_category = "architecture"
+
+[[cells.bound]]
+concern = "seams"
+hash = "5281a323555d328a4d51bd31d10717608eaf6a9600d8336531b4359369e6f579"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/seams.md"
+v1_category = "testability"
+
+[[cells.ruled_out]]
+file = "claude/skills/ui-capture/scripts/render.sh"
+symbol = "render"
+reason = "two browser launches (shot, then dump-dom probe) instead of one page: SKILL.md records 'installed browser and nothing else'; the <500px symptom is backlog B-7106068f, decision D38"
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-lenses/vocabulary.toml"
+symbol = "signals.ui-change"
+reason = "separate signal from `frontend` is deliberate: folding QML and capture paths into `frontend` would fire dev-server-probe on terminal UIs"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "holds_v3_keys"
+reason = "per-feature stamp tier is recorded decision D34 so an older binary refuses rather than drops ui keys; plan schema's class tier follows the same pattern"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/review/survey.rs"
+symbol = "capture_paths"
+reason = "reads the capture config from the working tree, not head; same source as list_tracked, and shared with plan check through crate::ui_capture"
+
+[[cells.ruled_out]]
+file = "claude/skills/implement-v2-engine/references/visual.md"
+line = 49
+reason = "geometry-key completeness also checked by ui-inspector per state; defence in depth before inspectors launch, not a misplaced owner"
+
+[[cells]]
+id = "C32"
+run = "U3"
+wave = 1
+slice = [
+    "tomlctl/src/plan/**",
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/inputs.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/tests/plan_records.rs",
+    "tomlctl/tests/plan_view.rs",
+    "tomlctl/tests/review_survey.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "claude/workflows/implement-v2-visual.js",
+    "claude/workflows/tests/visual.test.mjs",
+]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "test-gaps (cut at the ceiling) given its own cell over the changed Rust and Workflow code with their tests, since the change adds many new checks and record fields whose rejection paths may be untested"
+status = "covered"
+sealed = true
+note = "test-gaps over the 565754b5..01a5de12 diff: 22 source and 12 test diffs read, with visual.test.mjs and implement-v2-visual.js in full. Each changed branch was traced to its test: plan check ui classes, stage/approve silent one-way, emit visual, lane inputs, milestone ui lists, records/view class, tasks look/states, inputs plan ledger, survey ui_capture_paths, catalogue key. 4 cleanup gaps, 4 ruled out. Lint baseline clean."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+v1_category = "testability"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "newer_schema_version_is_refused"
+reason = "contains('4') is loose, but the hard-coded 3/4 pins this bump and still fails if the version leaves the message"
+
+[[cells.ruled_out]]
+file = "tomlctl/tests/inputs.rs"
+symbol = "inputs_plan_ledger_questions_target_a_flow_task"
+reason = "kind-only refusal assert still fails if the plan+scope rule reverts: the row is otherwise valid"
+
+[[cells.ruled_out]]
+file = "claude/workflows/implement-v2-visual.js"
+symbol = "argProblems"
+reason = "looks[i].task and non-object looks lack cases, but the look is JSON-stringified into the prompt, so a bad task cannot break its lines"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/check.rs"
+symbol = "ui_findings"
+reason = "a pending row with no accept entries in a ui milestone raises no ui-accept-structural by design: accept-no-check owns empty specs"
+
+[[cells]]
+id = "C33"
+run = "U3"
+wave = 2
+slice = [
+    "tomlctl/src/plan/**",
+    "tomlctl/src/tasks/**",
+]
+concerns = ["probe:schema-version-constants"]
+question = "This change bumped plan/schema.rs SCHEMA_VERSION to 4 and added RUN_RECORDS_SCHEMA_VERSION, while tasks/schema.rs defines its own SCHEMA_VERSION, bumped to 3, under the same name. Check every use of SCHEMA_VERSION and RUN_RECORDS_SCHEMA_VERSION under tomlctl/src/plan and tomlctl/src/tasks: does each read, stamp or compare against the intended module's constant (a `use` or glob import that brings the wrong one into scope, a plan writer stamping a tasks.toml version or the reverse), and does each reader accept every version a writer can now produce, including a store written before the bump? Show a wrong stamp or a refused valid store with a scratch-store reproduction."
+agent = "review-finder"
+reason = "nearest correctness: escalated by sweeper C28, which could not grep-settle which module's same-named SCHEMA_VERSION each use reads; no lens owns cross-module constant shadowing"
+status = "covered"
+sealed = true
+note = "Read in full: plan/schema.rs and tasks/schema.rs version blocks (consts, write_version/stamp, from_toml); grepped every SCHEMA_VERSION, RUN_RECORDS_SCHEMA_VERSION, V2_SCHEMA_VERSION, holds_v*_keys and schema import under plan/ and tasks/ (no glob imports; plan/store.rs tests use plan's schema). Scratch repro with installed 0.24.0: plan v1-4 read, v5 refused; class decision on v3 store stamps plan 4, tasks untouched; v1 plan rewritten as 2; tasks v1-3 read, v4 refused. 0 findings, 2 rule-outs."
+
+[[cells.ruled_out]]
+file = "tomlctl/src/plan/store.rs"
+symbol = "a_newer_store_is_left_untouched_by_a_mutation"
+reason = "schema::SCHEMA_VERSION resolves to plan::schema via `use super::schema::{self, ...}`, the intended plan constant"
+
+[[cells.ruled_out]]
+file = "tomlctl/src/tasks/schema.rs"
+symbol = "holds_v3_keys"
+reason = "covers every key the change added to tasks.toml (ui_states, ui_controls, accept states, run_by=look) with the same row filters to_toml uses"
+
+[[cells]]
+id = "C34"
+run = "U3"
+wave = 2
+slice = [
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md",
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+]
+concerns = ["probe:review-lenses-judge-controls"]
+question = "The ui-capture check in the review catalogue runs the project's capture command without --only, so the planted-defect control states a milestone declares (in this repo the web and tui fixtures' controls) are captured beside the clean states. Do the ui-visual and interaction lenses, or the check, tell a finder which states are controls so it does not report their planted defects as findings, and does anything let the review tell a control from a clean state without breaking the blinding the ui-inspector relies on? Name where a control's planted defect would become a review finding, and what the lens or check text would have to say to prevent it."
+agent = "review-finder"
+reason = "nearest correctness: escalated by C30; the review-side handling of declared controls sits between the ui-visual, interaction and ui-capture catalogue entries, so no single lens owns it"
+status = "covered"
+sealed = true
+note = "5 slice files read in full, plus defects.md, capture.sh, states.txt, milestone B's ui_controls, the U3 geometry.json and ui-inspector.md's grant. Probe answered: no review-side text names controls, so a control's planted defect becomes a defect at ui-visual.md:33 and interaction.md:31 (1 defect, blocked on where the list comes from). Telling review finders leaves the inspector's blinding intact, since the inspector can already read ui_controls in tasks.toml. 1 rg sweep; 2 sites ruled out."
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-lenses/checks/ui-capture.md"
+line = 26
+reason = "No --only is deliberate (capture every extreme); narrowing to ui_states would still need the control list and drop non-milestone states, so not the fix site."
+
+[[cells.ruled_out]]
+file = "claude/skills/review-v2-engine/references/compose.md"
+symbol = "Bundling"
+reason = "Composition passes no state data to UI lens cells; telling finders about controls belongs in the check's baseline entry, not in compose."
 
 [[findings]]
 id = "F1"
@@ -2538,6 +4077,969 @@ addressed = [
     "task:update-elaboration-and-approval-for-the-new-surfacing-rules.detail",
 ]
 
+[[findings]]
+id = "F42"
+run = "U3"
+cell = "C24"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/plan/view.rs"
+line = 757
+symbol = "spec_block"
+summary = 'plan view renders a run_by = "look" accept entry as "Check: none yet" and drops its run_by and states'
+severity = "minor"
+failure_scenario = """A task spec holds an accept entry with run_by = "look", states = ["empty-cart"] and the empty check owner_problem requires. spec_block takes the accept.check.is_empty() branch, prints "Check: none yet" and skips the Run by line, so the rendered plan shows a complete judged acceptance as an unfinished check and never names the states it is judged on, contradicting plan check, which treats the empty check as the entry's shape."""
+fix = 'In spec_block, test accept.run_by == RUN_BY_LOOK before the empty-check branch: print "  - Run by: look" and "  - States: <comma-joined code-quoted states>" instead of "Check: none yet"; keep the existing branches for every other owner. Import RUN_BY_LOOK from crate::tasks::schema alongside RUN_BY_COVERED.'
+effort = "trivial"
+counter = "A reader of plan view that is documented to ignore accept owners, or a rule that look entries are never rendered through spec_block, would make the output intended."
+grade = "high"
+evidence = [
+    'tomlctl/src/plan/view.rs:756-763: if accept.check.is_empty() prints "Check: none yet"; Run by is printed only in the else branch',
+    "tomlctl/src/tasks/schema.rs:329-341: owner_problem requires a look entry to carry states and an empty check",
+    "tomlctl/src/plan/check.rs:614-615: plan check counts a look entry's empty check as present (has_check)",
+]
+anchor = "code|tomlctl/src/plan/view.rs|spec_block"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+apply_task_id = 38
+
+[[findings]]
+id = "F43"
+run = "U3"
+cell = "C20"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/inputs.rs"
+line = 602
+symbol = "validate"
+summary = "validate admits a `plan` ledger record with no `flow`, though the inputs contract requires one; only `scope` is refused"
+severity = "minor"
+failure_scenario = """`tomlctl inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","items":["8"],"prompt":"Which?","choice":"text"}'` (a worker that drops the flow) succeeds and mints I1. The /implement-v2 drain reads plan questions with `inputs list --ledger plan --flow <slug>`, so the flow-less question is never found: the parked task is reset or re-asked without it and the question sits orphaned."""
+fix = """In `validate`, replace the plan-ledger guard with one that requires `flow`: when `optional_str(row, "ledger")? == Some("plan")` and `!row.contains_key("flow")`, refuse with "a `plan` ledger record names the `flow` whose tasks it concerns" (the existing flow+scope refusal above it then also covers `scope`). Add the flow-less plan question to the refusal cases in `a_target_needs_its_ledger_and_one_of_flow_or_scope` or the `inputs_plan_ledger_questions_target_a_flow_task` integration test, and state the requirement in the inputs reference's Target bullet."""
+effort = "trivial"
+counter = "A deliberate allowance for flow-less plan records (a planning-time question before any flow exists) would make this right; no carrier, agent or skill posts one without `--flow`/`flow` (rg over claude/ found none), and the skill table says flow is required."
+grade = "high"
+evidence = [
+    "claude/skills/flow-contract-user-inputs/SKILL.md:57: On the `plan` ledger, `flow` is required",
+    "tasks.toml task 'Add a plan ledger to the inputs store' detail: A question with ledger plan must name a flow, not a scope",
+    "tomlctl/src/inputs.rs:602 refuses only `scope` on the plan ledger",
+    """scratch repo: `inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","prompt":"x","choice":"single","options":["a","b"]}'` -> {"id":"I3"}, exit 0""",
+]
+fix_files = [
+    "tomlctl/tests/inputs.rs",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+anchor = "code|tomlctl/src/inputs.rs|validate"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+apply_task_id = 39
+
+[[findings]]
+id = "F44"
+run = "U3"
+cell = "C28"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "checker"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 559
+symbol = "plan/accept-owner-invalid"
+summary = "accept-owner-invalid row omits look from the run_by owners, though RUN_BY_OWNERS now includes it"
+effort = "trivial"
+evidence = [
+    "tomlctl/src/tasks/schema.rs:57-58 RUN_BY_OWNERS: [&str; 4] = [RUN_BY_WORKER, RUN_BY_GATE, RUN_BY_COVERED, RUN_BY_LOOK]",
+    "tomlctl/src/tasks/schema.rs:322 refuses a run_by not in RUN_BY_OWNERS",
+    'claude/skills/tomlctl/references/tasks-store.md:128 documents run_by = "look" as a valid owner',
+]
+edit = "Change the owner list to `worker`, `gate`, `covered` or `look`, matching RUN_BY_OWNERS. At the instance, tasks-store.md line 116, change `or `covered`. `covered_by`` to `or `covered`, or `look`. `covered_by`` so the list matches."
+direction = "change"
+old = "An `accept` entry's `run_by` is not `worker`, `gate` or `covered`;"
+instances = ["claude/skills/tomlctl/references/tasks-store.md"]
+anchor = "code|claude/skills/tomlctl/references/plan.md|plan/accept-owner-invalid"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+apply_task_id = 40
+
+[[findings]]
+id = "F45"
+run = "U3"
+cell = "C25"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/ui-capture/scripts/geometry-probe.js"
+line = 181
+symbol = "uiCaptureGeometry"
+summary = "Offscreen check flags a box only when it lies wholly above the viewport, so an element cut off at the top edge is never reported"
+severity = "minor"
+failure_scenario = "A page whose header sits partly above the top edge (h1 {position:relative; top:-14px} with body margin 0) renders visibly cut, but `above = rect.bottom + scrollY < -TOLERANCE` is false because the bottom is on screen, while left/right use the partial test. geometry.json reports nothing for the header, so the cut reads as a clean measurement, the case SKILL.md says must not happen."
+fix = "In uiCaptureGeometry make the top edge partial like the left edge: `var above = rect.top + scrollY < -TOLERANCE;` and keep the wholly-out exemption using a separate wholly-above test, e.g. `var whollyOut = rect.right <= 0 || rect.left >= viewW || rect.bottom + scrollY <= 0;`. Optionally plant a top-cut element in render.sh's self-test."
+effort = "trivial"
+counter = "A decision record or comment stating that partial top overhang is deliberately ignored would make this a challenge, not a defect; none exists at the site."
+grade = "high"
+evidence = [
+    "claude/skills/ui-capture/scripts/geometry-probe.js:179-182: left/right test partial overhang (rect.left < -TOL, rect.right > viewW + TOL) but above tests rect.bottom, i.e. wholly above",
+    "Ran render.sh --size 640x480 on a page with h1{position:relative;top:-14px}: PNG shows the header's top cut off; geometry.json has no entry for #cut",
+    "claude/skills/ui-capture/SKILL.md:62: a missing measurement must not read as a clean one",
+]
+anchor = "code|claude/skills/ui-capture/scripts/geometry-probe.js|uiCaptureGeometry"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+apply_task_id = 41
+
+[[findings]]
+id = "F46"
+run = "U3"
+cell = "C25"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/ui-capture/scripts/geometry-probe.js"
+line = 164
+symbol = "uiCaptureGeometry"
+summary = "A visibility:hidden ancestor marks its whole subtree skip, so a visibility:visible descendant that is drawn is never measured"
+severity = "minor"
+failure_scenario = """<div style="visibility:hidden"><div style="visibility:visible;width:100px;white-space:nowrap">long label</div></div>: the child is painted and overflows its box, but rendered() returns false for the parent (visibility !== 'visible') and mine.skip propagates to every descendant. geometry.json reports nothing, while an identical sibling outside the hidden parent is reported as overflow."""
+fix = "Only display:none (getClientRects empty) and opacity 0 hide a subtree; visibility is inherited and overridable. In uiCaptureGeometry, when the element fails rendered() only because style.visibility !== 'visible', skip this element's own checks and items but do not set mine.skip, so descendants are judged by their own computed visibility. E.g. split rendered() into hidesSubtree(el, style) (SKIP_TAGS, display none, opacity 0, no client rects) and a per-element visibility test."
+effort = "small"
+counter = "If a hidden-parent/visible-child pattern were declared out of scope for the probe in the contract, this would be advisory; SKILL.md names no such exclusion."
+grade = "high"
+evidence = [
+    "claude/skills/ui-capture/scripts/geometry-probe.js:78: rendered() returns false when style.visibility !== 'visible'",
+    "claude/skills/ui-capture/scripts/geometry-probe.js:164-167: !rendered sets mine.skip = true, inherited by every descendant at line 147-152",
+    "Ran render.sh on a page with #shown (visible child of a visibility:hidden div) and #plain (same markup, no hidden parent): PNG shows both labels; geometry.json reports overflow only for #plain",
+]
+anchor = "code|claude/skills/ui-capture/scripts/geometry-probe.js|uiCaptureGeometry"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+apply_task_id = 41
+
+[[findings]]
+id = "F47"
+run = "U3"
+cell = "C31"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "architecture"
+route = "verifier"
+file = "claude/workflows/implement-v2-visual.js"
+line = 47
+symbol = "RETURN_SCHEMA"
+summary = "RETURN_SCHEMA still offers inspectors a `control` boolean, a leftover of labelled controls that no code reads and that tells the inspector controls exist"
+effort = "trivial"
+counter = "A Workflow runtime or a test that passes an inspector return carrying `control` through the schema would be refused once the property goes; the fake in visual.test.mjs:76-83 carries none."
+edit = "Delete the `control: { type: 'boolean' },` property from RETURN_SCHEMA.properties.states.items.properties. toEntries never reads `s.control` (the index takes `control` from the Workflow's own units), ui-inspector.md never mentions controls, and the fake inspector in claude/workflows/tests/visual.test.mjs returns no `control`, so the property is dead and only advertises to a blinded inspector that some of its states are planted."
+direction = "remove"
+old = "          control: { type: 'boolean' },"
+anchor = "code|claude/workflows/implement-v2-visual.js|RETURN_SCHEMA"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+apply_task_id = 42
+
+[[findings]]
+id = "F48"
+run = "U3"
+cell = "C31"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "architecture"
+route = "checker"
+file = "claude/skills/ui-capture/SKILL.md"
+line = 23
+symbol = "The declaration"
+summary = "The contract's key table never says which keys are required, so `out` reads optional while the visual pass refuses a declaration without it"
+effort = "trivial"
+counter = "If the visual pass were meant to default `out` (as fixtures/capture.sh defaults to .ui-capture), the fix belongs in visual.md step 1 instead; nothing in the plan records which side owns the default."
+edit = """State requiredness in the declaration table, which owns the config's shape: change the `command` row to begin "Required." and the `out` row to "Required. The default output directory, relative to the repo root; the visual pass builds each round's directory under it. A caller that passes `--out` overrides it." and the `paths` row to begin "Optional.". Today implement-v2-engine/references/visual.md step 1 refuses a declaration lacking `command` or `out`, the review check (review-v2-lenses/checks/ui-capture.md) needs only `command`, and tomlctl's ui_capture::load_paths reads only `paths`, so a project that omits `out` as the table permits passes plan check and review and stalls only after a milestone's gate passes."""
+direction = "change"
+old = "| `out` | The default output directory, relative to the repo root. A caller that passes `--out` overrides it. |"
+anchor = "code|claude/skills/ui-capture/SKILL.md|The declaration"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+apply_task_id = 43
+
+[[findings]]
+id = "F49"
+run = "U3"
+cell = "C31"
+seen_in = ["U3"]
+family = "code"
+kind = "advisory"
+lens = "contrarian"
+route = "none"
+file = "claude/skills/plan-v2-engine/references/ui-layout.md"
+line = 79
+symbol = "Controls"
+summary = "The recommended control, a clipped or overflowing label, is caught by reading geometry.json, so a sound control says nothing of the classes the eye must judge"
+angle = "risk"
+rationale = "A control exists to prove the inspector is looking. ui-layout.md step 5 and defects.md's Controls section both steer authors to an overflow or clipping control, yet geometry-probe.js measures exactly those (render.sh --self-test asserts the planted overflow is reported) and ui-inspector.md step 1 makes every geometry entry a defect and a fail. Such a control is failed by reading one JSON key, so a milestone meeting plan check's one-control floor with it certifies nothing about scaling, reserved space, panel size, misalignment, off-style glyphs or colour-only cues, the classes where the vision judge is the only check. This flow's own fixtures avoid this (plan.toml decision near line 705 plants tiles, a band, a glyph), but the generic guidance that real projects follow does not."
+alternative = "Require each milestone's controls to include an unmeasured rubric class, so control soundness covers the judgement the inspector alone supplies."
+adoption_cost = "Prose edits to ui-layout.md step 5 and defects.md's Controls section: require at least one control per milestone planting a class geometry-probe does not measure (rubric classes 1-3, 6, 7, 9 or 10) and drop the clipped-label example; optionally a plan check warning, which needs a control's class recorded, a schema change."
+anchor = "code|claude/skills/plan-v2-engine/references/ui-layout.md|Controls"
+status = "backlogged"
+first_seen = 2026-11-18
+backlog_ref = "B-01668bbe"
+
+[[findings]]
+id = "F50"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/tomlctl/references/tasks-store.md"
+line = 128
+symbol = "accept-owner"
+summary = "tasks-store.md says a look/states accept entry raises tasks.toml to schema_version 2; the writer stamps 3, and the schema_version row omits 3"
+effort = "trivial"
+counter = "Refuted if write_store stamps V2_SCHEMA_VERSION for a look entry; tasks/schema.rs holds_v3_keys checks run_by == look or non-empty states and returns SCHEMA_VERSION (3)."
+edit = 'Line 128: change `raises \`schema_version\` to \`2\`` to `raises \`schema_version\` to \`3\``, matching tasks/schema.rs SCHEMA_VERSION = 3 and holds_v3_keys. Also the `schema_version` row of the root-keys table (line 28): add that every write stamps it `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`, else `2` while it holds audit/id_high_water/finding_links/specs/milestones/changes, else `1`, and that a binary knowing only `2` refuses a `3` store. Make the same addition to the `schema_version` row in flow-contract-task-store/SKILL.md (line 69), which still names only 1 and 2.'
+direction = "change"
+old = "a store holding either raises `schema_version` to `2`."
+instances = ["claude/skills/flow-contract-task-store/SKILL.md"]
+anchor = "code|claude/skills/tomlctl/references/tasks-store.md|accept-owner"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+apply_task_id = 40
+
+[[findings]]
+id = "F51"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "verifier"
+file = "tomlctl/README.md"
+line = 612
+symbol = "decision_class"
+summary = "README capability meanings for decision_class and ui_look describe a question field and a look record the binary does not have"
+effort = "small"
+counter = "Refuted if some code path writes a decision_class key on an inputs question, or a stored record of the user's chosen look exists beyond a decision of class look."
+edit = 'No inputs question carries a class; the feature is the optional `class` on plan decisions. Rewrite `decision_class` as: a plan decision may carry `class` (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) via `plan decide`, stamping plan.toml `schema_version = 4`, and `plan gate` groups agent-assumed decisions by it. Rewrite `ui_look` as: milestones carry `ui_states`/`ui_controls` (`plan milestone add|update --ui-state/--ui-control/--clear-ui`), an accept entry may be `run_by = "look"` with `states`, `plan emit gate-list` prints `visual`, `plan check` reports the five UI classes, and tasks.toml is stamped `schema_version = 3`. Fix the comment above the list in cli/types/mod.rs the same way.'
+direction = "change"
+old = """
+| `decision_class` | a question carries a `decision_class`, so the plan and the engine can tell a structural call from one of taste, architecture, cost or UX |
+| `ui_look` | the plan records the UI look the user chose from the layout options shown before tasks are written |"""
+instances = ["tomlctl/src/cli/types/mod.rs"]
+anchor = "code|tomlctl/README.md|decision_class"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+apply_task_id = 44
+
+[[findings]]
+id = "F52"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/tomlctl/references/plan.md"
+line = 321
+symbol = "plan milestone update"
+summary = "plan milestone update prose omits ui_states, ui_controls and after from the fields a call may change and the [[changes]] fields it writes"
+effort = "trivial"
+counter = "Refuted if apply_patch in plan/milestone.rs records ui_states/ui_controls changes under another field name, or skips the [[changes]] row for them."
+edit = "plan/milestone.rs refuses a no-op only when none of goal, gate, clear-gate, gate-probe, ui-state, ui-control, clear-ui, after, clear-after, defer or elaborated is passed, and pushes `[[changes]]` rows for `ui_states`, `ui_controls` and `after` with compact-JSON old/new. Change line 319 to `a call changing none of goal, gates, gate probes, after, UI states or controls, deferral or elaboration is refused`, and line 321-322 to list `goal`, `gates`, `gate_probes`, `after`, `ui_states`, `ui_controls`, `elaboration`, `defer_reason`, with `A gates, gate_probes, after, ui_states or ui_controls row's old and new are compact JSON`."
+direction = "change"
+old = """
+with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `defer_reason`. A `gates`
+or `gate_probes` row's `old` and `new` are compact JSON, such as `["a","b"]`."""
+anchor = "code|claude/skills/tomlctl/references/plan.md|plan milestone update"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+apply_task_id = 40
+
+[[findings]]
+id = "F53"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "CLAUDE.md"
+line = 42
+summary = "CLAUDE.md groups intent-fidelity with the capture-based UI lenses; it reads the brief and user decisions, never captures, and runs on every flow-bound code run"
+effort = "trivial"
+counter = "Refuted if intent-fidelity.md's probes read ui-capture outputs or its activation depends on ui-change; neither appears in the lens file."
+edit = "Rewrite to: `ui-visual` and `interaction` review a UI change from its captured states (the `ui-capture` skill's contract) rather than from source alone, activated by the `ui-change` signal; `intent-fidelity` holds a flow's built work against its brief and the decisions its user stated or confirmed, and `references/compose.md` adds it on every code-family run bound to a flow with `plan.toml`. All three live in `claude/skills/review-v2-lenses/lenses/`. Checked against intent-fidelity.md (activation opt-in, no apply_when, probes read brief.md and plan.toml only) and compose.md line 33."
+direction = "change"
+old = "- **UI lenses.** `ui-visual`, `interaction` and `intent-fidelity` review a UI change from its captured states (the `ui-capture` skill's contract) rather than from source alone; they live in `claude/skills/review-v2-lenses/lenses/` and the engine composes them through `references/compose.md`."
+anchor = "code|CLAUDE.md|@42"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+apply_task_id = 45
+
+[[findings]]
+id = "F54"
+run = "U3"
+cell = "C23"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "doc-drift"
+route = "checker"
+file = "claude/skills/review-v2-lenses/vocabulary.toml"
+line = 151
+symbol = "signals.ui-change"
+summary = "New detect key ui_capture_paths is accepted by the catalogue and survey but the lens skill's detector docs still say any key beyond six is refused"
+effort = "small"
+counter = "Refuted if another section of SKILL.md or a reference it links already documents ui_capture_paths; grep found it only in vocabulary.toml and the Rust source."
+edit = "In SKILL.md Detectors, add `ui_capture_paths` to the key list and a bullet: `ui_capture_paths` - a boolean, allowed only on a diff signal; when true, a changed path is selected when it matches a `paths` glob of the project's `.claude/ui-capture.toml` or the signal's `files` (with no `files`, only the capture paths), and a capture config that cannot be read records the signal `unknown`. Source: review/catalogue.rs DETECT_KEYS and the ui_capture_paths match (diff-only, boolean), review/survey.rs diff_signal."
+direction = "change"
+old = "The detect keys are `files`, `contains`, `manifest`, `count`, `window` and `threshold`; any other key is refused."
+target_file = "claude/skills/review-v2-lenses/SKILL.md"
+anchor = "code|claude/skills/review-v2-lenses/vocabulary.toml|signals.ui-change"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+apply_task_id = 46
+
+[[findings]]
+id = "F55"
+run = "U3"
+cell = "C21"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/skills/ui-capture/fixtures/tui/tui-07.txt"
+line = 6
+symbol = "tui-07"
+summary = "Control tui-07 keeps the right border intact: its long title stops at column 78 with │ still in column 79, so the declared through-the-border defect is absent"
+severity = "minor"
+failure_scenario = "Task 33 declares tui-07 as 'the third's title running through the right border so that row has no │ in column 79' (class 4), and the worker note says it does. The grid's row 5 holds the title in columns 10-78 and │ in column 79, so the box edge is unbroken. The control instead reads as a FILES-column overwrite plus a cut without ellipsis, near-duplicating tui-05, so the visual pass never checks that an inspector catches a broken right border."
+fix = "Rewrite row 5 (line 6) of tui-07.txt so the title's characters fill columns 10 to 79, replacing the │ in column 79 with a title character (for example the 70-character title 'Rework the capture contract so every project declares its own state na', so column 79 holds 'a'), keeping the line exactly 80 characters, UTF-8 and LF, and every other row unchanged."
+effort = "trivial"
+counter = "If the spec's 'running through the right border' was meant to permit text ending at the border with │ kept, the grid matches; but the task detail says explicitly that the row has no │ in column 79."
+grade = "high"
+evidence = [
+    '''python read of tui-07.txt row 5: columns 68-79 are 'own states,' then '\u2502'; col79='\u2502', col77='s', col78=','''',
+    "tasks.toml task 33 detail table: tui-07 'title running through the right border so that row has no │ in column 79' planted class 4",
+    "docs/flows/v2-ui-fidelity/notes/run/task-33.md: worker reports 'tui-07 (title runs through the right border)'",
+    "docs/flows/v2-ui-fidelity/notes/run/visual-B-1-3.md tui-07 class 9: 'The │ borders at columns 0 and 79 stay in line on every row'",
+]
+anchor = "code|claude/skills/ui-capture/fixtures/tui/tui-07.txt|tui-07"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+apply_task_id = 47
+
+[[findings]]
+id = "F56"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "advisory"
+lens = "intent-fidelity"
+route = "none"
+file = "claude/agents/ui-inspector.md"
+line = 38
+symbol = "Look entries"
+summary = "D41's 'a look a capture cannot show is no longer answered fail' has two readings; the inspector still answers such a look 'not met', a fail"
+grade = "medium"
+evidence = [
+    "plan.toml D41: 'a look a state's capture cannot show is no longer answered fail'",
+    "claude/agents/ui-inspector.md:38 met/not met/unsure; :45 a look not met is a fail",
+    "claude/workflows/implement-v2-visual.js:151-156 a control carries every look naming a clean state of its surface",
+    "claude/skills/implement-v2-engine/references/visual.md:124 a control whose verdict is fail or unsure is sound",
+]
+angle = "probe"
+rationale = "D41 (user-confirmed): a control takes its surface's clean-state looks, and a look a state's capture cannot show is no longer answered fail. The inspector's look pass (ui-inspector.md:38) knows only met, not met or unsure, and a not-met look fails the state (:45). Reading A: D41 only dropped task 37's explicit fail rule, and the prefix mapping is the whole fix; the code follows A. Reading B: an inapplicable look must never fail a state. B matters once a look names some of a surface's clean states ('settings-01 shows the empty hint'). Every settings control then carries that look (visual.js:156), answers it not met and fails or reads unsure, which visual.md:124 counts as sound, so D28's check passes vacuously. B's looks span whole surfaces, so B cannot tell A from B. Which did the user mean?"
+alternative = "Map a control only to looks whose states all share its surface, and leave state-specific looks off controls, in implement-v2-visual.js looksOf."
+adoption_cost = "Reading B: one sentence in ui-inspector.md pass 3, saying a look whose behaviour concerns a condition this capture does not show is answered 'not shown', with no defect and no unsure. Optionally, visual.md section 7 counts a control as sound only when it has a defect of a class other than look. Reading A: nothing."
+anchor = "code|claude/agents/ui-inspector.md|Look entries"
+status = "converted"
+first_seen = 2026-11-18
+converted_to = "F73"
+
+[[findings]]
+id = "F57"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "intent-fidelity"
+route = "verifier"
+file = "claude/skills/plan-v2-engine/references/ui-layout.md"
+line = 79
+symbol = "5. Declare the states, the controls and the look entries"
+summary = "The layout step declares states and controls with no <surface>-<n> naming rule, so a descriptive control name leaks its defect and gets every look (D37, D41)"
+severity = "minor"
+failure_scenario = "A planner follows ui-layout.md section 5. Its example names states descriptively ('settings-short-window', line 93), and its Controls paragraph suggests a clipped label with no naming rule, so the planner declares control 'settings-narrow-clipped'. The name tells the inspector where the planted defect is (D37). Its prefix up to the last '-', 'settings-narrow', matches no clean state, so implement-v2-visual.js:155 gives it every look in the milestone, other surfaces' included. It then fails on looks it cannot show, which D41 rejected as 'the proof measures nothing'."
+fix = """In ui-layout.md section 5, under States, add: name every state `<surface>-<n>` by the ui-capture skill's Controls section, one surface prefix per surface, so that a control's name says nothing about its defect and the control takes its own surface's looks. Under Controls, add that a control takes its surface's prefix and the next free number, never a name that describes the planted defect. Change the look-entry example's states to `["settings-01", "settings-02", "settings-04"]`."""
+effort = "trivial"
+counter = "ui-layout.md:5 says to read the ui-capture SKILL.md before naming states, and its Controls section (line 76) states the <surface>-<n> rule, so a planner who reads it never meets this."
+grade = "medium"
+evidence = [
+    "claude/skills/plan-v2-engine/references/ui-layout.md:79 Controls paragraph has no naming rule; :93 example states settings-empty, settings-many, settings-short-window",
+    "claude/skills/ui-capture/SKILL.md:76 a project names each state <surface>-<n>, a control taking its surface's prefix",
+    "claude/workflows/implement-v2-visual.js:146-156 surfaceOf cuts at the last '-'; a control with no clean state on its surface carries every look",
+    "plan.toml D37 (neutral control names) and D41 (rejected option 'D39 as written': control fails on other surfaces' looks)",
+]
+anchor = "code|claude/skills/plan-v2-engine/references/ui-layout.md|5. Declare the states, the controls and the look entries"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41 b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+apply_task_id = 48
+
+[[findings]]
+id = "F58"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "intent-fidelity"
+route = "verifier"
+file = "claude/workflows/implement-v2-visual.js"
+line = 47
+symbol = "RETURN_SCHEMA"
+summary = "The inspector's return schema still offers a per-state `control` flag, left over from the labelled-controls option D37 rejected; nothing reads it"
+effort = "trivial"
+counter = "An inspector run that sets `control` would show the field in use. None can, since toEntries drops every key except verdict, defects and note."
+edit = "Delete the line `control: { type: 'boolean' },` from RETURN_SCHEMA.properties.states.items.properties. The inspector then sees no control field in its output schema, as D37 asks: it judges every state with no control flag. toEntries reads only state, verdict, defects and note, and takes `control` from its own unit. A search for `s.control` and `.control` on a returned entry finds no reader in implement-v2-visual.js or in claude/workflows/tests/visual.test.mjs."
+direction = "remove"
+old = "          control: { type: 'boolean' },"
+same_as = "F47"
+related = ["F47"]
+anchor = "code|claude/workflows/implement-v2-visual.js|RETURN_SCHEMA"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F47"
+
+[[findings]]
+id = "F59"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "intent-fidelity"
+route = "checker"
+file = "CLAUDE.md"
+line = 63
+symbol = "Implement v2 / Visual pass"
+summary = "CLAUDE.md misstates two user decisions: the pass captures every ui_state and control, and a worker asks on a compromise or hard-to-unwind choice"
+effort = "trivial"
+counter = "A reader may take 'taste, architecture, cost or UX call' as shorthand for D9. It is not: D9 says a choice that is neither a compromise nor hard to unwind stays the worker's, whatever its class."
+edit = "Replace 'captures each state its look entries name' with 'captures each of the milestone's `ui_states` and `ui_controls`'. visual.md section 3 captures every state and every control, and no look entry ever names a control. Replace 'A worker that meets a taste, architecture, cost or UX call posts a question' with 'A worker that meets a compromise or a hard-to-unwind choice its spec does not settle posts a question'. That is D9's trigger, as plan-worker-deep.md 'Asking the user' implements it."
+direction = "change"
+old = "captures each state its look entries name by the `ui-capture` skill's contract (`claude/skills/ui-capture/`) and the saved Workflow `claude/workflows/implement-v2-visual.js` fans `ui-inspector` agents out over the captured states; the inspector judges against the chosen design and never edits code. A worker that meets a taste, architecture, cost or UX call posts a question"
+anchor = "code|CLAUDE.md|Implement v2 / Visual pass"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+apply_task_id = 45
+
+[[findings]]
+id = "F60"
+run = "U3"
+cell = "C32"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_stage.rs"
+line = 1127
+symbol = "amend_report"
+summary = "No test drives amend_report's new silent one-way branch: reverting it to unanswered_decisions alone passes every existing test"
+effort = "small"
+counter = "A test elsewhere (plan_approve, plan_stage) already stages a changed brief over an approved plan holding an unsurfaced agent-assumed one-way decision; rg found only the unapproved (assess) case in plan_approve.rs."
+edit = 'Add a test beside this one: seed an approved PLAN with an edited brief, then `plan decide` a decision {provenance: agent-assumed, door: one-way, binds: ["1"]} with no `surfaced`. Assert `report["next"] == "plan decide"` and `report["blockers"] == [BRIEF_CHANGED, "one-way decisions agent-assumed and never surfaced: D1; surface each to the user with plan decide"]`. Reverting `amend_report` to `store::unanswered_decisions` makes stage print AMEND_NEXT for a plan `plan approve --amend` refuses, and this test fails.'
+direction = "add"
+old = "fn a_changed_brief_clears_another_check_error_before_naming_the_amend_it_would_refuse() {"
+anchor = "code|tomlctl/tests/plan_stage.rs|amend_report"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+apply_task_id = 49
+
+[[findings]]
+id = "F61"
+run = "U3"
+cell = "C32"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/plan_check.rs"
+line = 1344
+symbol = "check_ui_a_look_state_the_milestone_does_not_list_is_an_error"
+summary = "The control-state case asserts only the class, so dropping ui_findings' control-state explanation would still pass"
+effort = "trivial"
+counter = 'assert_reports_error or Flow::classes compares the finding detail as well as the class; it compares only `flow.classes()` against `only(class, "error")` and the exit code.'
+edit = """After this call, read `Flow::with_tasks(&control).run()` and assert `report["findings"][0]["detail"]` contains "a control state is the inspector's to fail"; for the first (`list-full`) case assert its detail does not. That pins the control branch in `ui_findings`, which the class-only assertion cannot tell from the plain unknown-state branch."""
+direction = "change"
+old = '    assert_reports_error(&Flow::with_tasks(&control), "plan/look-state-unknown");'
+anchor = "code|tomlctl/tests/plan_check.rs|check_ui_a_look_state_the_milestone_does_not_list_is_an_error"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+apply_task_id = 50
+
+[[findings]]
+id = "F62"
+run = "U3"
+cell = "C32"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "claude/workflows/implement-v2-visual.js"
+line = 204
+symbol = "toEntries"
+summary = "toEntries' return-validation branches (no states array, bad verdict, unasked or doubled state, empty note, backslash note path) have no test"
+effort = "small"
+counter = "harness.test.mjs or another workflow test already loads implement-v2-visual.js and drives these returns; rg for 'implement-v2-visual' under claude/workflows/tests finds only visual.test.mjs."
+edit = '''Add a test after this one with a responder returning, per call: `{}` (assert every state `error` with error 'returned no states array'); states with verdict 'maybe' (status 'error'); an extra unasked state and a doubled state (assert errors name 'which it was not asked' and 'twice; the first kept', and the first entry's verdict kept); note '' (status 'ok', error 'wrote no note'); and note `C:\\repo\\docs\\flows\\demo\\notes\\run\\visual-B-1-1.md` (status 'ok', error null, note equal to the expected forward-slash path). The last pins namesNote's backslash and suffix rule, which every Windows inspector return goes through.'''
+direction = "add"
+old = "test('implement-v2-visual: a state the inspector leaves out is missing, and a wrong note path is kept with an error', async () => {"
+target_file = "claude/workflows/tests/visual.test.mjs"
+anchor = "code|claude/workflows/implement-v2-visual.js|toEntries"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+apply_task_id = 51
+
+[[findings]]
+id = "F63"
+run = "U3"
+cell = "C32"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "test-gaps"
+route = "checker"
+file = "tomlctl/tests/review_survey.rs"
+line = 1046
+symbol = "diff_signal"
+summary = "A ui_capture_paths detector without files is untested: making it select every changed file, as Detect::selects does, would pass"
+effort = "small"
+counter = "Another test in review_survey.rs or survey.rs's unit tests already surveys a detector carrying ui_capture_paths and no files; the only files-less one, in ui_capture_paths_must_be_a_boolean_on_a_diff_signal, is refused before any survey."
+edit = '''Add `[signals.ui-only]\nkind = "diff"\nmeaning = "m"\ndetect = { ui_capture_paths = true }` to UI_CHANGE. In ui_capture_paths_select_declared_files_beside_the_globs assert `roots(&out, "ui-only") == Some(vec!["tui/src".to_string()])` (no web/, no server/); in ui_capture_paths_without_a_config_select_nothing_extra assert ui-only selects no root. A refactor of diff_signal's `selects` closure to `detect.selects(path) || globs.is_match(path)` makes a files-less detector select every changed file and fails the first assertion.'''
+direction = "add"
+old = "fn ui_capture_paths_without_paths_select_nothing_extra() {"
+anchor = "code|tomlctl/tests/review_survey.rs|diff_signal"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+apply_task_id = 52
+
+[[findings]]
+id = "F64"
+run = "U3"
+cell = "C26"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/agents/plan-worker-lite.md"
+line = 60
+symbol = "Asking the user"
+summary = "Worker reads only `picked` from the answer, so a free-text answer the orchestrator relays with --text reaches the waiting worker as an empty line"
+severity = "major"
+failure_scenario = "User types their own answer in the AskUserQuestion picker; questions.md step 3 relays it as `inputs answer <qid> --text '...'` with no --pick. The waiting worker sees the question handled, runs `inputs list --kind answer --where answers=<qid> --get picked`, which prints an empty line, and 'carries on with it': it proceeds with no answer and the user's words never reach it."
+fix = "In step 4 of Asking the user, read both fields: `tomlctl inputs list --kind answer --where answers=<input-id> --select picked,text --lines`, and say that an answer carrying `text` and no `picked` is the user's own answer, followed as written and quoted in the note. Make the same edit in the identical shared block of claude/agents/plan-worker-deep.md (line 60)."
+effort = "trivial"
+counter = "A worker view re-read after the answer that inlines the bound plan decide row would carry the text; but the procedure tells the worker to carry on with the `picked` value and never to re-read its view."
+grade = "high"
+evidence = [
+    "claude/agents/plan-worker-lite.md:60 and plan-worker-deep.md:60: `read the pick with tomlctl inputs list --kind answer --where answers=<input-id> --get picked, carry on with it`",
+    "claude/skills/implement-v2-engine/references/questions.md:60: free-text answer is passed as `--text '<their words>'` with no `--pick`",
+    "scratch repo: `inputs answer I1 --text 'do neither, use E'` then `inputs list --kind answer --where answers=I1 --get picked` printed an empty line, exit 0; the answer row holds `text` and no `picked`",
+]
+fix_files = ["claude/agents/plan-worker-deep.md"]
+same_as = "F69"
+anchor = "code|claude/agents/plan-worker-lite.md|Asking the user"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F69"
+
+[[findings]]
+id = "F65"
+run = "U3"
+cell = "C26"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/agents/plan-worker-lite.md"
+line = 57
+symbol = "Asking the user"
+summary = "Question is posted as inline single-quoted JSON, so a prompt or option containing an apostrophe breaks the shell command"
+severity = "minor"
+failure_scenario = """Worker writes a prompt such as "the panel's width" into `tomlctl inputs add --json '{..."prompt":"<prompt>"...}'` as the step shows; the apostrophe closes the single-quoted string, bash reports an unexpected EOF or passes a truncated argument, and no question is posted, so the worker has no id to message or wait on."""
+fix = "Have the worker stage the record with the Write tool as a JSON file in the session scratchpad (never under .claude/) and post it with `tomlctl inputs add --json @<path>`, which inputs add accepts, mirroring the staging questions.md step 3 already prescribes for words holding a quote or `$`. Same edit at claude/agents/plan-worker-deep.md line 57."
+effort = "trivial"
+counter = """A worker model may escape the apostrophe itself ('"'"'); the failure needs the worker to copy the template literally with an apostrophe in its prose."""
+grade = "medium"
+evidence = [
+    """claude/agents/plan-worker-lite.md:57 and plan-worker-deep.md:57: `tomlctl inputs add --json '{"kind":"question",..."prompt":"<prompt>",...}'`""",
+    "`tomlctl inputs add --help`: `--json <JSON> ... pass - to read from stdin or @<path> to read a file`",
+    "claude/skills/implement-v2-engine/references/questions.md:60 tells the orchestrator to stage words that hold a quote or `$`; the worker gets no such rule",
+]
+fix_files = ["claude/agents/plan-worker-deep.md"]
+anchor = "code|claude/agents/plan-worker-lite.md|Asking the user"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+apply_task_id = 53
+
+[[findings]]
+id = "F66"
+run = "U3"
+cell = "C26"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/questions.md"
+line = 35
+symbol = "1. Read the question"
+summary = "An already-handled question is sent to step 3, whose first command `inputs answer` refuses a handled question"
+effort = "trivial"
+counter = "A reader may already skip the relay because the question is answered; the refusal is harmless but the sentence sends them to a command that errors."
+edit = "Replace with: `Do not ask it again and do not relay it, since `inputs answer` refuses a handled question: go to step 3's decision binding with that answer, read by` (keep the rest of the sentence)."
+direction = "change"
+old = "Do not ask it again: go to step 3 with that answer, read by"
+anchor = "code|claude/skills/implement-v2-engine/references/questions.md|1. Read the question"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+apply_task_id = 54
+
+[[findings]]
+id = "F67"
+run = "U3"
+cell = "C26"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "checker"
+file = "claude/skills/implement-v2-engine/references/visual.md"
+line = 51
+symbol = "4. Check the capture"
+summary = "First sentence calls every non-pass block a capture failure, contradicting the later rule that a first timeout is retried, not failed"
+effort = "trivial"
+counter = "The later timeout sentence is more specific and a careful reader applies it first."
+edit = 'Change to: "A capture whose block is `fail`, or a second `timeout` (below), is a capture failure; `pass` and `flaky` (a pass) go on to the checks."'
+direction = "change"
+old = "A capture whose block is not `pass`, or `flaky` (a pass), is a capture failure."
+anchor = "code|claude/skills/implement-v2-engine/references/visual.md|4. Check the capture"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+apply_task_id = 55
+
+[[findings]]
+id = "F68"
+run = "U3"
+cell = "C26"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "verifier"
+file = "tomlctl/src/cli/types/inputs.rs"
+line = 21
+symbol = "InputsOp::List"
+summary = "`inputs list --ledger` help omits the `plan` ledger this change added to LEDGERS and to the user-inputs contract"
+effort = "trivial"
+counter = "If a test pins the help text verbatim it needs the same edit."
+edit = 'Change the help string to "review|optimise|plan-review|backlog|plan", matching LEDGERS in tomlctl/src/inputs.rs and claude/skills/tomlctl/references/inputs.md.'
+direction = "change"
+old = '#[arg(long, help = "review|optimise|plan-review|backlog")]'
+anchor = "code|tomlctl/src/cli/types/inputs.rs|InputsOp::List"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+apply_task_id = 56
+
+[[findings]]
+id = "F69"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "claude/agents/plan-worker-deep.md"
+line = 60
+symbol = "Asking the user"
+summary = "A worker reads only the answer's `picked`, so a free-text answer (inputs answer --text) gives it an error and no answer to carry on with"
+severity = "major"
+failure_scenario = """A worker posts a plan question; the user types their own answer in AskUserQuestion, so the orchestrator relays it by questions.md step 3 as `tomlctl inputs answer <qid> --text '<words>'`. The question reads handled, the worker takes the answered branch and runs `tomlctl inputs list --kind answer --where answers=<qid> --get picked`, which exits 1 with "--get path `picked` matches no field" because a text answer has only `text`. The worker has no pick to carry on with and the user's answer is lost for this run."""
+fix = "In step 4 of Asking the user, read the answer with `tomlctl inputs list --kind answer --where answers=<input-id> --where-not status=withdrawn --select picked,text --lines` and carry on with `picked` when present, otherwise with `text` as the user's own answer; write whichever it was in the note. The `--where-not status=withdrawn` keeps a withdrawn earlier answer from being read beside the live one. The section is the shared plan-worker-procedure block, so make the identical edit in plan-worker-lite.md."
+effort = "trivial"
+counter = "Refuted if the orchestrator never relays a free-text answer: but questions.md step 3 tells it to pass `--text` when the user wrote their own answer, and glimpse can answer too."
+grade = "high"
+evidence = [
+    "claude/agents/plan-worker-lite.md:60 and plan-worker-deep.md:60: `read the pick with tomlctl inputs list --kind answer --where answers=<input-id> --get picked, carry on with it`",
+    "claude/skills/implement-v2-engine/references/questions.md:60: free-text answer is passed as `--text '<their words>'` with no `--pick`",
+    "scratch repo: `inputs answer I1 --text 'do neither, use E'` then `inputs list --kind answer --where answers=I1 --get picked` printed an empty line, exit 0; the answer row holds `text` and no `picked`",
+]
+fix_files = ["claude/agents/plan-worker-lite.md"]
+anchor = "code|claude/agents/plan-worker-deep.md|Asking the user"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+apply_task_id = 53
+
+[[findings]]
+id = "F70"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "tomlctl/src/inputs.rs"
+line = 602
+symbol = "validate"
+summary = "inputs add accepts a ledger=plan record with no flow, though the contract and task spec say a plan-ledger record must name its flow"
+severity = "minor"
+failure_scenario = 'A worker (or glimpse) posts `{"kind":"question","author":"implement-v2","ledger":"plan","items":["3"],...}` without `flow`. inputs add stores it as I3 instead of refusing. questions.md step 1 and the drain read `--ledger plan --flow <slug>`, so the orchestrator never sees the question: the worker waits 590 s and parks, and the drain finds no question for the row.'
+fix = """In `validate`, beside the scope refusal, refuse a `ledger = "plan"` record that lacks `flow` ("a `plan` ledger record names the `flow` whose tasks it concerns"), and add a refusal case to the plan-ledger test in tomlctl/tests/inputs.rs. Note the rule in claude/skills/tomlctl/references/inputs.md's Target bullet."""
+effort = "trivial"
+counter = "Refuted if another layer refuses a flow-less plan record before it lands; none found: the scratch probe stored it with exit 0."
+grade = "high"
+evidence = [
+    "claude/skills/flow-contract-user-inputs/SKILL.md:57: On the `plan` ledger, `flow` is required",
+    "tasks.toml task 'Add a plan ledger to the inputs store' detail: A question with ledger plan must name a flow, not a scope",
+    "tomlctl/src/inputs.rs:602 refuses only `scope` on the plan ledger",
+    """scratch repo: `inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","prompt":"x","choice":"single","options":["a","b"]}'` -> {"id":"I3"}, exit 0""",
+]
+fix_files = [
+    "tomlctl/tests/inputs.rs",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+same_as = "F43"
+related = ["F43"]
+anchor = "code|tomlctl/src/inputs.rs|validate"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F43"
+
+[[findings]]
+id = "F71"
+run = "U3"
+cell = "C22"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "ripple"
+route = "verifier"
+file = "tomlctl/src/cli/types/inputs.rs"
+line = 21
+symbol = "ledger"
+summary = "inputs list --ledger help omits the new `plan` ledger the store now accepts"
+effort = "trivial"
+counter = "Refuted if the help is generated from LEDGERS elsewhere; it is a literal string here."
+edit = 'Change the help to "review|optimise|plan-review|backlog|plan", matching LEDGERS in tomlctl/src/inputs.rs and the --ledger row of claude/skills/tomlctl/references/inputs.md.'
+direction = "change"
+old = '#[arg(long, help = "review|optimise|plan-review|backlog")]'
+same_as = "F68"
+anchor = "code|tomlctl/src/cli/types/inputs.rs|ledger"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-18
+merged_into = "F68"
+
+[[findings]]
+id = "F72"
+run = "U3"
+cell = "C34"
+seen_in = ["U3"]
+family = "code"
+kind = "defect"
+lens = "probe:review-lenses-judge-controls"
+route = "verifier"
+file = "claude/skills/review-v2-lenses/lenses/ui-visual.md"
+line = 33
+symbol = "Measured geometry"
+summary = "Review UI lenses get no list of planted-defect control states, so a control's planted defect (web-05's 6 geometry entries) is raised as a review defect"
+severity = "major"
+failure_scenario = "A code review of this flow with the ui-change signal runs capture.sh without --only (checks/ui-capture.md:26), so control web-05 lands beside the clean states. The ui-visual finder must report each geometry entry as a defect (ui-visual.md:33), major by :70. The finding confirms (the overflow is real), and if picked at triage /apply-v2 fixes panel.html's unclippedLabel row, deleting the plant: the next visual pass sees a clean control, reads the inspector as unsound, and the milestone cannot commit. Every later UI review of the repo re-raises all nine controls."
+fix = "Lens text, whatever the source: in ui-visual.md Rubric/Measured geometry and interaction.md Defect rubric add: 'A state the ui-capture baseline lists under controls carries a defect planted on purpose. Do not report its planted defect or its geometry entries; skip it and count it in the coverage note as a control.' Check: the Fence mapping records the entry as '<run dir>/ui-capture; controls: <state>, ...' and the finder paragraph (:53) says control states are skipped. ui-capture SKILL.md:76 and defects.md:119: scope 'the judge is not told' to the visual pass's ui-inspector; a review lens judges the change, not the inspector, and is told. Open: where the check reads the control list (options)."
+effort = "medium"
+counter = "A U3 ui-visual finder reads the plan's decisions and skips web-05 under Does not flag's documented-deliberate rule; even then that rule turns it into an advisory challenge, still a row. Refuted if any review-side text names controls (rg found none)."
+grade = "high"
+evidence = [
+    "claude/skills/review-v2-lenses/lenses/ui-visual.md:33: 'Each entry in a captured state's geometry.json array is a defect: report it as found, even when the image looks clean, and never clear one by eye.' interaction.md:31 says the same.",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md:26 'no --only, so the command captures every state the project lists'; :53 the finder reads the states from the directory, with no control list in the baseline entry.",
+    ".claude/flows/v2-ui-fidelity/tasks.toml milestone B ui_controls = web-02, web-05, web-07, web-09, web-11, tui-02, tui-05, tui-07, tui-09; U3 ui-capture/geometry.json web-05 holds 6 entries, e.g. 'scrollWidth 760 > clientWidth 478', offscreen span.label.",
+    "claude/skills/ui-capture/SKILL.md:76 'The judge is not told which states are controls' and :80 names the review lens a judge of a capture, so the contract forbids telling it.",
+    "rg -n control over review-v2-lenses/lenses, checks and review-v2-engine/references: no hit about planted-defect states (only two-control-probe and unrelated words).",
+]
+fix_files = [
+    "claude/skills/review-v2-lenses/lenses/interaction.md",
+    "claude/skills/review-v2-lenses/checks/ui-capture.md",
+    "claude/skills/ui-capture/SKILL.md",
+    "claude/skills/ui-capture/references/defects.md",
+]
+blocked_options = [
+    "A controls list in .claude/ui-capture.toml, read by the check: works for --scope runs and later flows, but documented in the ui-capture skill the inspector loads, so blinding then rests on the prompt alone.",
+    "The check unions ui_controls from every .claude/flows/*/tasks.toml: no contract change and the inspector's skill is untouched, but misses controls of archived or deleted flows and of projects with no v2 flow.",
+    "A review-only key in .claude/review-lenses/config.toml listing control states, documented only in review-v2-lenses: invisible to the inspector's skill, but each milestone that adds a control must also add it there.",
+]
+unblocked_by = "user"
+decision_answer = "A controls list in .claude/ui-capture.toml, read by the check: works for --scope runs and later flows, but documented in the ui-capture skill the inspector loads, so blinding then rests on the prompt alone."
+anchor = "code|claude/skills/review-v2-lenses/lenses/ui-visual.md|Measured geometry"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+apply_task_id = 43
+
+[[findings]]
+id = "F73"
+run = "U3"
+cell = "C30"
+seen_in = ["U3"]
+family = "code"
+kind = "cleanup"
+lens = "intent-fidelity"
+route = "checker"
+file = "claude/agents/ui-inspector.md"
+line = 38
+symbol = "Look entries"
+summary = "The look pass has no answer for a look this capture cannot show, so a control answers it not met and fails, against D41 (reading B)"
+effort = "trivial"
+edit = "In pass 3, add a fourth answer: judge whether the capture shows its `behaviour`: `met`, `not met`, `unsure` or `not shown`, with where in the capture you looked; `not shown` is for a look whose behaviour concerns a condition this capture does not show, and it is no defect and no unsure. In the Verdicts section's `pass` bullet, change 'every look entry the state carries is met' to 'every look entry the state carries is met or not shown'."
+direction = "change"
+old = "judge whether the capture shows its `behaviour`: `met`, `not met` or `unsure`, with where in the capture you looked."
+related = ["F56"]
+anchor = "code|claude/agents/ui-inspector.md|Look entries"
+status = "resolved"
+first_seen = 2026-11-18
+resolution = "v2-ui-fidelity the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b b684520af30e257f0fae0ce89e58e06ebc23c2ac"
+resolved = 2026-11-18
+apply_flow = "v2-ui-fidelity"
+apply_task = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+apply_task_id = 57
+
 [[verdicts]]
 finding = "F1"
 run = "U1"
@@ -2899,3 +5401,603 @@ by = "audit"
 verdict = "refuted"
 citation = "tomlctl plan view --slug v2-ui-fidelity --for human: line 1754 (task 21 detail)"
 rationale = "Upheld refutation: task 21's own detail sets 'the budget is eight a planning session in the first round' in section 5 and gives the section 1 interview variable-length rounds, so no fork is left for the executor."
+
+[[verdicts]]
+finding = "F42"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/view.rs:756-763"
+rationale = "Counter fails: view.rs:756 branches on check.is_empty() alone, so a look entry, which owner_problem (schema.rs:336) forces to an empty check, prints 'Check: none yet' and never reaches the Run by line; states are never printed anywhere in view.rs (grep for .states hits only check/emit/show/snapshot/store). The only pin, tests/plan_view.rs:812-823, covers an empty check without run_by, not a look entry. check.rs:615 treats look as having a check. Minor stands."
+
+[[verdicts]]
+finding = "F43"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = """tomlctl/src/inputs.rs:602; scratch repo: tomlctl inputs add --json '{"kind":"question","author":"plan-worker","ledger":"plan","items":["8"],"prompt":"Which?","choice":"text"}' -> {"id":"I1"} rc=0 (tomlctl 0.24.0)"""
+rationale = "Counter fails: flow-contract-user-inputs SKILL.md:57 says flow is required on the plan ledger and tomlctl references/inputs.md:97 says flow names the flow; no test or comment allows a flow-less plan record (tests/inputs.rs:247-278 always pass flow). validate (inputs.rs:602) only refuses scope; nothing requires flow, and I reproduced a flow-less plan question minting I1. Minor stays right: workers are told to pass flow, so the trigger needs an agent slip."
+
+[[verdicts]]
+finding = "F47"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/ui-inspector.md:64"
+rationale = "Old text sits at implement-v2-visual.js:47. toEntries (204-253) reads only state, verdict, defects and note; entry() takes control from the Workflow's own unit (186). ui-inspector.md:64 defines the return without control, and the fake in visual.test.mjs:76-83 returns none, so no conforming return or test changes. The only observable change is that a return carrying control is refused by additionalProperties:false, which matches the agent contract. The inspector is already told planted states may exist (ui-inspector.md:53), so the leak is mild, but the property is dead."
+
+[[verdicts]]
+finding = "F51"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/README.md:612; tomlctl/src/plan/schema.rs:265"
+rationale = "Counter fails: rg finds no `class` in tomlctl/src/inputs.rs; the class lives on plan decisions only (plan/schema.rs:104 DecisionClass, :265 `class: Option<DecisionClass>`, :538 stamps SCHEMA_VERSION 4). README:612 wrongly says a question carries `decision_class`. README:613's look line is loose: the pick is a decision of class `look`, and the capability (commit 882d343f) also covers ui_states/ui_controls, look accepts and the visual emitter. Edit is prose plus a comment at cli/types/mod.rs:222; nothing observable changes."
+
+[[verdicts]]
+finding = "F45"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "render.sh --size 640x480 on h1{position:relative;top:-14px} (body margin 0): PNG shows 'Header cut' with its top sliced; geometry.json s1 = [overflow #plain] only, nothing for #cut"
+rationale = "Reproduced. geometry-probe.js:181 tests rect.bottom+scrollY, so only a box wholly above the document top counts, while :179-180 flag partial left/right overhang. Content at negative document y cannot be reached by any scroll or shot, so a partial top overhang is a real cut that geometry.json reports as clean, against SKILL.md:62. No comment or commit (882d343f) marks the asymmetry deliberate; the out-of-flow hiding idiom at :183 only covers wholly-out boxes. Minor stands."
+
+[[verdicts]]
+finding = "F46"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "render.sh --size 640x480: PNG shows both #shown (visibility:visible child of a visibility:hidden div) and #plain labels painted; geometry.json s1 = [{overflow #plain scrollWidth 277 > clientWidth 100}], nothing for #shown"
+rationale = "Reproduced. rendered() at geometry-probe.js:78 returns false for the visibility:hidden parent, :164-165 set mine.skip, and :147-158 pass skip to every descendant before their own style is read, so a visibility:visible child that CSS paints is never measured. Visibility is inherited but overridable, unlike display:none, so skipping the subtree is wrong for it. No comment or contract line excludes the pattern. The trigger is uncommon, so minor stands."
+
+[[verdicts]]
+finding = "F55"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/ui-capture/fixtures/tui/tui-07.txt:6"
+rationale = "Reproduced: a python dump of tui-07.txt shows row 5 (file line 6) at 80 cells with the title in cols 10-78 and col79 = U+2502. Task 33's detail table (tomlctl tasks show 33) says tui-07's third-task row has no U+2502 in column 79. So the planted border break is absent. The inspector's visual-B-1-3 note still flags class 4 for the FILES-column overrun, so the control does test clipping, just not a broken border. Severity stays minor."
+
+[[verdicts]]
+finding = "F58"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/workflows/implement-v2-visual.js:47"
+rationale = "The old text sits at implement-v2-visual.js:47. Nothing reads it: toEntries (204-253) takes only state, verdict, defects and note from a return, and entry() gets control from the script's own unit (186). ui-inspector.md:64 returns no control, and the fake inspector in visual.test.mjs:76-83 sends none. No test checks opts.schema. D37 says the inspector gets no control flag. The one visible change is that a return carrying control would now fail the schema, which matches D37. The edit stays within file. No rule-outs to weigh."
+
+[[verdicts]]
+finding = "F68"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/inputs.rs:58"
+rationale = "Counter tested: no test pins the help string; rg for the literal finds only the anchor and a historical plan doc (docs/plans/temporal-snuggling-pnueli.md, not a test). The old text sits verbatim at inputs.rs:21, while LEDGERS at tomlctl/src/inputs.rs:58 holds five ledgers including `plan`, and references/inputs.md:58 documents `plan`. The edit changes only --help output, stays within the anchor file, and changes no parsing or validation behaviour."
+
+[[verdicts]]
+finding = "F65"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = '''claude/agents/plan-worker-lite.md:57; bash -c "echo '{\"prompt\":\"the panel's width\"}'" -> bash: unexpected EOF while looking for matching quote, exit=2'''
+rationale = "Anchor holds: step 1 at plan-worker-lite.md:57 (and plan-worker-deep.md:57) posts the question as inline single-quoted JSON with free-text <prompt> and <option>. Reproduced: an apostrophe in the substituted prose closes the quote and bash fails with unexpected EOF (exit 2), so no question id is minted. Neither worker body gives a staging rule (grep for quote/@<path>/stage finds none), unlike questions.md:60 for the orchestrator; inputs add accepts @<path>. Counter (model self-escapes) is a mitigation, not intent. Minor stands."
+
+[[verdicts]]
+finding = "F71"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/inputs.rs:58"
+rationale = 'Counter fails: the help is a literal at tomlctl/src/cli/types/inputs.rs:21 ("review|optimise|plan-review|backlog"), not generated. LEDGERS at tomlctl/src/inputs.rs:58 has 5 entries including "plan", and validation (one_of at :125, :589) accepts it; the reference table claude/skills/tomlctl/references/inputs.md:58 already lists `plan`. The edit is help text only, within the anchor file; no test pins the old literal (rg finds only the anchor plus a historical plan doc).'
+
+[[verdicts]]
+finding = "F70"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = """tomlctl/src/inputs.rs:602; scratch: tomlctl inputs add --json '{"kind":"question","author":"implement-v2","ledger":"plan","items":["3"],...}' -> {"id":"I1"} exit 0"""
+rationale = "Reproduced in a scratch repo: a ledger=plan question with items but no flow stored as I1, exit 0; the same row with scope is refused by inputs.rs:602, the only plan-ledger check in validate. flow-contract-user-inputs SKILL.md:57 says flow is required on the plan ledger, and no test pins flow-less acceptance (tests/inputs.rs:249-277 always pass flow). Trigger needs a poster omitting flow against the contract, so minor stands."
+
+[[verdicts]]
+finding = "F64"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+severity = "minor"
+citation = "claude/agents/plan-worker-lite.md:60; tomlctl inputs list --kind answer --where answers=I1 --get picked -> 'matches no field; available fields: ... text', exit 1"
+rationale = """Reproduced with tomlctl 0.24.0 (installed and target/debug): after `inputs answer I1 --text '...'`, the question reads handled, but the worker's step-4 read `inputs list --kind answer --where answers=I1 --get picked` exits 1 with "matches no field; available fields: ... text", not an empty line. Both worker files read only `picked`, and the worker never re-reads its view for the plan decide. The failure is loud and names `text`, so a worker may recover off-script; severity lowered to minor."""
+
+[[verdicts]]
+finding = "F69"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-deep.md:60; scratch: inputs list --kind answer --where answers=I1 --get picked -> 'matches no field; available fields: ... answers, text' rc=1"
+rationale = """Reproduced in a scratch repo: `inputs answer I1 --text '...'` closes the question (the handled check prints I1, so the worker takes the answered branch), then step 4's `--get picked` exits 1 with "matches no field; available fields: ... answers, text". questions.md:60 relays a user's own answer in exactly that shape. Both worker files carry the same line 60. The C30 rule-out is about the one-question cadence, not the read, so it does not defeat this. A worker might improvise `--get text` from the error, but the procedure gives it no such branch."""
+
+[[verdicts]]
+finding = "F44"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan.md:559"
+rationale = "P1: plan.md exists. P2: old at plan.md:559, search 'is not `worker`, `gate` or `covered`;'. P4: edit names only plan.md and instance tasks-store.md, which holds the listed text at :116 ('or `covered`. `covered_by`'). Premise: RUN_BY_OWNERS is declared [&str; 4] at tomlctl/src/tasks/schema.rs:57. P3 not applicable (no dead claim)."
+
+[[verdicts]]
+finding = "F48"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/ui-capture/SKILL.md:23"
+rationale = "P1: SKILL.md exists. P2: old row at SKILL.md:23, search '| `out` | The default output directory'. P4: edit changes only rows of SKILL.md; the other paths it cites (visual.md, checks/ui-capture.md, ui_capture::load_paths) are evidence, not edit targets. P3 not applicable."
+
+[[verdicts]]
+finding = "F50"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/tasks-store.md:128"
+rationale = "P1: tasks-store.md exists. P2: old at tasks-store.md:128, search 'a store holding either raises `schema_version` to `2`.'. P4: edit names tasks-store.md (incl. root-keys row, same file) and instance flow-contract-task-store/SKILL.md, which exists and is listed. P3 not applicable."
+
+[[verdicts]]
+finding = "F52"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan.md:321"
+rationale = """P1: plan.md exists. P2: old spans plan.md:321; first line searched 'with `ref = "milestone:<id>"`: `goal`, `gates`, `gate_probes`, `elaboration`, `defer_reason`.' is present at :321. P4: edit names only lines of plan.md. P3 not applicable."""
+
+[[verdicts]]
+finding = "F53"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "CLAUDE.md:42"
+rationale = "P1: CLAUDE.md exists. P2: old at CLAUDE.md:42, search '- **UI lenses.**' followed by the quoted clause. P4: edit changes only CLAUDE.md; lens paths, intent-fidelity.md and compose.md are named as evidence, not edited. P3 not applicable."
+
+[[verdicts]]
+finding = "F54"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/review-v2-lenses/SKILL.md:142"
+rationale = "P1: target_file SKILL.md exists; row file vocabulary.toml exists. P2: old at SKILL.md:142 (within 9 lines of row line 151), search 'The detect keys are `files`'. P4: edit names only SKILL.md; review/catalogue.rs and survey.rs are cited as source, not edited. P3 not applicable."
+
+[[verdicts]]
+finding = "F59"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "CLAUDE.md:63"
+rationale = "P1: CLAUDE.md exists. P2: old at CLAUDE.md:63; both phrases 'captures each state its look entries name' and 'A worker that meets a taste, architecture, cost or UX call posts a question' occur on that line. P4: edit changes only CLAUDE.md; visual.md and plan-worker-deep.md are cited, not edited. P3 not applicable."
+
+[[verdicts]]
+finding = "F60"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_stage.rs:1127"
+rationale = "P1: plan_stage.rs exists. P2 (add): anchor 'fn a_changed_brief_clears_another_check_error_before_naming_the_amend_it_would_refuse() {' present at :1127. P4: the new test lands in the same file; no other path named. P3 not applicable."
+
+[[verdicts]]
+finding = "F61"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_check.rs:1344"
+rationale = """P1: plan_check.rs exists. P2: old at plan_check.rs:1344, search 'assert_reports_error(&Flow::with_tasks(&control), "plan/look-state-unknown");'. P4: edit names only this file. P3 not applicable."""
+
+[[verdicts]]
+finding = "F62"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/workflows/tests/visual.test.mjs:198"
+rationale = "P1: target_file visual.test.mjs exists; file implement-v2-visual.js exists. P2 (add): anchor test('implement-v2-visual: a state the inspector leaves out ...') present at visual.test.mjs:198, within 6 lines of row line 204. P4: edit names target_file only. P3 not applicable."
+
+[[verdicts]]
+finding = "F63"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "tomlctl/tests/review_survey.rs:1046"
+rationale = "P1: review_survey.rs exists. P2 (add): anchor 'fn ui_capture_paths_without_paths_select_nothing_extra() {' present at :1046. P4: edit names only this file. P3 not applicable (the detector is not claimed dead)."
+
+[[verdicts]]
+finding = "F66"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/questions.md:35"
+rationale = "P1: questions.md exists. P2: old at questions.md:35, search 'Do not ask it again: go to step 3 with that answer, read by'. P4: edit names only this file. P3 not applicable."
+
+[[verdicts]]
+finding = "F67"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/visual.md:51"
+rationale = "P1: visual.md exists. P2: old at visual.md:51, search 'A capture whose block is not `pass`, or `flaky` (a pass), is a capture failure.'. P4: edit names only this file. P3 not applicable."
+
+[[verdicts]]
+finding = "F54"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/review-v2-lenses/SKILL.md:142"
+rationale = "Counter fails: SKILL.md:142 still says the detect keys are six and any other key is refused, and no other line of the skill's Detectors section mentions ui_capture_paths. Yet DETECT_KEYS in catalogue.rs:126-134 accepts it (diff-only, boolean, catalogue.rs:2073-2079) and survey.rs:678 widens the diff file filter with the capture paths. C26's rule-out confirms the key works, which is the drift; C31's concerns the separate signal, not the doc. The edit lands in SKILL.md:142, not the vocabulary anchor."
+
+[[verdicts]]
+finding = "F67"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/visual.md:51"
+rationale = "visual.md:51 makes any block other than pass or flaky a capture failure, and a capture failure (line 58) mints a fix task. verification.md:158 lists timeout as a block outcome, so a first timeout matches line 51. Line 56 then says to retry it once and fail only on a second timeout. Read in order, the text contradicts itself. The counter's claim that the more specific rule wins is a guess the text never states, and drain.md:367 handles timeouts before anything else. The C31 rule-out is about geometry keys, not this sentence, so it does not defeat the finding."
+
+[[verdicts]]
+finding = "F57"
+run = "U3"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/plan-v2-engine/references/ui-layout.md:93"
+rationale = "Counter partly holds: ui-layout.md:5 sends the planner to ui-capture SKILL.md, whose :76 states the <surface>-<n> rule. But ui-layout.md's own example (:93) contradicts it: settings-short-window has surfaceOf 'settings-short' (implement-v2-visual.js:146-149), not 'settings', and the Controls paragraph (:79) names no rule. plan check enforces none (check.rs:794-843 checks presence only). A planner copying the example gets mismatched prefixes and a control carrying every look. Minor stands."
+
+[[verdicts]]
+finding = "F72"
+run = "U3"
+by = "verifier"
+verdict = "plausible"
+severity = "minor"
+citation = "claude/skills/review-v2-lenses/lenses/ui-visual.md:33"
+rationale = "Gap holds: no lens, check or engine text names controls, and ui-visual.md:33 makes every geometry entry a defect; web-05 has 6 in U3. Not reproduced in U3: C21 checked fixtures against task 32/33 and raised nothing for web-05, and a verifier would refute via ui_controls, so the chain needs a scope run plus triage. Minor. Rule-out (intro omits failed form) is unrelated. Block stays: option 2 fails --scope runs, but 1 vs 3 is a real blinding-contract choice."
+
+[[verdicts]]
+finding = "F43"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/src/inputs.rs:602"
+rationale = "Upheld: inputs.rs:602 refuses only scope on a plan record; nothing requires flow, and the verifier minted a flow-less plan question."
+
+[[verdicts]]
+finding = "F45"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/ui-capture/scripts/geometry-probe.js:181"
+rationale = "Upheld: :181 tests rect.bottom, so only a wholly-above box counts while :179-180 flag partial left/right overhang; reproduced by render."
+
+[[verdicts]]
+finding = "F65"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-lite.md:57"
+rationale = "Upheld: :57 inlines free-text prompt and options in single-quoted JSON; an apostrophe ends the quote, reproduced by bash."
+
+[[verdicts]]
+finding = "F69"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-deep.md:60"
+rationale = "Upheld: :60 reads only --get picked, which errors on a --text answer the orchestrator relays per questions.md step 3."
+
+[[verdicts]]
+finding = "F44"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan.md:559"
+rationale = "Upheld: :559 lists worker, gate or covered; :555 and RUN_BY_OWNERS admit look, so the row is stale."
+
+[[verdicts]]
+finding = "F60"
+run = "U3"
+by = "audit"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_stage.rs:1127"
+rationale = "Upheld: the add anchor exists at :1127 and the checker found no existing test of the approved-plan unsurfaced one-way branch."
+
+[[verdicts]]
+finding = "F73"
+run = "U3"
+by = "orchestrator"
+verdict = "confirmed"
+citation = "claude/agents/ui-inspector.md:38"
+rationale = "converted from advisory F56 at triage"
+
+[[verdicts]]
+finding = "F73"
+run = "U3"
+by = "checker"
+verdict = "confirmed"
+citation = "claude/agents/ui-inspector.md:38"
+rationale = "P1: claude/agents/ui-inspector.md exists. P2: the change old text 'judge whether the capture shows its `behaviour`: `met`, `not met` or `unsure`, with where in the capture you looked.' occurs verbatim at line 38 (grep of that string, same file). P2 for the pass bullet: 'every look entry the state carries is met' occurs at line 47. P4: the edit names only the file. P3 and P5 not applicable (no dead claim, no same_as)."
+
+[[reproductions]]
+finding = "F47"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "return_schema-still-offers-inspectors-a-control-boolean-a-leftover-of-labelled-controls-that-no-code-reads-and-that-tells-the-inspector-controls-exist"
+verdict = "gone"
+by = "verifier"
+citation = "claude/workflows/implement-v2-visual.js:45-52 RETURN_SCHEMA state item properties are now state, verdict, defects, note only, with additionalProperties false; the remaining control hits (126-185) are the Workflow's own units and index, not the inspector schema"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F42"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "plan-view-renders-a-run_by-look-accept-entry-as-check-none-yet-and-drops-its-run_by-and-states"
+verdict = "gone"
+by = "verifier"
+citation = """tomlctl/src/plan/view.rs:756-761: spec_block tests accept.run_by == RUN_BY_LOOK (schema.rs:56 "look") before the accept.check.is_empty() branch, printing 'Run by: look' and 'States: ' from code_all(&accept.states); 'Check: none yet' is now reached only by non-look entries"""
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F54"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "new-detect-key-ui_capture_paths-is-accepted-by-the-catalogue-and-survey-but-the-lens-skills-detector-docs-still-say-any-key-beyond-six-is-refused"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/review-v2-lenses/SKILL.md:142 now lists `ui_capture_paths` among the detect keys and :148 documents it (diff-only boolean, capture paths or files, unreadable config -> unknown), matching tomlctl/src/review/catalogue.rs:126-133,2073-2079 and survey.rs:678-690"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F51"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "readme-capability-meanings-for-decision_class-and-ui_look-describe-a-question-field-and-a-look-record-the-binary-does-not-have"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/README.md:612-613 now describe the plan-decision `class` (schema_version 4, tomlctl/src/plan/schema.rs:33) and milestone ui_states/ui_controls; old question/look-record text absent; tomlctl/src/cli/types/mod.rs:222-223 comment rewritten to match"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F62"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "toentries-return-validation-branches-no-states-array-bad-verdict-unasked-or-doubled-state-empty-note-backslash-note-path-have-no-test"
+verdict = "gone"
+by = "verifier"
+citation = 'claude/workflows/tests/visual.test.mjs:213-260 covers all five branches; node --test --test-name-pattern="malformed inspector return" claude/workflows/tests/visual.test.mjs -> pass 1 fail 0'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F55"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "control-tui-07-keeps-the-right-border-intact-its-long-title-stops-at-column-78-with-still-in-column-79-so-the-declared-through-the-border-defect-is-absent"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/ui-capture/fixtures/tui/tui-07.txt:6 now ends 'declares its own state na' with no border glyph: a python scan of row 6 finds the vertical bar only at position 1, the last cell is 'a', while rows 2-5 and 7-23 end in the bar; all 24 rows are 80 chars, LF only, UTF-8"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F57"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "the-layout-step-declares-states-and-controls-with-no-surface-n-naming-rule-so-a-descriptive-control-name-leaks-its-defect-and-gets-every-look-d37-d41"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/plan-v2-engine/references/ui-layout.md:79 now requires every state named <surface>-<n> per ui-capture SKILL.md:78; :81 has a control take its surface prefix and next number, never a defect-describing name; :95 example is settings-01/02/04, so surfaceOf in implement-v2-visual.js matches the control to its own surface's looks"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F63"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "a-ui_capture_paths-detector-without-files-is-untested-making-it-select-every-changed-file-as-detectselects-does-would-pass"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/review_survey.rs:1001-1004 adds the files-less [signals.ui-only] detector; :1040-1044 asserts it selects only tui/src and :1053-1057 that it selects no root without a config. A refactor to detect.selects(path) || globs (survey.rs:346-347 returns true when files is None) would add web and server/src, failing :1040."
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F43"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "validate-admits-a-plan-ledger-record-with-no-flow-though-the-inputs-contract-requires-one-only-scope-is-refused"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/src/inputs.rs:602 now refuses ledger=plan without `flow` (validate, run on every add via write at inputs.rs:554); the flow-less plan question is a refusal case at tomlctl/tests/inputs.rs:260; reference states the rule at claude/skills/tomlctl/references/inputs.md:97"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F44"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/tomlctl/references/plan.md:561 now reads `worker`, `gate`, `covered` or `look`; tasks-store.md:115-116 reads `covered` or `look`; grep for the old three-owner list over all three files returns no hit (rc=1)"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F50"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/tomlctl/references/tasks-store.md:128 now raises schema_version to `3`; tasks-store.md:28 and flow-contract-task-store/SKILL.md:69 both state the `3` stamp condition and that a v2-only binary refuses a `3` store"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F52"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "accept-owner-invalid-row-omits-look-from-the-run_by-owners-though-run_by_owners-now-includes-it-and-2-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/skills/tomlctl/references/plan.md:319-324 lists after, ui_states, ui_controls in both the refusal and the [[changes]] fields, matching tomlctl/src/plan/milestone.rs:384-420 which pushes gates, gate_probes, ui_states, ui_controls, after as compact JSON"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F68"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "inputs-list-ledger-help-omits-the-plan-ledger-this-change-added-to-ledgers-and-to-the-user-inputs-contract"
+verdict = "gone"
+by = "verifier"
+citation = 'tomlctl/src/cli/types/inputs.rs:21 now reads help = "review|optimise|plan-review|backlog|plan", matching LEDGERS at tomlctl/src/inputs.rs:58'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F45"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "geometry-probe.js:182 now tests rect.top+scrollY; render.sh --size 640x480 on h1{position:relative;top:-14px} body margin 0 -> geometry.json s45 = [{offscreen #hdr box [0,-14 640x37]}]"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F46"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "offscreen-check-flags-a-box-only-when-it-lies-wholly-above-the-viewport-so-an-element-cut-off-at-the-top-edge-is-never-reported-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "geometry-probe.js:76-81 rendered() no longer tests visibility, :171 treats it per element; render.sh --size 640x480 -> geometry.json s46 = [overflow #shown 176>100, overflow #plain 176>100]"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F60"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "no-test-drives-amend_reports-new-silent-one-way-branch-reverting-it-to-unanswered_decisions-alone-passes-every-existing-test"
+verdict = "gone"
+by = "verifier"
+citation = "tomlctl/tests/plan_stage.rs:1127 a_changed_brief_clears_an_unsurfaced_one_way_decision_before_naming_the_amend_it_would_refuse asserts next == plan decide and blockers == [BRIEF_CHANGED, silent one-way D1]; nextest -E 'test(/^plan_stage::a_changed_brief_clears/)': 3 passed. Exact two-entry blockers means no other check error, so reverting stage.rs undecided() to unanswered_decisions alone yields AMEND_NEXT and fails it"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F72"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "list-this-repos-fixture-controls-under-controls-in-claudeui-capturetoml"
+verdict = "gone"
+by = "verifier"
+citation = ".claude/ui-capture.toml:4-14 lists all nine controls (web-02,05,07,09,11, tui-02,05,07,09), matching milestone B's ui_controls; checks/ui-capture.md:42,53 reads it into the fence entry and ui-visual.md:34 / interaction.md:31 skip control states; tomlctl/src/ui_capture.rs:21 parses the table loosely so the new key is accepted"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F65"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/agents/plan-worker-lite.md:57 stages the question as a scratchpad JSON file and posts `tomlctl inputs add --json @<path>` (help: `@<path>` to read a file); plan-worker-deep.md block diffs identical"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F69"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "question-is-posted-as-inline-single-quoted-json-so-a-prompt-or-option-containing-an-apostrophe-breaks-the-shell-command-and-1-more"
+verdict = "gone"
+by = "verifier"
+citation = "claude/agents/plan-worker-deep.md:60 reads `--where-not status=withdrawn --select picked,text --lines` and falls back to text; tomlctl/src/output.rs:1550 select_omits_a_key_missing_from_some_rows shows a missing key is omitted, not an error; lite block identical"
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F48"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "the-contracts-key-table-never-says-which-keys-are-required-so-out-reads-optional-while-the-visual-pass-refuses-a-declaration-without-it-and-1-more"
+verdict = "gone"
+by = "checker"
+citation = 'grep "| `out` | The default output directory, relative to the repo root. A caller" claude/skills/ui-capture/SKILL.md: no match; line 24 now reads "| `out` | Required. The default output directory, relative to the repo root; ..."'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F53"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+verdict = "gone"
+by = "checker"
+citation = 'grep "ui-visual.{0,10}interaction.{0,10}intent-fidelity" CLAUDE.md: no match; CLAUDE.md:42 now reads "- **UI lenses.** `ui-visual` and `interaction` review a UI change from its captured states"; old "`ui-visual`, `interaction` and `intent-fidelity` review" absent'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F59"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "claudemd-groups-intent-fidelity-with-the-capture-based-ui-lenses-it-reads-the-brief-and-user-decisions-never-captures-and-runs-on-every-flow-bound-code-run-and-1-more"
+verdict = "gone"
+by = "checker"
+citation = """grep "captures each state its look entries name" CLAUDE.md: no match; CLAUDE.md:63 now reads "captures each of the milestone's `ui_states`...""""
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F66"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "an-already-handled-question-is-sent-to-step-3-whose-first-command-inputs-answer-refuses-a-handled-question"
+verdict = "gone"
+by = "checker"
+citation = """grep "Do not ask it again: go to step 3" claude/skills/implement-v2-engine/references/questions.md: no match; line 35 now reads "Do not ask it again and do not relay it, since `inputs answer` refuses a handled question: go to step 3's decision binding...""""
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F67"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "first-sentence-calls-every-non-pass-block-a-capture-failure-contradicting-the-later-rule-that-a-first-timeout-is-retried-not-failed"
+verdict = "gone"
+by = "checker"
+citation = 'grep "A capture whose block is not `pass`" claude/skills/implement-v2-engine/references/visual.md: no match; line 51 now reads "A capture whose block is `fail`, or a second `timeout` (below), is a capture failure; `pass` and `flaky` (a pass) go on to the checks."'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F73"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "the-look-pass-has-no-answer-for-a-look-this-capture-cannot-show-so-a-control-answers-it-not-met-and-fails-against-d41-reading-b"
+verdict = "gone"
+by = "checker"
+citation = 'grep "judge whether the capture shows its `behaviour`: `met`, `not met` or `unsure`" claude/agents/ui-inspector.md: no match; line 38 now reads "`met`, `not met`, `unsure` or `not shown`"'
+at = 2026-11-18
+
+[[reproductions]]
+finding = "F61"
+flow = "v2-ui-fidelity"
+milestone = "apply-1"
+round = 1
+task = "the-control-state-case-asserts-only-the-class-so-dropping-ui_findings-control-state-explanation-would-still-pass"
+verdict = "gone"
+by = "verifier"
+citation = """tomlctl/tests/plan_check.rs:1351-1356 now asserts the list-broken (a ui_controls entry, plan_check.rs:1275) detail contains "a control state is the inspector's to fail", the text only check.rs:845's control branch emits; plan_check.rs:1338-1343 asserts the list-full case lacks it"""
+at = 2026-11-18

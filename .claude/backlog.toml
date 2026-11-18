@@ -13486,3 +13486,24 @@ flow = "v2-ui-fidelity"
 context = "The .gitattributes pin `claude/skills/*/scripts/** text eol=lf` covers render.sh but not claude/skills/ui-capture/fixtures/**; `git check-attr eol` reports `unspecified` for fixtures/capture.sh, and the milestone B commit warned LF->CRLF on every fixture. Git Bash tolerates CRLF, so nothing fails here, but a CRLF capture.sh breaks under Linux bash and a CRLF tui grid may skew column widths. Fix: add `claude/skills/*/fixtures/** text eol=lf` beside the scripts pin, then remove and re-check out the fixtures (the remedy stanza in .gitattributes)."
 base_sha = "01a5de120799b978629c05e9476200f1c5579489"
 evidence = [".gitattributes:43"]
+
+[[backlog]]
+id = "B-01668bbe"
+kind = "direction"
+summary = "The recommended control, a clipped or overflowing label, is caught by reading geometry.json, so a sound control says nothing of the classes the eye must judge"
+area = "claude/skills/plan-v2-engine/references"
+tags = [
+    "contrarian",
+    "ui-capture",
+]
+status = "open"
+created = 2026-11-18T09:46:11Z
+last_seen = 2026-11-18T09:46:11Z
+seen_count = 1
+dedup_id = "01668bbe71d132bd"
+origin = "review-v2"
+flow = "v2-ui-fidelity"
+context = "A control exists to prove the inspector is looking. ui-layout.md step 5 and the ui-capture defects.md Controls section both steer authors to an overflow or clipping control, yet geometry-probe.js measures exactly those and ui-inspector.md makes every geometry entry a defect and a fail. Such a control is failed by reading one JSON key, so a milestone meeting plan check's one-control floor with it certifies nothing about scaling, reserved space, panel size, misalignment, off-style glyphs or colour-only cues, the classes where the vision judge is the only check. Direction: require at least one control per milestone planting a class geometry-probe does not measure (rubric classes 1-3, 6, 7, 9 or 10) and drop the clipped-label example; optionally a plan check warning, which needs a control's class recorded (a schema change). From review-v2 run U3 finding F49 on flow v2-ui-fidelity."
+base_sha = "a5451c561586370d04e4211cecd95208ca1af5f6"
+evidence = ["claude/skills/plan-v2-engine/references/ui-layout.md:79"]
+related = ["B-7106068f"]
