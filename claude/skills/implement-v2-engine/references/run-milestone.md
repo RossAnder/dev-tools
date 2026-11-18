@@ -32,6 +32,7 @@ The list prints every row not yet in a milestone commit. Of those, a row is **st
 The tree must be clean except for:
 
 - `.claude/backlog.toml` and `.claude/backlog.toml.sha256`;
+- `.claude/inputs.toml` and `.claude/inputs.toml.sha256`, which the question loop and the user's captures write, by [questions.md](questions.md), section "The writes during a live run";
 - the `files` of every started row;
 - when the flow has `[[finding_links]]`, the review stores they name, by [apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks";
 - when a milestone has `ui_states`, the paths under the capture `out` that `.claude/ui-capture.toml` declares, by [visual.md](visual.md), section "The capture directory in the tree checks".

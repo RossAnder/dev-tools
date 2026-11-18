@@ -91,7 +91,7 @@ Then end the turn. The worker resumes on the question's status by itself, and th
 
 This loop is the one thing that writes while a run is live, and it writes only `.claude/inputs.toml` and `plan.toml`, never `tasks.toml`. The lane check's store digest covers `tasks.toml` alone, so the decision is no store change there. `.claude/inputs.toml` and its `.sha256` sidecar are tracked, outside the flow's directories, and modified by both the worker's `inputs add` and your `inputs answer`:
 
-- **Lane check.** When `plan emit lane-check` lists them under `out_of_lane` ([drain.md](drain.md), step 3), they are this loop's writes when `git diff -- .claude/inputs.toml` shows only records on the `plan` ledger of this flow. Account for them in the report as such; they need no person.
+- **Lane check.** `plan emit lane-check` exempts both, as it does the backlog store, so they never appear under `out_of_lane` ([drain.md](drain.md), step 3), and the pre-flight's clean-tree check exempts them too ([run-milestone.md](run-milestone.md), step 1).
 - **The flow-store commit.** Stage both with the flow stores in the second commit ([drain.md](drain.md), step 10), so the next pre-flight's clean-tree check does not stop on them.
 
 ## At the drain

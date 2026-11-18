@@ -37,6 +37,7 @@ use crate::tasks::{load_store, resolve_store_path};
 
 const STEP_PREFIX: &str = "implement:";
 const BACKLOG_STORE: &str = ".claude/backlog.toml";
+const INPUTS_STORE: &str = ".claude/inputs.toml";
 const SIDECAR_SUFFIX: &str = ".sha256";
 const DIGEST_HEX_LEN: usize = 16;
 
@@ -416,8 +417,9 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
 
 /// Uncommitted paths outside every lane, each with the rows whose `files` hold
 /// it. A lane is the files of a dispatched row or of any started row not yet
-/// committed, whose edits are the flow's own unfinished work; the backlog store
-/// and every review store a finding link names are exempt with their sidecars.
+/// committed, whose edits are the flow's own unfinished work; the backlog store,
+/// the inputs store the question loop writes during a run, and every review
+/// store a finding link names are exempt with their sidecars.
 fn out_of_lane(tasks: &Store, run: &Run, slug: &str) -> Result<Vec<JsonValue>> {
     let root = repo_or_cwd_root()?;
     let uncommitted = uncommitted_files(&root, slug)?;
@@ -430,7 +432,9 @@ fn out_of_lane(tasks: &Store, run: &Run, slug: &str) -> Result<Vec<JsonValue>> {
         })
         .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
         .collect();
-    let exempt = std::iter::once(BACKLOG_STORE.to_string())
+    let exempt = [BACKLOG_STORE, INPUTS_STORE]
+        .into_iter()
+        .map(str::to_string)
         .chain(tasks.finding_links.iter().map(|link| link.store.clone()));
     for path in exempt {
         lane.insert(format!("{}{SIDECAR_SUFFIX}", normal_path(&path)));

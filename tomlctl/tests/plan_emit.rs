@@ -437,8 +437,13 @@ fn lane_check_reports_paths_and_store_writes_outside_the_run() {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/one.rs"), "fn main() {}\n").unwrap();
     fs::write(root.join(".claude/backlog.toml"), "").unwrap();
+    fs::write(root.join(".claude/inputs.toml"), "").unwrap();
+    fs::write(root.join(".claude/inputs.toml.sha256"), "").unwrap();
     let out = stdout_json(&lane_check(&root).success());
-    assert_eq!(out["clean"], true, "the worker's own row and file: {out}");
+    assert_eq!(
+        out["clean"], true,
+        "the worker's own row and file, and the backlog and inputs stores: {out}"
+    );
 
     fs::write(root.join("src/two.rs"), "fn two() {}\n").unwrap();
     fs::write(root.join("stray.txt"), "x\n").unwrap();
