@@ -60,14 +60,15 @@ Anything else is not an argument: say so and stop, rather than guess what it was
 | Handovers | — | No worker proposed one | [drain.md](references/drain.md), step 9 |
 | Commit | — | The gate has not passed, or a milestone with `ui_states` has not passed its visual pass | [drain.md](references/drain.md), step 10 |
 | Reconcile | — | The milestone holds no apply row | [apply-rows.md](references/apply-rows.md), section "Reconcile"; between the stamp and the flow-store commit |
-| `needs_human` report | — | Never | [drain.md](references/drain.md), step 11 |
+| `needs_human` report | — | Never | [report.md](references/report.md) |
 
 Between the drain and the gate the engine loops: a replan that leaves a dispatchable row goes back to the premises with the launch count raised by one, and the reproduce check's, the gate's and the visual pass's fix rounds, and a settle row the settle drain fails, go back the same way. After a commit, the engine picks the next milestone while `plan emit schedule` names a pick and `--milestone` was not given; otherwise it ends with the report.
 
 The references hold the procedure:
 
 - [references/run-milestone.md](references/run-milestone.md): the pre-flight with its clean-tree check and stale-row reset, picking the milestone, the premise script and its verdicts, building the dispatch set, the args file, the launch and what the index holds.
-- [references/drain.md](references/drain.md): closing the run, reading the index and the notes, drift, rows left in progress, store changes during the run, the replan with its fix tasks, the gate and its two fix rounds, tangential discoveries, handovers, the two commits, stamping, the `needs_human` report, and the parked re-ask.
+- [references/drain.md](references/drain.md): closing the run, reading the index and the notes, drift, rows left in progress, store changes during the run, the replan with its fix tasks, the gate and its two fix rounds, tangential discoveries, handovers, the two commits, stamping, and the parked re-ask.
+- [references/report.md](references/report.md): the `needs_human` report every invocation ends with, and how it is recorded in the plan store.
 - [references/apply-rows.md](references/apply-rows.md): the rules for apply rows, the rows a `[[finding_links]]` entry names — what an apply row is, the findings its worker sees, anchor premises on a started row, the linked review stores exempt from the clean-tree and lane checks, the reproduce check before the gate with its two fix rounds, the settle drain that judges proposals, asks the user once and schedules the accepted ones, the failure rule that moves a `lite` apply row up a tier once, and reconciling the findings after the milestone commit. A milestone with no apply row reads none of it.
 - [references/visual.md](references/visual.md): the visual pass a milestone with `ui_states` runs after its gate and before its commit — the capture, checking it is whole, the `implement-v2-visual` launch, the controls and verdicts, the evidence kept beside the notes, and its fix tasks with their own two rounds. A milestone with no `ui_states` reads none of it.
 - [references/questions.md](references/questions.md): the build-time question loop — a running worker's `QUESTION` message, asking the user through the picker, recording the answer and binding it to the task as a decision, and a row parked on a question at the drain and the next invocation.

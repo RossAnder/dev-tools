@@ -224,6 +224,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "decision_class",
     "ui_look",
     "inputs_plan_ledger",
+    "plan_request",
+    "generated_config",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

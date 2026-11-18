@@ -1457,3 +1457,153 @@ fn a_milestone_scope_naming_no_checkpoint_is_refused() {
         .failure()
         .stderr(predicates::str::contains("names no checkpoint"));
 }
+
+const CASE_COLLISION: &str = "plan/file-case-collision";
+
+/// The base fixture's row holding `files`, each `(file, note)` pair a
+/// `[[file_notes]]` entry of that row.
+fn holding(files: &str, notes: &[(&str, &str)]) -> String {
+    let mut tasks = swap(
+        TASKS,
+        r#"files = ["src/a.rs"]"#,
+        &format!(r#"files = ["src/a.rs", {files}]"#),
+    );
+    for (file, note) in notes {
+        tasks.push_str(&format!(
+            "\n[[file_notes]]\nref = \"add-guard\"\nfile = \"{file}\"\nnote = \"{note}\"\n"
+        ));
+    }
+    tasks
+}
+
+fn on_disk(flow: &Flow, files: &[&str]) {
+    fs::create_dir_all(flow.root.join("src")).expect("src dir");
+    for file in files {
+        fs::write(flow.root.join(file), "exists").expect("on-disk file");
+    }
+}
+
+#[test]
+fn a_new_file_whose_stem_differs_only_by_case_from_an_existing_one_warns() {
+    let flow = Flow::with_tasks(&holding(
+        r#""src/colourField.ts""#,
+        &[("src/colourField.ts", "(new)")],
+    ));
+    on_disk(&flow, &["src/ColourField.tsx"]);
+    assert_reports_warning(&flow, CASE_COLLISION);
+    assert_eq!(finding_ids(&flow, CASE_COLLISION), vec![1]);
+}
+
+/// Read through `Path::exists`, the planned file would count as existing on a
+/// case-insensitive filesystem and so as no new file at all.
+#[test]
+fn an_unannotated_planned_file_absent_by_exact_name_is_new() {
+    let flow = Flow::with_tasks(&holding(r#""src/foo.ts""#, &[]));
+    on_disk(&flow, &["src/Foo.ts"]);
+    assert_reports_warning(&flow, CASE_COLLISION);
+}
+
+#[test]
+fn two_rows_planning_one_stem_in_different_case_both_are_named() {
+    let tasks = format!(
+        "{}{}",
+        holding(r#""src/Foo.ts""#, &[]),
+        r#"
+[[specs]]
+ref = "add-caller"
+outcome = "the caller exists"
+accept = [{ behaviour = "a caller calls", check = "cargo test caller", kind = "forward", positive = "", writes_build = false, probe = { at = "abc", neg_rc = 1, pos_rc = 0, verdict = "healthy" } }]
+
+[[items]]
+id = 2
+ref = "add-caller"
+title = "Add caller"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/foo.tsx"]
+"#
+    );
+    let flow = Flow::with_tasks(&tasks);
+    assert_reports_warning(&flow, CASE_COLLISION);
+    assert_eq!(finding_ids(&flow, CASE_COLLISION), vec![1, 2]);
+}
+
+#[test]
+fn one_stem_under_two_extensions_or_a_longer_stem_is_no_collision() {
+    let flow = Flow::with_tasks(&holding(
+        r#""src/Button.css""#,
+        &[("src/Button.css", "(new)")],
+    ));
+    on_disk(&flow, &["src/Button.tsx"]);
+    assert_clean(&flow);
+
+    let flow = Flow::with_tasks(&holding(
+        r#""src/colourField.test.ts""#,
+        &[("src/colourField.test.ts", "(new)")],
+    ));
+    on_disk(&flow, &["src/ColourField.tsx"]);
+    assert_clean(&flow);
+}
+
+#[test]
+fn an_existing_file_a_row_deletes_is_no_neighbour() {
+    let flow = Flow::with_tasks(&holding(
+        r#""src/ColourField.tsx", "src/colourField.ts""#,
+        &[
+            ("src/ColourField.tsx", "(delete)"),
+            ("src/colourField.ts", "(new)"),
+        ],
+    ));
+    on_disk(&flow, &["src/ColourField.tsx"]);
+    assert_clean(&flow);
+}
+
+const GENERATED_UNHELD: &str = "plan/generated-output-unheld";
+
+fn write_generated_config(flow: &Flow, text: &str) {
+    let dir = flow.root.join(".claude");
+    fs::create_dir_all(&dir).expect(".claude dir");
+    fs::write(dir.join("generated.toml"), text).expect("generated.toml");
+}
+
+const GENERATOR: &str = r#"[[generators]]
+id = "tokens"
+inputs = ["src/a.rs"]
+outputs = ["src/a.generated.rs"]
+regenerate = "bun run tokens"
+check = "bun run tokens --check"
+"#;
+
+#[test]
+fn an_input_held_without_its_output_warns() {
+    let flow = Flow::with_tasks(TASKS);
+    write_generated_config(&flow, GENERATOR);
+    assert_reports_warning(&flow, GENERATED_UNHELD);
+    assert_eq!(finding_ids(&flow, GENERATED_UNHELD), vec![1]);
+}
+
+#[test]
+fn an_input_held_with_its_output_is_clean() {
+    let tasks = swap(
+        TASKS,
+        "files = [\"src/a.rs\"]",
+        "files = [\"src/a.rs\", \"./src/a.generated.rs\"]",
+    );
+    let flow = Flow::with_tasks(&tasks);
+    write_generated_config(&flow, GENERATOR);
+    assert_clean(&flow);
+}
+
+#[test]
+fn no_generated_config_is_clean() {
+    assert_clean(&Flow::with_tasks(TASKS));
+}
+
+#[test]
+fn a_malformed_generated_config_warns_once_naming_no_row() {
+    let flow = Flow::with_tasks(TASKS);
+    write_generated_config(&flow, "generators = 3\n");
+    assert_reports_warning(&flow, GENERATED_UNHELD);
+    assert!(finding_ids(&flow, GENERATED_UNHELD).is_empty());
+}

@@ -712,6 +712,7 @@ fn task_block(out: &mut String, tasks: &Store, row: &TaskRow) {
         bullets(out, "Refs", &link.refs);
     }
     bullets(out, "Files", &file_lines(tasks, row));
+    bullets(out, "Generators", &generator_lines(row));
     match tasks.spec_for(&row.r#ref) {
         Some(spec) => spec_block(out, spec),
         None => out.push_str("_No spec._\n\n"),
@@ -734,6 +735,48 @@ fn file_lines(tasks: &Store, row: &TaskRow) -> Vec<String> {
                 Some(note) => format!("{}: {kind}, noted {note}", code(file)),
                 None => format!("{}: {kind}", code(file)),
             }
+        })
+        .collect()
+}
+
+/// One line per generator whose input the row holds; a malformed config prints
+/// one line naming the problem rather than failing the view.
+fn generator_lines(row: &TaskRow) -> Vec<String> {
+    let Ok(root) = repo_or_cwd_root() else {
+        return Vec::new();
+    };
+    let generators = match crate::generated::load(&root) {
+        Ok(generators) => generators,
+        Err(problem) => {
+            return vec![format!(
+                "{} is malformed: {problem}",
+                code(crate::generated::CONFIG)
+            )];
+        }
+    };
+    let held: BTreeSet<String> = row.files.iter().map(|f| normal_path(f)).collect();
+    crate::generated::touched(&generators, &row.files)
+        .into_iter()
+        .map(|generator| {
+            let outputs = code_all(&generator.outputs).join(", ");
+            let mut line = format!(
+                "{}: outputs {outputs}, regenerate with {}",
+                code(&generator.id),
+                code(&generator.regenerate)
+            );
+            let missing: Vec<String> = generator
+                .outputs
+                .iter()
+                .filter(|output| !held.contains(*output))
+                .map(|output| code(output))
+                .collect();
+            if !missing.is_empty() {
+                line.push_str(&format!(
+                    "; {} not in this task's files: ask for it with a scope request",
+                    missing.join(", ")
+                ));
+            }
+            line
         })
         .collect()
 }

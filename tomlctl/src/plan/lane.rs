@@ -24,6 +24,7 @@ use toml::value::Datetime;
 use super::drift::uncommitted_files;
 use super::emit::{WORKER_AGENTS, load_milestone_store};
 use super::schema::{Run, RunState};
+use super::schema_request::{Request, Ruling};
 use super::store;
 use crate::cli::{PlanEmitLaneCheckArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -31,7 +32,8 @@ use crate::integrity::hex_lower;
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
 use crate::tasks::schema::{
-    Change, ELABORATION_DEFERRED, MILESTONE_REF_PREFIX, Status, Store, normal_path, to_toml,
+    Change, ELABORATION_DEFERRED, MILESTONE_REF_PREFIX, Status, Store, TaskRow, normal_path,
+    to_toml,
 };
 use crate::tasks::{load_store, resolve_store_path};
 
@@ -384,7 +386,7 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
         ));
     }
 
-    let out_of_lane = out_of_lane(&tasks, run, slug)?;
+    let out_of_lane = out_of_lane(&tasks, run, &plan.requests, slug)?;
     let mut store_writes = trail_writes(&tasks, run);
     let digest = if run.store_digest.is_empty() {
         "unrecorded"
@@ -419,19 +421,19 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
 /// it. A lane is the files of a dispatched row or of any started row not yet
 /// committed, whose edits are the flow's own unfinished work; the backlog store,
 /// the inputs store the question loop writes during a run, and every review
-/// store a finding link names are exempt with their sidecars.
-fn out_of_lane(tasks: &Store, run: &Run, slug: &str) -> Result<Vec<JsonValue>> {
+/// store a finding link names are exempt with their sidecars. A path item
+/// ruled granted on an unapplied request of a row in the lane counts as in
+/// lane too, since the drain has not yet written the grant into the row's
+/// `files`.
+fn out_of_lane(
+    tasks: &Store,
+    run: &Run,
+    requests: &[Request],
+    slug: &str,
+) -> Result<Vec<JsonValue>> {
     let root = repo_or_cwd_root()?;
     let uncommitted = uncommitted_files(&root, slug)?;
-    let mut lane: BTreeSet<String> = tasks
-        .items
-        .iter()
-        .filter(|row| {
-            run.tasks.contains(&row.id)
-                || (WORKER_AGENTS.contains(&row.agent.as_str()) && row.commit.trim().is_empty())
-        })
-        .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
-        .collect();
+    let mut lane = lane_paths(tasks, run, requests);
     let exempt = [BACKLOG_STORE, INPUTS_STORE]
         .into_iter()
         .map(str::to_string)
@@ -457,6 +459,38 @@ fn out_of_lane(tasks: &Store, run: &Run, slug: &str) -> Result<Vec<JsonValue>> {
             json!({ "path": path, "rows": holders })
         })
         .collect())
+}
+
+/// The files of every row in the lane, plus each path granted on one of those
+/// rows' unapplied requests.
+fn lane_paths(tasks: &Store, run: &Run, requests: &[Request]) -> BTreeSet<String> {
+    let in_lane = |row: &TaskRow| {
+        run.tasks.contains(&row.id)
+            || (WORKER_AGENTS.contains(&row.agent.as_str()) && row.commit.trim().is_empty())
+    };
+    let rows: BTreeSet<u32> = tasks
+        .items
+        .iter()
+        .filter(|row| in_lane(row))
+        .map(|row| row.id)
+        .collect();
+    let mut lane: BTreeSet<String> = tasks
+        .items
+        .iter()
+        .filter(|row| rows.contains(&row.id))
+        .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
+        .collect();
+    for request in requests
+        .iter()
+        .filter(|request| !request.applied && rows.contains(&request.task))
+    {
+        for item in &request.paths {
+            if item.ruling == Ruling::Granted {
+                lane.insert(normal_path(&item.path));
+            }
+        }
+    }
+    lane
 }
 
 /// Every trail row written while the run was open. The orchestrator writes none
@@ -491,6 +525,7 @@ fn trail_writes(tasks: &Store, run: &Run) -> Vec<JsonValue> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::schema_request::{PathItem, RequestStatus, RuledBy};
     use super::*;
     use crate::tasks::schema::{
         BacklogLink, Checkpoint, ELABORATION_ELABORATED, ELABORATION_UPFRONT, Effort, FileNote,
@@ -944,5 +979,49 @@ mod tests {
         let (digest, digest_at) = run_store_digest("no-such-flow", "review", &[1], &at(STARTED));
         assert!(digest.is_empty());
         assert!(digest_at.is_none());
+    }
+
+    fn granted_request(task: u32, ruling: Ruling, applied: bool) -> Request {
+        Request {
+            id: "Q1".to_string(),
+            run_id: "wf_1".to_string(),
+            milestone: "A".to_string(),
+            task,
+            at: at(STARTED),
+            status: RequestStatus::Ruled,
+            ruled_at: Some(at(STARTED)),
+            applied,
+            paths: vec![PathItem {
+                path: "./docs/extra.md".to_string(),
+                why: "needed".to_string(),
+                ruling,
+                by: RuledBy::Tomlctl,
+                reason: String::new(),
+            }],
+            changes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_granted_unapplied_request_path_is_in_lane() {
+        let run = run_from(STARTED);
+        let tasks = store();
+        let lane = lane_paths(&tasks, &run, &[granted_request(1, Ruling::Granted, false)]);
+        assert!(lane.contains("docs/extra.md"), "{lane:?}");
+    }
+
+    #[test]
+    fn a_denied_or_applied_or_foreign_grant_leaves_the_path_out_of_lane() {
+        let run = run_from(STARTED);
+        let tasks = store();
+        for request in [
+            granted_request(1, Ruling::Denied, false),
+            granted_request(1, Ruling::Granted, true),
+            granted_request(2, Ruling::Granted, false),
+        ] {
+            let lane = lane_paths(&tasks, &run, &[request]);
+            assert!(!lane.contains("docs/extra.md"), "{lane:?}");
+            assert!(lane.contains("src/1.rs"), "{lane:?}");
+        }
     }
 }

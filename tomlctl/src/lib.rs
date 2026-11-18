@@ -16,6 +16,7 @@ mod dedup;
 mod errors;
 mod fields;
 mod flow;
+mod generated;
 mod inputs;
 mod integrity;
 mod invocation;

@@ -4,7 +4,8 @@ The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `docs/flows/<slug>/brief.md` and task store: each verb's flags and output, and the check classes.
 `plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), `plan stage`
 and `plan emit` are [plan-engine.md](plan-engine.md), and the run-record leaves `plan run notes`,
-`gate` and `report` are [plan-run.md](plan-run.md). The shape of
+`gate` and `report` are [plan-run.md](plan-run.md), and the `plan request` leaves are
+[plan-request.md](plan-request.md). The shape of
 `plan.toml` and what its fields mean are [plan-store.md](plan-store.md). The side tables a plan adds to `tasks.toml` (`[[specs]]`,
 `[[milestones]]`, `[[changes]]`, `audit`) are [tasks-store.md](tasks-store.md), and the `spec`,
 `reason` and `file_notes` row keys that fill them are
@@ -571,6 +572,8 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |
 | `plan/ui-accept-structural` | warning | A pending row, in a milestone that declares `ui_states` and is not deferred, has no `look` entry and every `accept` entry is `writes_build = false`, so its behaviour is accepted on reads alone. |
 | `plan/ui-milestone-no-states` | warning | A milestone that is not deferred and declares no `ui_states` holds rows whose `files` match a `paths` glob of the project's `.claude/ui-capture.toml`; `ids` names those rows. A config that cannot be read or parsed is one finding naming no row. |
+| `plan/file-case-collision` | warning | A file a pending row creates has the same stem, the name without its last extension, as another file in its directory, on disk or planned by any row, spelled with different case. One stem under two extensions, or the same spelling twice, is no collision. |
+| `plan/generated-output-unheld` | warning | A pending row of a milestone that is not deferred holds an input of a generator declared in [`.claude/generated.toml`](generated.md) but not every output of it. `ids` names the row. A malformed config is one finding naming no row. |
 | `plan/milestone-order-unqualified` | warning | One finding per milestone after the first that does not depend, through `needs`, `coupling` or `after` at any distance, on an earlier milestone, so `/implement-v2` may run it first. `detail` names the earlier milestones. `plan milestone update --id <later> --after <earlier>` where the earlier one must go first. |
 | `plan/file-only-chain` | info | Before the first approval only: one finding per milestone holding a `needs` link whose two rows share a file but no contract names both and no premise of the later row is at `after:<earlier>`. `ids` names the linked rows; `detail` lists each link with its shared files, and the milestone's longest `needs` chain against its row count. Splitting the file lets the rows run together. |
 | `plan/milestone-width` | info | Before the first approval only: one finding per milestone, after the first and not deferred, holding rows whose direct `needs` all sit in a milestone earlier than the one just before it, or that have no `needs`. `ids` names the rows; `detail` gives the earliest milestone each could join, the one after its latest need or the first when it has none, skipping any deferred milestone, and how many of the milestone's rows wait. Moving the rows earlier, or merging the milestones, lets them run sooner. |

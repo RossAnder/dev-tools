@@ -334,7 +334,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.24.0",
+  "version": "0.25.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -395,7 +395,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "snapshot_plan_records",
                "plan_run_records", "authored_files", "agent_usage",
                "review_finding_read", "decision_class", "ui_look",
-               "inputs_plan_ledger"],
+               "inputs_plan_ledger", "plan_request",
+               "generated_config"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -612,3 +613,5 @@ Feature meanings:
 | `decision_class` | a plan decision may carry `class` (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) via `plan decide`, which stamps plan.toml `schema_version = 4`; `plan gate` groups agent-assumed decisions by it |
 | `ui_look` | milestones carry `ui_states` and `ui_controls` (`plan milestone add\|update --ui-state/--ui-control/--clear-ui`), an accept entry may be `run_by = "look"` with `states`, `plan emit gate-list` prints `visual`, `plan check` reports the five UI classes, and tasks.toml is stamped `schema_version = 3` |
 | `inputs_plan_ledger` | `inputs` reads and writes the plan ledger the implement engine uses to ask the user its questions |
+| `plan_request` | the `plan request` group records a running worker's requests for a file or a spec correction, and the lane check reads the grants they produce |
+| `generated_config` | `.claude/generated.toml` declares generators and their outputs; `plan check`, `plan emit gate-list` and the worker view read it |

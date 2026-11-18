@@ -1061,3 +1061,57 @@ fn a_flow_with_no_plan_store_is_not_found() {
     let err = flow.refused(&["--for", "human"]);
     assert_eq!(err["kind"], json!("not_found"), "{err}");
 }
+
+const GENERATED: &str = r#"[[generators]]
+id = "sheet"
+inputs = ["src/a.rs"]
+outputs = ["src/a.gen.rs", "src/new.rs"]
+regenerate = "make sheet"
+check = "make sheet-check"
+"#;
+
+fn write_generated(flow: &Flow, text: &str) {
+    let dir = flow.root.join(".claude");
+    fs::create_dir_all(&dir).expect("claude dir");
+    fs::write(dir.join("generated.toml"), text).expect("generated.toml");
+}
+
+#[test]
+fn a_touched_generator_prints_its_outputs_command_and_not_held_note() {
+    let flow = Flow::standard();
+    write_generated(&flow, GENERATED);
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    assert!(worker.contains("**Generators:**"), "{worker}");
+    assert!(
+        worker.contains(
+            "`sheet`: outputs `src/a.gen.rs`, `src/new.rs`, regenerate with `make sheet`"
+        ),
+        "{worker}"
+    );
+    assert!(
+        worker.contains("`src/a.gen.rs` not in this task's files: ask for it with a scope request"),
+        "{worker}"
+    );
+    assert!(!worker.contains("`src/new.rs` not in"), "{worker}");
+}
+
+#[test]
+fn an_untouched_generator_prints_nothing() {
+    let flow = Flow::standard();
+    write_generated(&flow, GENERATED);
+    let worker = flow.view(&["--for", "worker", "--task", "2"]);
+    assert!(!worker.contains("Generators"), "{worker}");
+}
+
+#[test]
+fn a_malformed_generator_config_leaves_the_view_whole() {
+    let flow = Flow::standard();
+    write_generated(&flow, "[[generators]]\nid = \"sheet\"\n");
+    let worker = flow.view(&["--for", "worker", "--task", "1"]);
+    assert!(worker.contains("malformed"), "{worker}");
+    assert!(worker.contains("\"sheet\""), "{worker}");
+    assert!(
+        worker.contains("- `src/new.rs`: new, noted (new)"),
+        "{worker}"
+    );
+}

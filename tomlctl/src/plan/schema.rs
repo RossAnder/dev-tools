@@ -5,15 +5,16 @@
 //! last_updated = 2026-11-05
 //! [binding] / [id_high_water]
 //! [[decision]] / [[contract]] / [[approval]] / [[run]] / [[handover]]
-//! [[attempt]] / [[gate_round]] / [[report]]
+//! [[attempt]] / [[gate_round]] / [[report]] / [[request]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
 //! write is byte-stable with no sort step. A write stamps `SCHEMA_VERSION` when
-//! a decision carries a `class`, `RUN_RECORDS_SCHEMA_VERSION` when the store
-//! otherwise holds an attempt, gate round or report, and `BASE_SCHEMA_VERSION`
-//! else, so that a binary predating those keys refuses the store rather than
-//! dropping them. Each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
+//! the store holds a request, `CLASS_SCHEMA_VERSION` when a decision otherwise
+//! carries a `class`, `RUN_RECORDS_SCHEMA_VERSION` when the store otherwise
+//! holds an attempt, gate round or report, and `BASE_SCHEMA_VERSION` else, so
+//! that a binary predating those keys refuses the store rather than dropping
+//! them. Each root key but `schema_version` is omitted while empty. Free text is LF-normalised on both read and write,
 //! because a lone `\r` forces `toml`'s escaped string form. Unknown keys are
 //! dropped: the store is tool-owned and every write re-emits it from this shape.
 
@@ -24,25 +25,30 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
+use super::schema_request::{Request, request_from_toml, request_to_toml};
 use crate::tasks::schema::{
     as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
 };
 
-/// The newest stamp this build reads; a store whose decisions carry a class is
-/// written at it.
-pub(crate) const SCHEMA_VERSION: i64 = 4;
+/// The newest stamp this build reads; a store holding a request is written at
+/// it.
+pub(crate) const SCHEMA_VERSION: i64 = 5;
 
-/// The stamp of a store holding run records and no decision class.
+/// The stamp of a store holding no request and a decision with a class.
+pub(crate) const CLASS_SCHEMA_VERSION: i64 = 4;
+
+/// The stamp of a store holding run records and no request or decision class.
 pub(crate) const RUN_RECORDS_SCHEMA_VERSION: i64 = 3;
 
-/// The stamp of a store holding no attempt, gate round, report or decision
-/// class, and the version an unstamped store reads as.
+/// The stamp of a store holding no attempt, gate round, report, request or
+/// decision class, and the version an unstamped store reads as.
 pub(crate) const BASE_SCHEMA_VERSION: i64 = 2;
 
-const _: () = assert!(SCHEMA_VERSION > RUN_RECORDS_SCHEMA_VERSION);
+const _: () = assert!(SCHEMA_VERSION > CLASS_SCHEMA_VERSION);
+const _: () = assert!(CLASS_SCHEMA_VERSION > RUN_RECORDS_SCHEMA_VERSION);
 const _: () = assert!(RUN_RECORDS_SCHEMA_VERSION > BASE_SCHEMA_VERSION);
 
-type Table = Map<String, TomlValue>;
+pub(super) type Table = Map<String, TomlValue>;
 
 /// A closed set of string values. Bounding the read helpers on it ties a
 /// parser to its own list, so the error cannot name another vocabulary's values.
@@ -78,7 +84,7 @@ macro_rules! vocabulary {
             }
         }
 
-        impl Vocabulary for $name {
+        impl $crate::plan::schema::Vocabulary for $name {
             const VOCABULARY: &'static [&'static str] = $name::VOCABULARY;
 
             fn parse(raw: &str) -> Option<Self> {
@@ -87,6 +93,8 @@ macro_rules! vocabulary {
         }
     };
 }
+
+pub(super) use vocabulary;
 
 vocabulary!(Provenance {
     UserStated => "user-stated",
@@ -199,6 +207,7 @@ vocabulary!(
         OutOfLane => "out-of-lane",
         StoreChange => "store-change",
         Reconcile => "reconcile",
+        Request => "request",
     }
 );
 
@@ -238,6 +247,7 @@ pub(crate) struct PlanStore {
     pub(crate) attempts: Vec<Attempt>,
     pub(crate) gate_rounds: Vec<GateRound>,
     pub(crate) reports: Vec<Report>,
+    pub(crate) requests: Vec<Request>,
 }
 
 /// The branch and scope a draft holds here until approval, so that it matches
@@ -528,6 +538,7 @@ impl Default for PlanStore {
             attempts: Vec::new(),
             gate_rounds: Vec::new(),
             reports: Vec::new(),
+            requests: Vec::new(),
         }
     }
 }
@@ -535,8 +546,10 @@ impl Default for PlanStore {
 impl PlanStore {
     /// The stamp a write gives this store.
     pub(crate) fn write_version(&self) -> i64 {
-        if self.decisions.iter().any(|d| d.class.is_some()) {
+        if !self.requests.is_empty() {
             SCHEMA_VERSION
+        } else if self.decisions.iter().any(|d| d.class.is_some()) {
+            CLASS_SCHEMA_VERSION
         } else if self.attempts.is_empty() && self.gate_rounds.is_empty() && self.reports.is_empty()
         {
             BASE_SCHEMA_VERSION
@@ -600,6 +613,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
         attempts: records(root, "attempt", attempt_from_toml)?,
         gate_rounds: records(root, "gate_round", gate_round_from_toml)?,
         reports: records(root, "report", report_from_toml)?,
+        requests: records(root, "request", request_from_toml)?,
     })
 }
 
@@ -617,6 +631,7 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
         attempts,
         gate_rounds,
         reports,
+        requests,
     } = store;
 
     let mut root = Table::new();
@@ -644,10 +659,11 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
     insert_records(&mut root, "attempt", attempts, attempt_to_toml);
     insert_records(&mut root, "gate_round", gate_rounds, gate_round_to_toml);
     insert_records(&mut root, "report", reports, report_to_toml);
+    insert_records(&mut root, "request", requests, request_to_toml);
     TomlValue::Table(root)
 }
 
-fn records<T>(
+pub(super) fn records<T>(
     root: &Table,
     key: &str,
     parse: impl Fn(&Table, &str) -> Result<T>,
@@ -670,7 +686,12 @@ fn records<T>(
         .collect()
 }
 
-fn insert_records<T>(root: &mut Table, key: &str, rows: &[T], render: impl Fn(&T) -> TomlValue) {
+pub(super) fn insert_records<T>(
+    root: &mut Table,
+    key: &str,
+    rows: &[T],
+    render: impl Fn(&T) -> TomlValue,
+) {
     if !rows.is_empty() {
         root.insert(
             key.to_string(),
@@ -1415,7 +1436,7 @@ fn text_table(fields: &[(&str, &String)]) -> TomlValue {
 }
 
 /// A record's array of sub-tables; absent reads as empty.
-fn nested<T>(
+pub(super) fn nested<T>(
     table: &Table,
     key: &str,
     context: &str,
@@ -1439,7 +1460,7 @@ fn nested<T>(
         .collect()
 }
 
-fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
+pub(super) fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
     table
         .get(key)
         .and_then(TomlValue::as_integer)
@@ -1447,7 +1468,7 @@ fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
         .ok_or_else(|| anyhow!("{context}: `{key}` is missing or not a non-negative integer"))
 }
 
-fn str_or(table: &Table, key: &str) -> String {
+pub(super) fn str_or(table: &Table, key: &str) -> String {
     table
         .get(key)
         .and_then(TomlValue::as_str)
@@ -1455,7 +1476,7 @@ fn str_or(table: &Table, key: &str) -> String {
         .to_string()
 }
 
-fn required_str(table: &Table, key: &str, context: &str) -> Result<String> {
+pub(super) fn required_str(table: &Table, key: &str, context: &str) -> Result<String> {
     let value = str_or(table, key);
     if value.is_empty() {
         return Err(anyhow!("{context}: `{key}` is missing or empty"));
@@ -1463,7 +1484,7 @@ fn required_str(table: &Table, key: &str, context: &str) -> Result<String> {
     Ok(value)
 }
 
-fn required_datetime(table: &Table, key: &str, context: &str) -> Result<Datetime> {
+pub(super) fn required_datetime(table: &Table, key: &str, context: &str) -> Result<Datetime> {
     table
         .get(key)
         .and_then(as_datetime)
@@ -1472,7 +1493,7 @@ fn required_datetime(table: &Table, key: &str, context: &str) -> Result<Datetime
 
 /// An absent vocabulary field is refused rather than defaulted: a store cannot
 /// claim who stated a decision, or how reversible it is, without having said.
-fn vocab<T: Vocabulary>(table: &Table, key: &str, context: &str) -> Result<T> {
+pub(super) fn vocab<T: Vocabulary>(table: &Table, key: &str, context: &str) -> Result<T> {
     let raw = table
         .get(key)
         .ok_or_else(|| anyhow!("{context}: `{key}` is missing"))?
@@ -1488,7 +1509,7 @@ fn vocab<T: Vocabulary>(table: &Table, key: &str, context: &str) -> Result<T> {
 
 /// A present non-boolean is refused: `surfaced = "true"` read as `false` would
 /// slip a decision past approval's answered check.
-fn bool_or_false(table: &Table, key: &str, context: &str) -> Result<bool> {
+pub(super) fn bool_or_false(table: &Table, key: &str, context: &str) -> Result<bool> {
     bool_or(table, key, false, context)
 }
 
@@ -1601,6 +1622,7 @@ pub(crate) mod tests {
             attempts: vec![attempt()],
             gate_rounds: vec![gate_round()],
             reports: vec![report()],
+            requests: Vec::new(),
         }
     }
 
@@ -1837,18 +1859,21 @@ pub(crate) mod tests {
 
     fn classed(mut store: PlanStore) -> PlanStore {
         store.decisions[0].class = Some(DecisionClass::Compromise);
-        store.schema_version = SCHEMA_VERSION;
+        store.schema_version = CLASS_SCHEMA_VERSION;
         store
     }
 
-    /// A class stamps the newest version whether or not run records are held,
-    /// so a binary predating the key refuses the store instead of stripping it.
+    /// A class stamps its tier whether or not run records are held, so a
+    /// binary predating the key refuses the store instead of stripping it.
     #[test]
-    fn a_decision_class_round_trips_and_stamps_the_newest_version() {
+    fn a_decision_class_round_trips_and_stamps_the_class_version() {
         for store in [classed(fixture()), classed(base_fixture())] {
-            assert_eq!(store.write_version(), SCHEMA_VERSION);
+            assert_eq!(store.write_version(), CLASS_SCHEMA_VERSION);
             let doc = to_toml(&store);
-            assert_eq!(doc["schema_version"].as_integer(), Some(SCHEMA_VERSION));
+            assert_eq!(
+                doc["schema_version"].as_integer(),
+                Some(CLASS_SCHEMA_VERSION)
+            );
             assert_eq!(doc["decision"][0]["class"].as_str(), Some("compromise"));
             assert_eq!(rendered_round_trip(&store), store);
         }

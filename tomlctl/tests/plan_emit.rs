@@ -1524,3 +1524,77 @@ fn launch_args_need_a_commit_stamp_on_a_need_outside_the_milestone() {
         .collect();
     assert_eq!(ids, [2], "{out}");
 }
+
+const GENERATORS: &str = r#"
+[[generators]]
+id = "tokens"
+inputs = ["src/tokens.css"]
+outputs = ["src/tokens.gen.ts"]
+regenerate = "bun run tokens"
+check = "bun run tokens --check"
+"#;
+
+fn seed_generators(root: &Path, text: &str) {
+    fs::write(root.join(".claude/generated.toml"), text).unwrap();
+}
+
+fn generated_fixture(root: &Path, files: &[&str]) {
+    let items = vec![row(1, "pending", MILESTONE, &[], files)];
+    let specs = vec![accept_spec(1, vec![accept(LINT, true, None)])];
+    seed_tasks(root, &gate_store(items, specs));
+}
+
+#[test]
+fn gate_list_appends_a_touched_generators_check() {
+    let (_dir, root) = sandbox();
+    seed_generators(&root, GENERATORS);
+    generated_fixture(&root, &["src/tokens.css"]);
+
+    let out = gate_list(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([
+            { "command": SUITE, "source": "gate" },
+            { "command": LINT, "source": "gate" },
+            { "command": "bun run tokens --check", "source": "generated:tokens" },
+        ]),
+        "{out}"
+    );
+}
+
+#[test]
+fn gate_list_omits_an_untouched_generators_check() {
+    let (_dir, root) = sandbox();
+    seed_generators(&root, GENERATORS);
+    generated_fixture(&root, &["src/other.rs"]);
+
+    let out = gate_list(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([
+            { "command": SUITE, "source": "gate" },
+            { "command": LINT, "source": "gate" },
+        ]),
+        "{out}"
+    );
+}
+
+#[test]
+fn gate_list_does_not_repeat_a_generator_check_equal_to_a_gate() {
+    let (_dir, root) = sandbox();
+    seed_generators(&root, &GENERATORS.replace("bun run tokens --check", LINT));
+    generated_fixture(&root, &["src/tokens.css"]);
+
+    let out = gate_list(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([
+            { "command": SUITE, "source": "gate" },
+            { "command": LINT, "source": "gate" },
+        ]),
+        "{out}"
+    );
+}

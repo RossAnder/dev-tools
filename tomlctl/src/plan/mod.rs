@@ -7,12 +7,14 @@ pub(crate) mod authored;
 pub(crate) mod check;
 mod drift;
 mod emit;
+mod holders;
 mod lane;
 mod milestone;
 mod note_sources;
 mod open;
 pub(crate) mod probes;
 mod records;
+mod request;
 mod run_gate;
 mod run_note;
 mod run_notes;
@@ -24,6 +26,7 @@ mod view;
 
 pub(crate) mod dispatch;
 pub(crate) mod schema;
+pub(crate) mod schema_request;
 pub(crate) mod store;
 
 pub(crate) use view::VIEW_ROLES;

@@ -1872,6 +1872,9 @@ fn capabilities_features_contains_every_plan_feature() {
         "decision_class",
         "ui_look",
         "inputs_plan_ledger",
+        // Mid-run worker requests and the generator config.
+        "plan_request",
+        "generated_config",
     ];
     for name in expected {
         assert!(
@@ -1906,8 +1909,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.24.0",
-        "expected version `0.24.0` (the minor bump for `blocked_on`, `review settle` and `review triage --answer-file`, retiring `fix_shape`); got `{version}`"
+        version, "0.25.0",
+        "expected version `0.25.0` (the minor bump for `plan request` and the generator config); got `{version}`"
     );
 }
 

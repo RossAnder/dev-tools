@@ -347,6 +347,12 @@ const PLAN_SLUG: &str = "plan-fixture";
 const READY_SLUG: &str = "plan-ready";
 const APPROVED_SLUG: &str = "plan-approved";
 const APPLY_SLUG: &str = "apply-fixture";
+/// Flows with an open `implement:A` run: one nothing was requested in, one
+/// holding an open request, one holding a ruled one.
+const REQUEST_ADD_SLUG: &str = "request-add";
+const REQUEST_OPEN_SLUG: &str = "request-open";
+const REQUEST_RULED_SLUG: &str = "request-ruled";
+const REQUEST_PAYLOAD: &str = r#"{"paths":[{"path":"src/new.rs","why":"a caller needs it"}]}"#;
 const PROBE_CAPTURE: &str = "probe-capture.tsv";
 const PLAN_FILE: &str = "src/plan.rs";
 
@@ -1342,6 +1348,51 @@ fn cases() -> Vec<Case> {
             One,
             "pick",
         ),
+        write(
+            &[
+                "plan",
+                "request",
+                "add",
+                "--slug",
+                REQUEST_ADD_SLUG,
+                "--task",
+                "1",
+                "--json",
+                "-",
+            ],
+            "id",
+        )
+        .stdin(REQUEST_PAYLOAD),
+        write(
+            &[
+                "plan",
+                "request",
+                "rule",
+                "Q1",
+                "--slug",
+                REQUEST_OPEN_SLUG,
+                "--ndjson",
+                "-",
+            ],
+            "id",
+        )
+        .stdin(r#"{"item":"p1","ruling":"granted","reason":"no other row edits it"}"#),
+        read(
+            &["plan", "request", "list", "--slug", REQUEST_OPEN_SLUG],
+            Top,
+            "id",
+        ),
+        write(
+            &[
+                "plan",
+                "request",
+                "applied",
+                "Q1",
+                "--slug",
+                REQUEST_RULED_SLUG,
+            ],
+            "ids",
+        ),
     ]
 }
 
@@ -1522,7 +1573,64 @@ fn apply_flow(root: &Path) {
 /// The `plan` group's flows, added to its fixture alone so that no other group
 /// sees them in `flow list` or `flow resolve`. Approving a plan then committing
 /// `PLAN_FILE` is what gives `plan drift` an affected task.
+fn request_flow(root: &Path, slug: &str) {
+    setup(root, &["plan", "open", "--slug", slug], "");
+    write_tasks_store(
+        &root.join(".claude/flows").join(slug).join("tasks.toml"),
+        &PLAN_TASKS.replace("{slug}", slug),
+    );
+    setup(
+        root,
+        &[
+            "plan",
+            "run",
+            "start",
+            "--slug",
+            slug,
+            "--step",
+            "implement:A",
+            "--run-id",
+            "wf_1",
+            "--tasks",
+            "1",
+        ],
+        "",
+    );
+}
+
+/// The three flows `plan request` leaves read, each reaching its state
+/// through the verbs.
+fn request_flows(root: &Path) {
+    for slug in [REQUEST_ADD_SLUG, REQUEST_OPEN_SLUG, REQUEST_RULED_SLUG] {
+        request_flow(root, slug);
+    }
+    for slug in [REQUEST_OPEN_SLUG, REQUEST_RULED_SLUG] {
+        setup(
+            root,
+            &[
+                "plan", "request", "add", "--slug", slug, "--task", "1", "--json", "-",
+            ],
+            REQUEST_PAYLOAD,
+        );
+    }
+    setup(
+        root,
+        &[
+            "plan",
+            "request",
+            "rule",
+            "Q1",
+            "--slug",
+            REQUEST_RULED_SLUG,
+            "--ndjson",
+            "-",
+        ],
+        r#"{"item":"p1","ruling":"granted","reason":"no other row edits it"}"#,
+    );
+}
+
 fn plan_flows(root: &Path) {
+    request_flows(root);
     open_plan(root, PLAN_SLUG);
     open_plan(root, READY_SLUG);
     open_plan(root, APPROVED_SLUG);

@@ -30,7 +30,7 @@ Answer it through this loop only when all of these hold:
 - its `items` is one task id, the `<n>` the message named, and that task is a row of the running milestone;
 - its `choice` is `single` or `multi`, with two to four `options`.
 
-Otherwise do not ask. A question of another ledger or flow belongs to the carrier that reads that ledger; a `text` question, or one with more than four options, does not fit the picker. Leave the record as it is, so its worker parks when its wait ends, and name `<qid>`, the task and the reason under `needs_human` in the milestone report ([drain.md](drain.md), step 11).
+Otherwise do not ask. A question of another ledger or flow belongs to the carrier that reads that ledger; a `text` question, or one with more than four options, does not fit the picker. Leave the record as it is, so its worker parks when its wait ends, and name `<qid>`, the task and the reason under `needs_human` in the milestone report ([report.md](report.md)).
 
 A record that is already `handled` was answered elsewhere, such as in glimpse. Do not ask it again and do not relay it, since `inputs answer` refuses a handled question: go to step 3's decision binding with that answer, read by `tomlctl inputs list --kind answer --ledger plan --flow <slug> --where answers=<qid>`.
 

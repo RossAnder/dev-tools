@@ -61,6 +61,7 @@ mod plan_open;
 mod plan_probes;
 mod plan_records;
 mod plan_refusals;
+mod plan_request;
 mod plan_run_records;
 mod plan_stage;
 mod plan_view;

@@ -33,6 +33,13 @@ pub(crate) enum PlanOp {
         op: PlanHandoverOp,
     },
 
+    /// Post, rule, list or mark applied a worker's mid-run request for files
+    /// or a spec correction.
+    Request {
+        #[command(subcommand)]
+        op: PlanRequestOp,
+    },
+
     /// Record a step's run starting, finishing or being skipped.
     Run {
         #[command(subcommand)]
@@ -104,6 +111,21 @@ pub(crate) enum PlanHandoverOp {
     Set(PlanHandoverSetArgs),
     /// Mark a handover done.
     Done(PlanHandoverDoneArgs),
+}
+
+/// `plan request` leaves.
+#[derive(Subcommand)]
+pub(crate) enum PlanRequestOp {
+    /// Post a running task's one request of its run: files it needs and
+    /// corrections to its spec. Rules what a command can settle at once and
+    /// leaves the rest open for `plan request rule`.
+    Add(PlanRequestAddArgs),
+    /// Rule a request's open items, all or nothing.
+    Rule(PlanRequestRuleArgs),
+    /// Every request, one row each, newest last.
+    List(PlanRequestListArgs),
+    /// Mark ruled requests applied once their grants are in the task store.
+    Applied(PlanRequestAppliedArgs),
 }
 
 /// `plan run` leaves.
@@ -217,6 +239,60 @@ pub(crate) struct PlanHandoverSetArgs {
 pub(crate) struct PlanHandoverDoneArgs {
     #[arg(value_name = "ID")]
     pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRequestAddArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "task",
+        value_name = "N",
+        help = "The requesting task, dispatched by the milestone's open run"
+    )]
+    pub(crate) task: u32,
+    #[arg(
+        long = "json",
+        value_name = "SRC",
+        help = "{\"paths\":[{\"path\",\"why\"}],\"changes\":[{\"field\",\"what\",\"evidence\"}]}; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
+    )]
+    pub(crate) json: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRequestRuleArgs {
+    #[arg(value_name = "ID")]
+    pub(crate) id: String,
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "ndjson",
+        value_name = "SRC",
+        help = "One {\"item\",\"ruling\",\"reason\"} row per item, ruling granted|denied|needs-user: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) ndjson: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRequestListArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanRequestAppliedArgs {
+    #[arg(value_name = "ID", required = true, value_delimiter = ',')]
+    pub(crate) ids: Vec<String>,
     #[command(flatten)]
     pub(crate) target: PlanTarget,
     #[command(flatten)]

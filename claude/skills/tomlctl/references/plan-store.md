@@ -11,7 +11,7 @@ that write it and the check classes are [plan.md](plan.md); the probe verdicts a
 ## `plan.toml` store shape
 
 ```toml
-schema_version = 4
+schema_version = 5
 last_updated = 2026-11-05
 
 [binding]
@@ -134,13 +134,38 @@ task = 0
 text = "milestone B failed after round 2: cargo test — view::plan::tests::sections"
 path = ""
 needs_person = true
+
+[[request]]
+id = "Q1"
+run_id = "wf_2"
+milestone = "B"
+task = 3
+at = 2026-11-12T10:10:00Z
+status = "ruled"
+ruled_at = 2026-11-12T10:12:00Z
+applied = false
+
+[[request.paths]]
+path = "src/a.rs"
+why = "The caller lives here."
+ruling = "granted"
+by = "orchestrator"
+reason = "No other remaining row holds it."
+
+[[request.changes]]
+field = "accept"
+what = "Check the new flag too."
+evidence = "tests/a.rs"
+ruling = "denied"
+by = "orchestrator"
+reason = "The accept check is the plan's to change."
 ```
 
 Keys are written in that order, each root key but `schema_version` omitted while empty. Every write
 restamps `last_updated`, re-emits the store from this shape, so an unknown key is dropped, and
 LF-normalises free text. A `schema_version` newer than the binary's is refused rather than read.
 
-The stamp is `4` while any decision carries a `class`, otherwise `3` while the store holds an
+The stamp is `5` while the store holds a `[[request]]`, otherwise `4` while any decision carries a `class`, otherwise `3` while the store holds an
 `[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `2` while it holds none of those. A binary that
 predates those keys or arrays therefore refuses such a store rather than rewriting it without them,
 and a store that holds none reads and writes as it did before they existed. Removing what raised the
@@ -150,7 +175,7 @@ stamp returns it to the lower value. An absent `schema_version` reads as `2`.
 flow-resolver step before then.
 
 `[id_high_water]` is the highest number each prefix has been assigned. Decisions mint `D<n>`, contracts
-`C<n>` and handovers `H<n>`. Records are permanent and no plan verb removes one: a decision is retired
+`C<n>`, handovers `H<n>` and requests `Q<n>`. Records are permanent and no plan verb removes one: a decision is retired
 by `vetoed` and a handover by `done`. The mark matters after a `--raw-store` repair deletes a row, whose
 id is then never minted again.
 
@@ -257,4 +282,20 @@ invocation.
 | `at` | When the report was written. Required. |
 | `milestone` | The milestone the invocation ran. |
 | `why` | Why the invocation stopped. |
-| `entries` | Each `{kind, task, text, path, needs_person}`. `kind` is `parked`, `failed`, `handover`, `no-worker`, `withheld`, `gate`, `audit`, `out-of-lane`, `store-change` or `reconcile`; `task` is `0` when the entry names none; `path` is a repo-relative path or `""`; `needs_person` is `false` for a line that only informs and reads as `true` when absent. |
+| `entries` | Each `{kind, task, text, path, needs_person}`. `kind` is `parked`, `failed`, `handover`, `no-worker`, `withheld`, `gate`, `audit`, `out-of-lane`, `store-change`, `reconcile` or `request`; `task` is `0` when the entry names none; `path` is a repo-relative path or `""`; `needs_person` is `false` for a line that only informs and reads as `true` when absent. |
+
+`[[request]]` is one worker's one request of one run, written by `plan request add` and ruled by `plan request rule`; the verbs are [plan-request.md](plan-request.md). Each path or change item carries its own ruling, so a request can be granted in part.
+
+| `[[request]]` key | Meaning |
+|---|---|
+| `id` | `Q<n>`, minted under the lock. |
+| `run_id` / `milestone` | The open `implement:<milestone>` run that dispatched the task. |
+| `task` | The requesting task id. |
+| `at` | When the request was posted. |
+| `status` | `open` while any item awaits a ruling, otherwise `ruled`. |
+| `ruled_at` | When the last item was ruled; absent while open. |
+| `applied` | Set by `plan request applied` once the drain wrote the granted items to the task store. |
+| `paths` | Each `{path, why, ruling, by, reason}`: a file the task needs and does not hold. |
+| `changes` | Each `{field, what, evidence, ruling, by, reason}`: a correction to the task's own `accept`, `means`, `constraints`, `detail` or `files`. |
+
+`ruling` is `open`, `granted`, `denied` or `needs-user`; `by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and absent while open.

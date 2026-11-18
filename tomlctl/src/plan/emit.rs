@@ -229,6 +229,23 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
             skipped.push(json!({ "task": row.id, "accept": index, "reason": reason }));
         }
     }
+    let files: Vec<String> = tasks
+        .items
+        .iter()
+        .filter(|row| row.checkpoint == milestone)
+        .flat_map(|row| row.files.iter().cloned())
+        .collect();
+    let root = repo_or_cwd_root()?;
+    let generators = crate::generated::load(&root)
+        .map_err(|e| refuse(format!("{}: {e}", crate::generated::CONFIG)))?;
+    for generator in crate::generated::touched(&generators, &files) {
+        if listed.insert(generator.check.as_str()) {
+            commands.push(json!({
+                "command": generator.check,
+                "source": format!("generated:{}", generator.id),
+            }));
+        }
+    }
     let mut out = json!({ "commands": commands, "skipped": skipped });
     if let Some(spec) = milestone_spec.filter(|spec| !spec.ui_states.is_empty()) {
         out["visual"] = json!({

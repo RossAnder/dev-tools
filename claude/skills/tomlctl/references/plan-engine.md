@@ -173,7 +173,7 @@ Prints `{commands, skipped}`, and `{commands, skipped, visual}` when the milesto
 
 | Key | Holds |
 |---|---|
-| `commands` | The milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`). |
+| `commands` | The milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`), then the `check` of each generator in [`.claude/generated.toml`](generated.md) with an input held by any row of the milestone (`source = "generated:<id>"`), skipping a command already listed. A malformed generator config refuses the verb. |
 | `skipped` | Rows of `task`, `accept` and `reason`: `duplicate` for a command already listed, `covered_by <command>` for a `covered` entry. |
 | `visual` | Present only when the milestone has `ui_states`. `states` holds the milestone's `ui_states`, `controls` its `ui_controls` (`[]` when none), and `looks` each `run_by = "look"` entry of its rows as `{task, accept, behaviour, states}`, in row then entry order, `accept` being the entry's index. A look entry never enters `commands` or `skipped`. |
 
@@ -223,7 +223,7 @@ Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
 |---|---|
 | `clean` | `true` only when `out_of_lane` and `store_writes` are empty and `digest` is `matched`. |
 | `run_id` | The run's id, for the report. |
-| `out_of_lane` | `{path, rows}` per uncommitted path, as `plan drift --uncommitted` lists them, that is in no lane: not in the `files` of a row the run dispatched or of a row a worker started (`agent` `plan-worker-lite` or `plan-worker-deep`, empty `commit`), not `.claude/backlog.toml`, `.claude/inputs.toml` or a review store a `[[finding_links]]` entry names, nor any of their `.sha256`. `rows` are the ids of the rows whose `files` hold it, empty when none does. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. |
+| `out_of_lane` | `{path, rows}` per uncommitted path, as `plan drift --uncommitted` lists them, that is in no lane: not in the `files` of a row the run dispatched or of a row a worker started (`agent` `plan-worker-lite` or `plan-worker-deep`, empty `commit`), not `.claude/backlog.toml`, `.claude/inputs.toml` or a review store a `[[finding_links]]` entry names, nor any of their `.sha256`. `rows` are the ids of the rows whose `files` hold it, empty when none does. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A path ruled `granted` on an unapplied request of a row in the lane counts as in lane too, since the drain has not yet written the grant into that row's `files`; once the request is `applied` the row's `files` carry it. |
 | `store_writes` | `{source: "trail", ref, task, field, old, new, actor, at}` per `[[changes]]` row written in the run's window, where `task` is the id of the row carrying `ref`, `null` for a milestone or a removed row. Then `{source: "digest", section}` per section of the store whose digest moved since it was taken: `rows`, `specs`, `milestones` (with the checkpoints), `changes` (the rows written before the window) or `rest`. |
 | `digest` | `matched`, `changed`, or `unrecorded` for a run whose `plan run start` took no digest, which leaves only the trail to answer. |
 

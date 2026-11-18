@@ -455,7 +455,9 @@ fn documented_plan_classes_match_the_source() {
     let Some(repo_root) = repo_root("documented_plan_classes_match_the_source") else {
         return;
     };
-    let bodies = source_bodies(&plan_dir());
+    // `check`'s child modules build classes too, so they count as emitted.
+    let mut bodies = source_bodies(&plan_dir());
+    bodies.extend(source_bodies(&plan_dir().join("check")));
     let text = fs::read_to_string(repo_root.join(PLAN_DOCUMENTED))
         .unwrap_or_else(|err| panic!("{PLAN_DOCUMENTED}: {err}"));
 

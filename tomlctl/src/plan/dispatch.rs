@@ -5,10 +5,12 @@
 use anyhow::Result;
 
 use super::{
-    approve, check, drift, emit, milestone, open, probes, records, run_gate, run_notes, run_report,
-    stage, view,
+    approve, check, drift, emit, milestone, open, probes, records, request, run_gate, run_notes,
+    run_report, stage, view,
 };
-use crate::cli::{PlanHandoverOp, PlanMilestoneOp, PlanOp, PlanRunAbandonArgs, PlanRunOp};
+use crate::cli::{
+    PlanHandoverOp, PlanMilestoneOp, PlanOp, PlanRequestOp, PlanRunAbandonArgs, PlanRunOp,
+};
 
 pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
     match op {
@@ -18,6 +20,12 @@ pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
         PlanOp::Handover { op } => match op {
             PlanHandoverOp::Set(args) => records::handover_set(args),
             PlanHandoverOp::Done(args) => records::handover_done(args),
+        },
+        PlanOp::Request { op } => match op {
+            PlanRequestOp::Add(args) => request::add(args),
+            PlanRequestOp::Rule(args) => request::rule(args),
+            PlanRequestOp::List(args) => request::list(args),
+            PlanRequestOp::Applied(args) => request::applied(args),
         },
         PlanOp::Run { op } => match op {
             PlanRunOp::Start(args) => records::run_start(args),

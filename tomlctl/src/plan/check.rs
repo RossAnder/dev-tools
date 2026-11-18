@@ -2,9 +2,10 @@
 //! can raise, which read `plan.toml`, the task store's side tables, `brief.md`
 //! and the `design/` documents.
 //!
-//! Warnings are `plan/milestone-no-gate`, `plan/milestone-order-unqualified`,
-//! `plan/probe-absent`, `plan/ui-accept-structural` and
-//! `plan/ui-milestone-no-states`, and `plan/file-only-chain` and `plan/milestone-width`
+//! Warnings are `plan/file-case-collision`, `plan/generated-output-unheld`,
+//! `plan/milestone-no-gate`,
+//! `plan/milestone-order-unqualified`, `plan/probe-absent`,
+//! `plan/ui-accept-structural` and `plan/ui-milestone-no-states`, and `plan/file-only-chain` and `plan/milestone-width`
 //! are info; every other class raised here is an error.
 
 use std::collections::BTreeSet;
@@ -34,6 +35,9 @@ use crate::tasks::schema::{
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
 use crate::ui_capture::{self, CONFIG as UI_CAPTURE_CONFIG};
+
+mod case_collision;
+mod generated_outputs;
 
 const DESIGN_DIR: &str = "design";
 pub(crate) const REQUIRED_SECTIONS: [&str; 4] =
@@ -185,6 +189,8 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     found.extend(milestone_findings(&tasks));
     found.extend(ui_findings(&tasks));
     found.extend(ui_scope_findings(&tasks, &root));
+    found.extend(generated_outputs::generated_output_findings(&tasks, &root));
+    found.extend(case_collision::case_collision_findings(&tasks, &root));
     if plan.approvals.is_empty() {
         found.extend(file_chain_findings(&tasks, &plan));
         found.extend(milestone_width_findings(&tasks));
