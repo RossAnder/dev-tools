@@ -1,0 +1,611 @@
+schema_version = 4
+last_updated = 2026-11-18
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+C = 6
+D = 21
+
+[[decision]]
+id = "D1"
+decision = "Make room for cells added after the proposal: --propose takes a reserve the carrier passes (its context-free correctness cells plus one cell per follow-up wave the depth allows), repeat passes fill only the ceiling minus that reserve, and anything beyond the reserve needs the user's override"
+why = "Enforcing the ceiling on append would otherwise refuse the carrier's context-free cells on most standard runs and every follow-up wave, since the proposal fills the budget"
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "claude/commands/review-v2.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "7",
+    "18",
+]
+rejected = []
+evidence = "cells.rs:1064-1069 budget = ceiling - planned; review-v2.md:49-56 adds cf cells to the wave-1 file after the proposal; U5 filled all 16 cells in wave 1 (B-f00449a1); notes/ceiling-append.md"
+if_false = "Without a reserve the engine cuts repeats to fit cf cells, and every follow-up wave stops to ask you for an override"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "At quick, drop the escalation probe cell: escalations go to triage, where the user picks fix (to apply's settle route) or a backlog capture"
+why = "quick's ceiling (3 to 6) is always full after wave 1, so the probe would need an override on every quick run"
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/review-v2-engine/references/compose.md",
+    "claude/skills/review-v2-engine/SKILL.md",
+    "18",
+]
+rejected = []
+evidence = "compose.md:192 quick escalation probe counts against the ceiling; SKILL.md:231 promises it one Opus cell; notes/ceiling-append.md"
+if_false = "Keep the probe and either reserve one cell for it at quick or ask for an override each quick run"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "An escalation picked for fixing is minted as a blocked (evidence) finding and verified by one verifier dispatch before apply: the verifier may refute it, confirm it blocked (it goes to a settle task) or unblock it with a fix sketch (it goes straight to a fix task)"
+why = "Same path as convert; a verifier already challenges blocked findings and can skip the settle round when the fix is writable"
+provenance = "user-confirmed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/schedule.rs",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "10",
+    "19",
+]
+rejected = []
+evidence = "schedule.rs:409-435 settle needs status open; triage.rs:1048-1076 convert mints unverified then a one-row verifier dispatch; review-verifier.md Unblock rule; notes/triage-to-settle.md"
+if_false = "Mint it open with an orchestrator verdict and send it straight to settle: never refuted before apply, but no shortcut to a direct fix"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D4"
+decision = "Persist each wave's escalations on their cells ({n, wave, text, status, finding}, id <cell>:<n>, per D12 and C3) when the wave is settled, so triage can dispose of them after a session break and the report lists them"
+why = "Escalations live only in the Workflow index today, so a session break between the wave and triage loses them"
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/skills/review-v2-engine/references/compose.md",
+    "tomlctl/src/review/store.rs",
+    "3",
+    "9",
+    "18",
+]
+rejected = []
+evidence = "review-v2.js:367 escalations only in the index, cut to 300 chars; triage-and-close.md:201 unhandled ones drop with the run; notes/triage-to-settle.md"
+if_false = "The fix disposition takes the escalation text the orchestrator stages from the index in the same session; a break between wave and triage loses them as today"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D5"
+decision = "Judgement slices keep file kinds apart: lockfiles leave judgement slices entirely (ripple covers them, and security when dependency-change fires); prose (non-executable files such as agent and skill markdown) gets its own slices where correctness and doc-drift still run; test-gaps holds changed code plus its tests; other judgement lenses take code"
+why = "U3's correctness+security+test-gaps cells mixed Cargo.lock, agent prose and tests; the orchestrator's rewrite kept correctness on prose but in separate cells"
+provenance = "user-confirmed"
+door = "two-way"
+class = "structure"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "4",
+    "5",
+    "6",
+]
+rejected = []
+evidence = "vocabulary.toml:703 [routing] executable globs exclude .md; notes/replay-fixtures.md U3 map C22/C23 correctness+doc-drift on prose; notes/propose-shaping.md"
+if_false = "Prose would either get no correctness read (a recall loss in harness repos like this one) or stay mixed with code"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D6"
+decision = "Commit the U5 replay fixture with anonymised paths: path segments renamed deterministically, keeping directory structure, extensions and every name the routing and signal globs read (tests/, src/, *.test.ts, lockfile names), so slicing behaves as on the real tree; the U3 fixture (this repo) is committed verbatim"
+why = "Exact path names make the replay faithful; the fixture holds paths and signal evidence, no file contents"
+provenance = "user-stated"
+door = "one-way"
+class = "compromise"
+binds = [
+    "tomlctl/tests/review_cells.rs",
+    "16",
+]
+rejected = []
+evidence = "notes/replay-fixtures.md: replay needs the full tracked list at head (compaction checks tracked siblings); U5 store lives in reportdesignkit"
+if_false = "Anonymise the paths (keeping structure and extensions), or keep the U5 replay out of the repo as a local-only ignored test"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision]]
+id = "D7"
+decision = "Adopt the structure challenge's phased admission in review plan --propose: phase J admits judgement lenses and check cells in tier order counting first-pass cells only, phase M admits mechanical lenses into a pool of max(1, ceil(ceiling/4)) cells with one merge ladder (capped adjacent, capped any, uncapped) before any cut, phase R adds repeats from the room left after the reserve"
+why = "Floor ripple is admitted before every signal-tier judgement lens and committed lens cells are never re-merged, so the four new budget rules cannot be met inside today's single greedy loop"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "7",
+]
+rejected = []
+evidence = "Read cells.rs:433-489 (tier sort), 1092-1157 (loop, bundle at 1149, stopped latch), 770-811 (FloorFit counts repeats); notes/structure-challenge.md section 1"
+if_false = "Each rule would be written into three admission paths (FloorFit, the inline non-floor test, add_check_cells) and the U5 case would still cut security while ripple holds several cells"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "Split tomlctl/src/review/cells.rs into a cells/ module (propose admission, slicing, append and accounting) as a foundational task before the proposal and ceiling tasks"
+why = "Most of this plan's code changes land in cells.rs; split files let the slicing, admission and append tasks run in parallel"
+provenance = "agent-assumed"
+door = "two-way"
+class = "structure"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "1",
+]
+rejected = []
+evidence = "User stance in memory feedback_parallel_decomposition: split big files into smaller ones to maximise parallelism and propose split-the-big-file foundational tasks; cells.rs is 1598 lines"
+if_false = "The proposal, slicing and ceiling tasks serialise on one file"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D9"
+decision = "Judgement slices carry a file kind (code, test, lockfile, other) from the catalogue [routing] globs, with a new lockfiles key; merge_step refuses cross-kind pairs for judgement lenses, the whole-scope collapse applies only to a single-kind scope, and compact_tree compacts against same-kind files only"
+why = "Kinds mix in three places today (grouping, merging, the whole-scope collapse), so fixing the grouping key alone leaves the other two"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/catalogue.rs",
+    "tomlctl/src/review/fields.rs",
+    "claude/skills/review-v2-lenses/vocabulary.toml",
+    "4",
+    "6",
+]
+rejected = []
+evidence = "cells.rs:555-568 compact_tree, 715-738 merge_step, 802-808 collapse; catalogue.rs:2123 routing parser accepts only executable and tests; fields.rs:1363 RoutingGlobs; notes/structure-challenge.md section 2"
+if_false = "Correctness cells keep picking up lockfiles or prose through merges or the collapse even after grouping changes"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D10"
+decision = "Add two slice rules to the catalogue: signal-evidence (security: the roots and evidence files of the lens's matched signals, falling back to per-subsystem when none carry files) and changed-with-tests (test-gaps: code-kind scope files plus tracked test-kind files under the same subsystem root)"
+why = "Catalogue-driven rules keep propose generic rather than special-casing lens ids"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/catalogue.rs",
+    "claude/skills/review-v2-lenses/lenses/security.md",
+    "claude/skills/review-v2-lenses/lenses/test-gaps.md",
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "4",
+    "5",
+    "6",
+]
+rejected = []
+evidence = "catalogue.rs:76-81 SliceRule; cells.rs:310-313 Signals keeps evidence only for churn-hotspot; U3 and U5 trust-boundary signals carry evidence with roots = [] (notes/replay-fixtures.md); memory feedback_lean_generic_harness"
+if_false = "Hard-coded lens ids in cells.rs, which project lenses could not opt into"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D11"
+decision = "Enforce the ceiling inside append's minting closure, all or nothing: the run's non-executor cells from every wave plus this call's accepted non-executor rows against ceiling(run), skipped on a replay; one shared helper counts for propose and append; the override is --over-ceiling-file <path>, written in the same write as a computed run list ceiling_overrides = [{wave, ceiling, planned, added, reason}] only when the wave exceeds, shown after Waivers in the report and per run in review stats; plan-review-lead never passes it"
+why = "Choosing which cell to cut is the orchestrator's judgement, and only the attended orchestrator can ask the user"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/stats.rs",
+    "claude/agents/plan-review-lead.md",
+    "3",
+    "8",
+    "11",
+    "14",
+    "21",
+]
+rejected = []
+evidence = "cells.rs:1445-1531 append, 1484 replayed_wave; runs.rs:808 and fields.rs:585 the incomplete precedent; digest.rs:907; stats.rs:672; notes/ceiling-append.md"
+if_false = "A per-row refusal would let tomlctl pick which cells to drop"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D12"
+decision = "Store escalations on their cell as a computed escalations list ({n, wave, text, status, finding}), id <cell>:<n>, recorded by the orchestrator after each wave with a new review escalation record leaf; a review escalation fix leaf mints a defect or cleanup blocked on evidence into the escalating cell under that cell's first concern, sharing convert's mint path generalised in triage.rs, with its route set to the verifier"
+why = "Reuses convert's mint-into-a-sealed-cell path; filing under the escalating cell's concern keeps attribution with the cell that found it"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/store.rs",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "3",
+    "9",
+    "10",
+]
+rejected = []
+evidence = "triage.rs:969-1077 replacement_row and finish_row; add.rs:403 lens must be a concern of the cell; schedule.rs:409-435 settle rule; notes/triage-to-settle.md"
+if_false = "A new cell outside the ceiling per escalation, which needs an override each time"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D13"
+decision = "A multi-file cleanup is a cleanup row with old at the anchor plus instances and fix_files: the checker, verifier and audit bound the edit by file, target_file, instances and fix_files; the checker reads fix_files; a cleanup whose fix_files include executable code routes to the verifier; the Convert section names instances and fix_files. No verifier kind-downgrade"
+why = "The row shape already holds it; it was refuted only because every judge bounded the edit without fix_files"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/agents/review-checker.md",
+    "claude/agents/review-verifier.md",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/verdict.rs",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+    "3",
+    "12",
+    "19",
+    "20",
+]
+rejected = []
+evidence = "review-checker.md:31, review-verifier.md:41, fields.rs:550 FIX_FILES checker column N, fields.rs:1439 route ignores fix_files, verdict.rs:542 checker_may_refute on sweeper cells; notes/triage-to-settle.md"
+if_false = "New kind-change verdict semantics plus the cleanup fields a defect row lacks"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "review schedule adds a needs edge from a prose-target finding's task to another chosen finding's task when the prose finding's edit, old, fix, fix_sketch, summary or failure_scenario names that finding's executable edited path in full, or by a basename unique among the chosen findings' executable paths; edges collapse per task, skip folded pairs and cycle-closing edges (reported as dropped_deps), and the doc task's row carries a constraint naming the upstream task and file::symbol, telling the worker to check its edit against that code once it lands and return failed if the finding no longer holds"
+why = "Measured over eight stores, the full-path rule catches the F48/F62 conflict with one other harmless edge; ordering rather than merging keeps tasks small"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/schedule.rs",
+    "claude/skills/tomlctl/references/review-apply.md",
+    "13",
+]
+rejected = []
+evidence = "schedule.rs:449-597 edited, fold, needs only from depends_on; 0 of 512 findings carry depends_on; notes/schedule-interaction.md pair counts"
+if_false = "Basename-only mentions missed, or evidence and citation text added and the edge count triples"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D15"
+decision = "review stats classifies each audited row as confirmed defect, refuted defect, checked cleanup or other by finding kind, the deciding verifier's refuted call and its by, in one audit tally used by --by lens, run, probe and model, keeping the existing totals; a new --yield section gives per run and pooled per depth the first, repeat and context-free arms' cells, findings, verified, unique and applied, where unique means a same-run identity cluster (same_as and merged_into edges) with no first-pass member, cross-run repeats reported apart, and applied reads apply_state on the cluster root"
+why = "The orchestrator may merge a first-pass row into a repeat row, so credit by which row carries same_as would miscount"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/stats.rs",
+    "claude/skills/review-v2-engine/references/measurement.md",
+    "claude/skills/tomlctl/references/review.md",
+    "14",
+    "15",
+    "21",
+]
+rejected = []
+evidence = "stats.rs:365-376 deciding_verifier and overturn, 431-441 Tally, 541-588 by_model, 819 apply_state; digest.rs:417 audit_sample; compose.md:156; notes/stats-yield.md"
+if_false = "Classes would follow digest's latest-non-audit-verdict rule instead, which differs only on panels"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D16"
+decision = "When room is short, repeat passes are kept hotspot cells first, then floor cells; review plan --propose's over_cap lists sweeper cells the pool merged past 40 files"
+why = "Both hand rewrites kept a hotspot repeat and dropped the rest"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "claude/skills/review-v2-engine/references/compose.md",
+    "7",
+]
+rejected = []
+evidence = "notes/replay-fixtures.md: U5 kept one 9-file hotspot repeat (C61), U3 two repeats of seven"
+if_false = "Repeats keep cell order (floor first), so a large floor repeat can crowd out a hotspot one"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D17"
+decision = "The U3 and U5 replays are integration tests in tomlctl/tests that load a cell-free run record, the tracked path list and the --lens +intent-fidelity flag into the existing git sandbox, with catalogue = { builtin = <repo catalogue> } and no shas, and assert the success-criteria properties against the live catalogue rather than byte equality"
+why = "Byte equality breaks on the catalogue edits this plan makes; properties are what the success criteria state"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/tests/review_cells.rs",
+    "16",
+]
+rejected = []
+evidence = "notes/replay-fixtures.md: both replays exact from these inputs; tree_sha pin refuses on catalogue drift (catalogue.rs:2316)"
+if_false = "A frozen golden needs a vendored catalogue and is rewritten on every lens change"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D18"
+decision = "Build in parallel tracks: split cells.rs and the review_cells test harness first, then run the proposal rework, ceiling enforcement, escalations and triage fix, multi-file cleanup bounds, schedule ordering and the stats split and yield side by side, with each track's engine and agent prose, gated by the full tomlctl suite and the U3 and U5 replays"
+why = "The tracks share few files once cells.rs is split, and every success criterion lands under one gate"
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/review/schedule.rs",
+    "1",
+    "2",
+]
+evidence = "notes/structure-challenge.md section 3: the ceiling, triage, schedule and stats changes extend their modules in place"
+if_false = "Two milestones with a replan point between measurement and the rework"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Measure first: land the stats split and yield, read them over the eight stores, then build the proposal and triage changes in a second milestone"
+because = "the user chose the parallel build; the yield report reads the same stores after the rework as before it"
+
+[[decision.rejected]]
+option = "Prose-led: keep --propose and tell the orchestrator in compose.md how to rewrite each map"
+because = "the orchestrator would keep rewriting every map, which is the problem the plan removes"
+
+[[decision]]
+id = "D19"
+decision = "review plan --propose emits the context-free correctness cells itself under --context-free (one per code-kind correctness slice, merged down to at most max(1, ceil(ceiling/6)) cells, admitted right after the floor lenses), and takes --reserve <n> for the follow-up cells the depth allows; the carrier passes both and no longer appends its own context-free rows"
+why = "How many context-free cells there are depends on the proposal's correctness slices, so only the proposal can reserve room for them"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/cells.rs",
+    "claude/commands/review-v2.md",
+    "7",
+    "18",
+]
+rejected = []
+evidence = "review-v2.md:49-56 one context-free cell per correctness slice, outranking candidate cells and repeats; U3 had 2 and U5 3 context-free cells at a ceiling of 16 (notes/replay-fixtures.md)"
+if_false = "The carrier keeps adding context-free rows after the proposal and passes --reserve with a count it must predict"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D20"
+decision = "The plan family keeps plan-review-lead's quick and recheck escalation probe; the lead's proposal passes --reserve 1 in those modes so the probe fits without an override, which the lead never passes"
+why = "Plan-family findings never reach /apply-v2's settle route, and the lead cannot ask the user"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/agents/plan-review-lead.md",
+    "21",
+]
+rejected = []
+evidence = "plan-review-lead.md:109 quick and recheck collect escalations into one probe cell; schedule.rs:409 settle takes code and perf findings only"
+if_false = "Plan-family quick runs lose their escalations or need an override the lead cannot request"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D21"
+decision = "Lenses declare the file kinds they read with an optional kinds key (code, test, other; never lockfile); absent means code for a per-subsystem or per-file judgement lens; correctness reads code and other, doc-drift reads code, test and other, test-pruning reads tests; a lens with no scope file of its kinds is unmatched, like unmet paths, so accounting agrees"
+why = "The user confirmed that only correctness and doc-drift read prose and other judgement lenses read code; a catalogue key keeps that out of Rust"
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/review/catalogue.rs",
+    "claude/skills/review-v2-lenses/lenses/correctness.md",
+    "claude/skills/review-v2-lenses/lenses/test-pruning.md",
+    "claude/skills/review-v2-lenses/lenses/doc-drift.md",
+    "4",
+    "5",
+    "6",
+]
+rejected = []
+evidence = "D5 user-confirmed; lens frontmatter read: twenty judgement lenses are per-subsystem or per-file; doc-drift is per-file and must keep prose, so it declares every non-lockfile kind"
+if_false = "Every per-subsystem judgement lens gets prose slices too, adding cells the user did not ask for"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[contract]]
+id = "C1"
+kind = "interface"
+claim = "cells/mod.rs exposes planned_cells(store, run) counting the run's non-executor cells across every wave, and ceiling(run), used by both propose and append"
+check = "grep -q 'fn planned_cells' tomlctl/src/review/cells/mod.rs && grep -q 'fn ceiling' tomlctl/src/review/cells/mod.rs"
+tasks = [
+    1,
+    7,
+    8,
+]
+provides = "cells::planned_cells, cells::ceiling"
+consumes = "propose admission, append ceiling check"
+
+[[contract]]
+id = "C2"
+kind = "interface"
+claim = "RoutingGlobs::kind(path) returns FileKind (code, test, lockfile, other) in priority lockfile, test, code, other, and a lens Entry carries kinds"
+check = "grep -q 'fn kind(&self' tomlctl/src/review/fields.rs && grep -q 'Lockfile' tomlctl/src/review/catalogue.rs"
+tasks = [
+    4,
+    6,
+    13,
+]
+provides = "fields::RoutingGlobs::kind, catalogue::FileKind, Entry.kinds"
+consumes = "kind-aware slicing, schedule's executable test"
+
+[[contract]]
+id = "C3"
+kind = "interface"
+claim = "A cell's escalations are [{n, wave, text, status, finding}] with status open or fixed, and an escalation's id is <cell>:<n>"
+check = "grep -q 'escalations' tomlctl/src/review/store.rs && grep -q 'escalations' tomlctl/src/review/escalation.rs"
+tasks = [
+    3,
+    9,
+    10,
+    11,
+    18,
+    19,
+    22,
+]
+provides = "Cell.escalations, escalation ids"
+consumes = "review escalation fix, the report, triage and compose prose, review.md"
+
+[[contract]]
+id = "C4"
+kind = "interface"
+claim = "A run's ceiling_overrides is [{wave, ceiling, planned, added, reason}], written only by review plan --ndjson --over-ceiling-file when the wave exceeds the ceiling"
+check = "grep -q 'ceiling_overrides' tomlctl/src/review/fields.rs && grep -q 'ceiling_overrides' tomlctl/src/review/cells/append.rs"
+tasks = [
+    3,
+    8,
+    11,
+    14,
+    22,
+]
+provides = "Run.ceiling_overrides"
+consumes = "the report, review stats by_run, review.md"
+
+[[contract]]
+id = "C5"
+kind = "interface"
+claim = "review plan --propose takes --context-free and --reserve <N>, and its summary carries reserve, mechanical_pool and context_free"
+check = """grep -q 'long = "context-free"' tomlctl/src/review/cells/args.rs && grep -q 'mechanical_pool' tomlctl/src/review/cells/propose.rs"""
+tasks = [
+    7,
+    16,
+    18,
+    21,
+    22,
+]
+provides = "propose flags and summary keys"
+consumes = "the replays, compose and the carrier, plan-review-lead, review.md"
+
+[[contract]]
+id = "C6"
+kind = "interface"
+claim = "tomlctl capabilities lists review_propose_kinds, review_plan_ceiling, review_escalations and review_stats_yield"
+check = "grep -q 'review_plan_ceiling' tomlctl/src/cli/types/mod.rs && grep -q 'review_escalations' tomlctl/src/cli/types/mod.rs"
+tasks = [
+    17,
+    18,
+]
+provides = "feature names"
+consumes = "the engine's pre-flight list"
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = '\dfea4c1b7f2bf345e860a62acba749cc144012884f54d2372c3f5101956f8621'
+run_id = "wf_3d495b99-4b1"
+session = "9445818a-6d74-40fd-b2c2-0a6074a9af2d"
+started = 2026-11-18T18:26:49Z
+finished = 2026-11-18T18:35:30Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "9445818a-6d74-40fd-b2c2-0a6074a9af2d"
+started = 2026-11-18T18:35:55Z
+finished = 2026-11-18T18:42:36Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "9445818a-6d74-40fd-b2c2-0a6074a9af2d"
+started = 2026-11-18T19:02:10Z
+finished = 2026-11-18T19:02:10Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = '\bc656f0f5032fd8b85583e70c7ea1f7572c9358793387a5940b5798a281e0090'
+run_id = "wf_8fe7d596-0e8"
+session = "9445818a-6d74-40fd-b2c2-0a6074a9af2d"
+started = 2026-11-18T19:16:04Z
+finished = 2026-11-18T19:23:01Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_7697aa86-6cd"
+session = "9445818a-6d74-40fd-b2c2-0a6074a9af2d"
+started = 2026-11-18T19:25:32Z
+finished = 2026-11-18T20:14:19Z
+skip_reason = ""
+outcome = "ok"
