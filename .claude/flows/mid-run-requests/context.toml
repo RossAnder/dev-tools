@@ -1,9 +1,10 @@
 slug = "mid-run-requests"
 plan_path = "docs/flows/mid-run-requests/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-18
 updated = 2026-11-18
 scope = []
+branch = "main"
 
 [tasks]
 total = 0
