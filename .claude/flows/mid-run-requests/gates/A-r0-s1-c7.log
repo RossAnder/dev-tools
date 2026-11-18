@@ -1,0 +1,8 @@
+  Installing glimpse v0.1.0 (C:\Users\rossa\dev\dev-tools\glimpse)
+    Updating crates.io index
+    Finished `release` profile [optimized] target(s) in 3.17s
+   Replacing C:\Users\rossa\.cargo\bin\glimpse.exe
+error: failed to move `C:\Users\rossa\.cargo\bin\cargo-installi3E88B\glimpse.exe` to `C:\Users\rossa\.cargo\bin\glimpse.exe`
+
+Caused by:
+  Access is denied. (os error 5)

@@ -503,6 +503,66 @@ finished = 2026-11-18T14:01:22Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "4a3bf84c775d6c950722b35ebd308ef84e7a0de8f0a78213d7b4bed905f46bb1"
+run_id = "wf_dc30a361-19d"
+session = "4df4562d-35a8-4a4d-bbd3-f1a65f0b74c4"
+started = 2026-11-18T14:07:53Z
+finished = 2026-11-18T14:31:18Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    20,
+]
+digest_at = 2026-11-18T14:07:21Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "fa850cf5ce8369b0"
+rest = "949355a51a25d57e"
+rows = "6a68d404b129cb93"
+specs = "8ffd867b7819b4f1"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "f7a98699da52f7f3dc33284655cfa1ebd1e3d53af6e1cfa0cd3a28ee9b7bbb68"
+run_id = "wf_d372a2b0-b84"
+session = "4df4562d-35a8-4a4d-bbd3-f1a65f0b74c4"
+started = 2026-11-18T14:32:27Z
+finished = 2026-11-18T14:33:01Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    13,
+    21,
+]
+digest_at = 2026-11-18T14:32:14Z
+
+[run.store_digest]
+changes = "93731500f0f4e8dd"
+milestones = "fa850cf5ce8369b0"
+rest = "949355a51a25d57e"
+rows = "7352feea079f8e49"
+specs = "1ef27f3875ff5f7e"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -511,3 +571,582 @@ when = "After milestone A's commit, before the first /implement-v2 run that post
 done_when = "glimpse shows the mid-run-requests flow without a parse error."
 source_task = 2
 done = false
+
+[[attempt]]
+task = 1
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "generated module added and declared in lib.rs"
+block = "present"
+files_touched = [
+    "tomlctl/src/generated.rs",
+    "tomlctl/src/lib.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --lib"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q '^mod generated;' tomlctl/src/lib.rs && grep -q 'pub(crate) fn outputs_of' tomlctl/src/generated.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = '''test "$(grep -c '#\[test\]' tomlctl/src/generated.rs)" -ge 3'''
+result = "pass"
+
+[[attempt]]
+task = 2
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan.toml holds [[request]] rows with per-item rulings, mints Q ids, stamps schema_version 5 only when a request is held, and ReportKind gains `request`."
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The vocabulary! macro now names the trait as `$crate::plan::schema::Vocabulary` in its impl, and `Table` became pub(super) alongside the read and write helpers"
+why = "A macro_rules body resolves an unqualified trait path at the call site, so schema_request.rs would otherwise have to import Vocabulary just for the macro; the record helpers all take `&Table`"
+means = "widen the visibility of exactly what schema_request.rs uses"
+
+[[attempt.deviations]]
+what = 'An absent `by` on a path or change item reads as unset (""); every other vocabulary key, `ruling` and `field` included, is refused when absent'
+why = """"" is a legal `by` value meaning nobody has ruled yet, the same way a handover's absent reason reads as none; a present unknown value is still refused naming the vocabulary"""
+means = ""
+
+[[attempt.deviations]]
+what = "The `paths` and `changes` arrays and `ruled_at` are left out of the TOML while empty or unset"
+why = "Follows the run and handover records, which drop empty optional keys, so a change-only request writes no `paths = []`; the round trip is the same either way"
+means = ""
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 tomlctl/src/plan/schema_request.rs tomlctl/src/plan/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q 'struct Request' tomlctl/src/plan/schema_request.rs && grep -q 'Request => "request"' tomlctl/src/plan/schema.rs && grep -q 'mod schema_request' tomlctl/src/plan/mod.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = '''grep -A1 '#\[test\]' tomlctl/src/plan/schema.rs tomlctl/src/plan/schema_request.rs | grep -q 'fn [a-z_0-9]*request''''
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::schema/)'"
+result = "not-run"
+
+[[attempt]]
+task = 3
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "holders module with fold_key, forbidden and the D6 holder test, declared in plan/mod.rs"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/holders.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The needs closure up and down is a local walk over needs and coupling edges in holders.rs, not Graph::build with closure_up and closure_down"
+why = "crate::tasks::graph is a private module (`mod graph;` in tomlctl/src/tasks/mod.rs, which re-exports only cycle_within and layered_kahn), so plan/ cannot reach Graph without editing tasks/mod.rs, which this task does not hold. plan/emit.rs drop_dependents already walks the same needs and coupling edges locally for the same reason. Alternatives weighed: fail with needs_files naming tasks/mod.rs (costs a replan round for a one-line re-export), or the local walk (same edges, same result on an acyclic store; a dangling edge is skipped and a cycle ends the walk instead of an error, which tasks check reports anyway)."
+means = "detail: Graph::build over crate::tasks nodes, closure_up and closure_down, as tasks/closure.rs builds it"
+
+[[attempt.deviations]]
+what = "holder() refuses a requester absent from the task store with a Validation-tagged error; forbidden() also treats a drive-letter prefix as absolute"
+why = "The detail does not say what an unknown requester returns; a refusal matches how the task verbs report a missing id. Windows paths such as C:/x fold to a drive prefix that normal_path keeps."
+means = ""
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/holders.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'pub(crate) fn fold_key' tomlctl/src/plan/holders.rs && grep -q 'mod holders' tomlctl/src/plan/mod.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = '''test "$(grep -c '#\[test\]' tomlctl/src/plan/holders.rs)" -ge 5'''
+result = "pass"
+
+[[attempt]]
+task = 4
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "`plan request add|rule|list|applied` added in tomlctl/src/plan/request.rs, declared and dispatched"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/request.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/plan/mod.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "add and rule read tasks.toml once before taking the plan.toml write lock; every ruling, the open-run check and the one-request-per-run check run inside the lock"
+why = "Reading the task store under the plan lock would nest a tasks.toml lock inside the plan.toml lock. `plan run notes` reads tasks.toml before its plan mutate for the same reason. The race the constraint guards, two posts both granted one path, is between requests in plan.toml, and the lock covers it. A row status a worker changes between the read and the lock can at worst make the holder test count a row that has just finished."
+means = "detail: inside the plan.toml write lock"
+
+[[attempt.deviations]]
+what = "add also refuses a payload that names one path twice by folded key, a blank path, why, what or evidence, and a change field outside the request vocabulary; rule also refuses an item named twice in one batch; applied refuses an empty id list"
+why = "The detail does not cover these cases. Refusing them is easy to undo and nothing a user would see changes."
+means = "detail: add, rule and applied refusal list"
+
+[[attempt.deviations]]
+what = "add stores each path normalised (backslashes to slashes, leading ./ dropped, case kept); list prints at and ruled_at as RFC 3339 strings, with ruled_at empty while unset"
+why = "The drain copies granted paths into a row's files, and the task store holds paths in the same normal form. An empty string keeps `--where ruled_at=` usable."
+means = "detail: list row fields"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "cargo clippy --all-targets (isolated copy of tomlctl in the scratchpad, own target dir, sibling's missing module removed)"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/request.rs tomlctl/src/plan/dispatch.rs tomlctl/src/cli/types/plan.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --lib -- plan::request (isolated copy)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --lib -- cli::dispatch::tests (isolated copy)"
+result = "fail"
+
+[[attempt.checks]]
+command = "grep -q 'PlanRequestOp' tomlctl/src/cli/types/plan.rs && grep -q 'PlanOp::Request' tomlctl/src/plan/dispatch.rs && test -f tomlctl/src/plan/request.rs"
+result = "pass"
+
+[[attempt]]
+task = 5
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan request integration tests and output-options cases added and passing"
+block = "present"
+files_touched = [
+    "tomlctl/tests/plan_request.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q '^mod plan_request;' tomlctl/tests/it.rs && test -f tomlctl/tests/plan_request.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_request::/)'"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^output_options::/)'"
+result = "pass"
+
+[[attempt]]
+task = 6
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "tomlctl version set to 0.25.0 in its manifest and the root lockfile"
+block = "present"
+files_touched = [
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = """grep -q '^version = "0.25.0"' tomlctl/Cargo.toml"""
+result = "pass"
+
+[[attempt]]
+task = 7
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan_request and generated_config registered, pinned, documented; carrier requires plan_request"
+block = "present"
+files_touched = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "claude/commands/implement-v2.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep accept check for both features and the carrier"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/capabilities.rs"
+result = "pass"
+
+[[attempt]]
+task = 8
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "the lane check now counts granted, unapplied request paths as in lane"
+block = "present"
+files_touched = ["tomlctl/src/plan/lane.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'granted' tomlctl/src/plan/lane.rs && grep -q 'requests' tomlctl/src/plan/lane.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -A1 '#[test]' tomlctl/src/plan/lane.rs | grep -q 'fn [a-z_0-9]*grant'"
+result = "pass"
+
+[[attempt]]
+task = 9
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "gate_list now appends each touched generator's check command, with tests"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'generated::' tomlctl/src/plan/emit.rs && grep -q 'generated:' tomlctl/tests/plan_emit.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "not-run"
+
+[[attempt]]
+task = 10
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "worker view prints a Generators section per touched generator"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'Generators' tomlctl/src/plan/view.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'generated.toml' tomlctl/tests/plan_view.rs"
+result = "pass"
+
+[[attempt]]
+task = 11
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan check warns plan/file-case-collision on a created file whose stem differs from a neighbour's only by case"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/check/case_collision.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/src/cli/dispatch/tests/finding_classes.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "A row's own other files count as neighbours, not only other rows' files, so one row creating Foo.ts and foo.tsx also warns"
+why = "the same confusion arises whichever row plans the pair; ids then name just that row"
+means = "detail: compare against the stems of every other row's planned files"
+
+[[attempt.deviations]]
+what = "Directories in the listing are not neighbours; paths with a `..` component, a leading `/` or a `:` are skipped"
+why = "a directory has no extension to compare and is no file collision; skipping escaping paths keeps the check from listing directories outside the repo"
+means = "detail: compare against the stems of the exact names in the same directory"
+
+[[attempt.deviations]]
+what = "One finding per colliding path pair, its ids merged across both sides, so two pending rows creating Foo.ts and foo.tsx yield one warning naming rows 1 and 2"
+why = "each created side would otherwise raise the same pair twice"
+means = "detail: emit one Finding per collision"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/check/case_collision.rs tomlctl/src/cli/dispatch/tests/finding_classes.rs tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/file-case-collision' tomlctl/src/plan/check/case_collision.rs && grep -q 'mod case_collision' tomlctl/src/plan/check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/file-case-collision' tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt]]
+task = 12
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan/generated-output-unheld warning added and tested"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/check/generated_outputs.rs",
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/generated-output-unheld' tomlctl/src/plan/check/generated_outputs.rs && grep -q 'mod generated_outputs' tomlctl/src/plan/check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/generated-output-unheld' tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt]]
+task = 13
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "plan request reference written, store shape and report kind documented, skill links added"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+deviations = []
+tangential = []
+problem = "the note's Status is `done` but the task row is `pending`"
+
+[[attempt.checks]]
+command = "test -f plan-request.md && grep -q references/plan-request.md SKILL.md && grep -q request plan-store.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 14
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "generated.md written, both classes and the gate-list and lane-check text documented"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/generated.md",
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+deviations = []
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/plan/check/generated_outputs.rs"
+summary = "Findings are built with `class: CLASS` (a const), a shape the finding-class parser in finding_classes.rs does not read, so documented_plan_classes_match_the_source fails with the class documented but never emitted."
+why = "The gate-covered test fails until the file states the class as a string literal, as case_collision.rs does."
+
+[[attempt.checks]]
+command = "test -f claude/skills/tomlctl/references/generated.md && grep -q 'plan/file-case-collision' plan.md && grep -q 'plan/generated-output-unheld' plan.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 15
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "needs_human report moved to references/report.md, links repointed"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "test -f report.md && grep -q '### Record the report' report.md && ! grep -q '### Record the report' drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 20
+run_id = "wf_dc30a361-19d"
+milestone = "A"
+status = "done"
+summary = "write-and-prove now carries the generator rule and handles both new warnings"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep for plan/generated-output-unheld, plan/file-case-collision, generated.toml in write-and-prove.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 13
+run_id = "wf_d372a2b0-b84"
+milestone = "A"
+status = "done"
+summary = "plan request docs, [[request]] shape and request report kind documented"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/plan-request.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "test -f plan-request.md && grep link in SKILL.md && grep request in plan-store.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 21
+run_id = "wf_d372a2b0-b84"
+milestone = "A"
+status = "done"
+summary = "both findings in generated_outputs.rs now state the class as a literal"
+block = "present"
+files_touched = ["tomlctl/src/plan/check/generated_outputs.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/check/generated_outputs.rs"
+result = "pass"
+
+[[gate_round]]
+milestone = "A"
+round = 0
+seq = 1
+at = 2026-11-18T14:55:04Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+duration_s = 36
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "CARGO_INCREMENTAL=0 cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 435
+summary = "Summary [ 369.784s] 3413 tests run: 3413 passed (5 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::finding_classes::documented_plan_classes_match_the_source"
+outcome = "pass"
+duration_s = 4
+summary = "libtest x1: 1 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo install --path tomlctl --locked"
+outcome = "pass"
+duration_s = 269
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo install --path glimpse --locked"
+outcome = "pass"
+duration_s = 2
+summary = ""
+failed_ids = []
+log = ""
