@@ -14,7 +14,7 @@ tomlctl plan stage --slug <slug>
 tomlctl plan emit schedule --slug <slug>
 ```
 
-`stage` must read `approved` or `running`. An earlier stage means the plan is still being authored: stop, and name `/plan-v2 <slug>` without `--elaborate`. `done` means there is nothing left to elaborate. A `blockers` entry other than an open run, such as a brief changed since approval, stops the procedure with that entry quoted; a changed brief is settled with `plan approve --amend` by [approve.md](approve.md) before elaborating.
+`stage` must read `approved` or `running`. An earlier stage means the plan is still being authored: stop, and name `/plan-v2 <slug>` without `--elaborate`. `done` means there is nothing left to elaborate. A `blockers` entry other than an open run, such as a brief changed since approval, stops the procedure with that entry quoted; a changed brief is settled with `plan approve --amend` by [approve.md](approve.md) before elaborating. The one exception is this session's own brief correction on a resume, by section 7.
 
 Find `<id>` in the schedule's `milestones` and act on its `state`:
 
@@ -46,11 +46,30 @@ tomlctl plan view --slug <slug> --for worker --task <task>
 
 Then read what the upstream milestones actually built, from the code at HEAD, not from their rows' `outcome`: each row's `commit` names the commit that landed it, and `git show --stat <sha>` the files it touched. A deferred milestone was deferred because its detail depended on this, so a row whose estimated `files` or `outcome` the built code no longer fits is revised in section 3, and an `outcome` that no longer holds goes to the user.
 
+**Read what was changed by hand.** Commits no row owns, such as fixes the user made between milestones, can make a decision or a brief line stale without any row noticing. List them against the decisions ([`plan drift`](../../tomlctl/references/plan-engine.md#plan-drift)):
+
+```bash
+tomlctl plan drift --slug <slug>
+```
+
+For each `affected_decisions` entry, read the decision (`tomlctl plan view --slug <slug> --for human`) and each of its `commits` with `git show <sha>`, against its `binds_hit` paths. A decision whose text still holds against what those commits did is left alone. One whose text no longer holds, such as a decision naming a library a hand commit replaced, goes into section 2's Surface round, with every brief line that names the same choice. Keep the list of stale decisions and brief lines in `<scratch>/elaborate-stale.md`.
+
 ## 2. Surface and decide
 
 Put each assumption the elaboration rests on through the three tests of [open-and-challenge.md, section 5](open-and-challenge.md#5-surface). The budget is four questions in the first round, asked in one `AskUserQuestion` call of up to four; when more survive, ask the four whose `if_false` changes the most for the user. A question an answer opens is asked in a further call outside the budget, and rounds go on until no answer opens a new one, never answered by assumption. Each is recorded first as a decision with `surfaced = true` and a `class`, and its answer recorded after. When nothing survives, record nothing.
 
-**A UI milestone.** When the milestone adds a surface or reshapes an arrangement, run the layout step of [ui-layout.md](ui-layout.md) before any row is revised: the user picks among drafted options, the pick is a decision of class `look`, and the pictures and `design/ui-<milestone>.md` are written under `docs/flows/<slug>/design/`. Refine the milestone's section of `design/direction.md` where the pick changes it, and cite that section from each row of the milestone in `spec.design`.
+**Stale decisions.** Each decision section 1 found stale is an item of this round, outside the four-question budget, put to the user with the commits that made it stale and the brief lines naming the same choice, and the amended text first. On a yes, amend it inside this elaboration rather than leaving it for a second cycle: re-issue the decision through `plan decide` with its new text, `surfaced = true` and the user's provenance, and correct each brief line in `docs/flows/<slug>/brief.md` with the Edit tool. The user's yes is the agreement to the change of intent that [approve.md](approve.md)'s "Amend" asks for, so section 6 stamps `plan approve --amend` with this elaboration's commit and shows no second gate. A no keeps the decision's text, and the user's reason is recorded on it with `plan decide`.
+
+**The UI call.** Open [ui-layout.md](ui-layout.md) for every elaboration, UI or not, and judge this milestone by its section 1, as the list's one entry, before any row is revised. Record the call as a decision of class `look`, and on the milestone:
+
+```bash
+tomlctl plan milestone update --slug <slug> --id <id> --ui yes --reason '<why>'
+tomlctl plan milestone update --slug <slug> --id <id> --ui no --reason '<why>'
+```
+
+A milestone that adds a surface or reshapes an arrangement then runs the rest of the layout step: the user picks among drafted options, the pick is a decision of class `look`, and the pictures and `design/ui-<milestone>.md` are written under `docs/flows/<slug>/design/`. Refine the milestone's section of `design/direction.md` where the pick changes it, and cite that section from each row of the milestone in `spec.design`.
+
+**Outside facts.** A row's `action`, `detail` or `spec` written here, and a handover written here, follow the source rule of [write-and-prove.md, section 1](write-and-prove.md#1-design), "Outside facts": a fact about something outside the repo cites a fetched source covering that same object, or is fetched under the `research-methods` source hierarchy, or sent to an investigator lens, before it is written. A version or image tag pinned here gets its existence check as that rule says, a `--gate-probe` through `plan milestone update` or a local premise, so section 4d probes it before the flip.
 
 Each choice the revised rows rest on is a `plan decide` row, in the shape of [write-and-prove.md, section 1](write-and-prove.md#1-design), `provenance = "agent-assumed"` unless the user said or confirmed it:
 
@@ -120,7 +139,7 @@ The milestone is still `deferred` through every part of this section, so nothing
 tomlctl plan check --slug <slug> --milestone <id>
 ```
 
-`--milestone` reports the findings on this milestone's rows and its upstream milestones' rows, and the graph, cut and handover classes whatever they name, so another milestone's half-finished state does not refuse this one. Fix every error and re-run until none is left. `plan/accept-no-check` is still relaxed here because the milestone is deferred, so read each row's `accept` list yourself now: an entry with a blank `check` is an error section 5's check will report after the flip.
+`--milestone` reports the findings on this milestone's rows and its upstream milestones' rows, and the graph, cut and handover classes whatever they name, so another milestone's half-finished state does not refuse this one. Fix every error and re-run until none is left, except `plan/brief-changed` after a brief line section 2 corrected: section 6's amend settles that one. `plan/accept-no-check` is still relaxed here because the milestone is deferred, so read each row's `accept` list yourself now: an entry with a blank `check` is an error section 5's check will report after the flip.
 
 ### 4b. Premises
 
@@ -169,6 +188,8 @@ bash <skill-dir>/scripts/fanout-check.sh snapshot <scratch>/fanout-cold-read-<id
 Workflow({name: "plan-v2-prove", args: {slug: "<slug>", milestones: [{id: "<id>", tasks: [14, 15]}]}})
 ```
 
+From the snapshot until its check passes, make no repo write of any kind, by the rule "No repo writes while a launch is open" in [open-and-challenge.md, section 3](open-and-challenge.md#3-the-fan-out-check): a correction to the brief, a decision's design file or a note found in that window waits in `<scratch>` and is applied after the check.
+
 A result carrying `error` stops the step: report it, and never fall back to the Agent tool. Otherwise, in the same turn, record the launch under the milestone's step name and end the turn:
 
 ```bash
@@ -211,7 +232,7 @@ tomlctl plan milestone update --slug <slug> --id <id> --elaborated --reason '<wh
 tomlctl plan check --slug <slug> --milestone <id>
 ```
 
-`--reason` names what landed: the decisions, the rows added and revised, and the cold read's outcome. The check runs once more because `plan/accept-no-check` now applies to these rows. An error here is fixed with `tasks update --ndjson`, and the entries that fix touches are probed again by 4d before the commit; the milestone is already runnable, so do this before ending the turn.
+`--reason` names what landed: the decisions, the rows added and revised, and the cold read's outcome. The check runs once more because `plan/accept-no-check` now applies to these rows. An error here, `plan/brief-changed` from section 2's brief edit aside, is fixed with `tasks update --ndjson`, and the entries that fix touches are probed again by 4d before the commit; the milestone is already runnable, so do this before ending the turn.
 
 **Before the flip**, since no approval follows an elaboration, list the decisions that are agent-assumed, one-way and never surfaced:
 
@@ -227,7 +248,7 @@ Surface each through `AskUserQuestion`, recorded by `plan decide`, before the fl
 tomlctl plan run finish --slug <slug> --step elaborate:<id> --outcome ok
 ```
 
-Commit once, with the message from the `commit-conventions` skill, staging each path by name, never the whole flow directory: `.claude/flows/<slug>/plan.toml`, `.claude/flows/<slug>/tasks.toml`, both `.sha256` sidecars, every file this elaboration wrote under `docs/flows/<slug>/design/`, the `<name>.md` files and the PNG or text-grid pictures beside them included, and `docs/flows/<slug>/notes/cold-read-<id>.md`.
+Commit once, with the message from the `commit-conventions` skill, staging each path by name, never the whole flow directory: `.claude/flows/<slug>/plan.toml`, `.claude/flows/<slug>/tasks.toml`, both `.sha256` sidecars, `docs/flows/<slug>/brief.md` when section 2 corrected it, every file this elaboration wrote under `docs/flows/<slug>/design/`, the `<name>.md` files and the PNG or text-grid pictures beside them included, and `docs/flows/<slug>/notes/cold-read-<id>.md`.
 
 ```bash
 git add -- <each-path>
@@ -236,9 +257,17 @@ git commit -m "<message>" -- <each-path>
 
 `tasks.toml` is one file, so the commit also carries whatever the other session's running rows read at that moment; its own flow-store commit records them later. A store write from the other session landing between the two `git add` reads leaves a store and sidecar that differ, and the pre-commit hook refuses the commit: stage both again and commit. Never `--no-verify`.
 
+**The amend.** When section 2 amended a stale decision or corrected the brief, stamp the change of intent the user agreed to now, after this commit, by [approve.md](approve.md)'s "Amend" with the `--review` value and `--reason` it names, then commit what the stamp wrote by its section 7:
+
+```bash
+tomlctl plan approve --slug <slug> --amend --review <outcome>
+```
+
+The amend moves `plan drift`'s baseline to this commit, so the next elaboration reads only commits made after it.
+
 **A concurrent flow-store commit.** While this procedure runs, a `/implement-v2` in another session may make its flow-store commit, which stages all of `.claude/flows/<slug>/` and so sweeps in this session's half-revised rows. That is safe: the milestone stays deferred until section 5, so no committed row of it is runnable, and this procedure's own commit records the finished state.
 
-**The close.** Report the milestone elaborated, the rows added and revised, the cold read's outcome and the probe verdicts, and list every `agent-assumed` decision this elaboration recorded: no approval gate will show them, so the close is where the user sees them. No re-approval is needed unless the brief changed. The last line names `/implement-v2 <slug>`, which picks the milestone once the schedule reads it `runnable`.
+**The close.** Report the milestone elaborated, the rows added and revised, the cold read's outcome and the probe verdicts, and list every `agent-assumed` decision this elaboration recorded: no approval gate will show them, so the close is where the user sees them. No re-approval is needed beyond the amend above, which already carries any brief or decision section 2 changed. The last line names `/implement-v2 <slug>`, which picks the milestone once the schedule reads it `runnable`.
 
 ## 7. Re-entry and open runs
 
@@ -248,7 +277,7 @@ git commit -m "<message>" -- <each-path>
 tomlctl plan view --slug <slug> --for digest --select stage_inputs.runs
 ```
 
-- **This session's own run** resumes where the store stands: decisions recorded, rows written, a `cold-read:<id>` row open or closed, probe verdicts recorded, the milestone's `elaboration`. Each section above re-runs safely from its start; skip what the store shows done.
+- **This session's own run** resumes where the store stands: decisions recorded, rows written, a `cold-read:<id>` row open or closed, probe verdicts recorded, the milestone's `elaboration`. Each section above re-runs safely from its start; skip what the store shows done. A `plan stage` blocker `plan/brief-changed` on a resume is this run's own brief correction when the user's yes to it is on a decision this run recorded: it is settled by section 6's amend, not by section 1's stop.
 - **An open `cold-read:<id>` run** follows write-and-prove's "Relaunch" rule, with `<scratch>/elaborate-prove-args.json` as the args file. Because this launch's snapshot took the excludes, its fan-out check lets HEAD move through another session's milestone and flow-store commits. Otherwise abandon it with `tomlctl plan run abandon --slug <slug> --step cold-read:<id> --reason '<why>'`, delete the note unless it opens `Verdict:` and no row changed since, and launch afresh.
 - **Another session's run** is never abandoned silently. Ask the user through `AskUserQuestion` whether that session is still working, with leaving it as the default. Only on the user's answer that it is dead, abandon both of its rows and start afresh from section 1:
 

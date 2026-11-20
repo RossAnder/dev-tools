@@ -33,6 +33,8 @@ Drop these before writing them, because each is a class the vet pass drops or th
 
 Lockfile, then the pinned dependency's installed source or its docs at that exact version, then Context7 (`resolve-library-id` then `query-docs`, matched to the pinned major), then the official docs, changelog and governing standard or proposal for that version, then the library's issue tracker, then maintainer posts, then everything else. For an exact value, whether a signature, a default, a config key or a field offset, the installed source outranks every doc: it is what ships, and a doc can describe another version. `references/web-doc-research.md` has where each of these lives.
 
+A hosted platform or service with no lockfile goes Context7, then the docs root's `llms.txt` or a search, then a fetch of a URL taken from one of those. Read `docs/references/` in the repo first when it exists. A URL not taken from a search result, an `llms.txt` map or a link on a fetched page is a guess, and a 404 on one means search, never guess again.
+
 Triangulate anything below official docs with a second independent source. Fetch the page: a search snippet is not a source. Record the query or URL so the vet can reproduce it in one click, and stamp anything that moves with the version and the fetch date. Training data is never a source for an exact value. When no source is reachable, say so and grade `low` or omit.
 
 **When sources disagree**, prefer the one matched to the pinned version, then the primary source over a secondary one, then the newer. Report the disagreement in the finding's Details and name the losing source in the Counter line, rather than silently picking a side: a reader who holds the other source will otherwise take the finding for an error.

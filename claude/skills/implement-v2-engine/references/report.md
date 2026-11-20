@@ -25,13 +25,19 @@ no worker:
 - task <n>: executor <tool|clerk>
 withheld:
 - task <n>: premise <i> <fails|broken> — <the claim>
+- task <n>: handover <id> not done — <action>
 gate:
 - milestone <id> failed after round <n>: <command> — <failed_ids>
 - milestone <id> timed out twice: <command> — timeout <seconds>
+- milestone <id> gate round <n> accepted: <commands>; backlog <B-id>
+- milestone <id> gate round <n>: one more round granted
+- milestone <id> base failure: <command> <ids>, <fixed|backlogged|waived>
+- milestone <id> base failure: <command> <ids>, waived; backlog <B-id>
 - milestone <id> did not run task <n> accept <i>: covered_by <command>
 - milestone <id> visual round <n> unsound: control <state> passed
 - milestone <id> visual failed after round <n>: <state> - <capture path>
 - milestone <id> visual round <r> accepted: <states>; backlog <B-id>
+- milestone <id> visual round <r>: inspector disagreement on <states>, decided by the user
 audit:
 - <agent id>: <command> — <allowed|breach>
 - run <run_id> not audited: no transcript directory was kept
@@ -83,7 +89,7 @@ needs_person = false
 
 The `requests:` section lists every item the drain's Granted requests step settled ([drain.md](drain.md), step 5a, by [requests.md](requests.md)), one line per item, granted and denied alike. A request a worker ruled or marked applied itself is not listed there: its command goes under `audit:` as a breach, and each path it granted under `out of lane:`.
 
-`text` is the line as printed, without its `- `. `task` is the task the line names, left out when it names none. `path` is the run note or file the line names, repo-relative, left out when it names none; an out-of-lane line's path is the path itself. `needs_person = false` goes on a line that only informs: an `allowed` audit row, a run that was not audited, a check a gate covered (`did not run task <n> accept <i>: covered_by <command>`), a visual round the user accepted (`visual round <r> accepted: <states>; backlog <B-id>`, its `<states>` comma-separated and its waiver followed up by that backlog item), and every `requests:` line, since the drain has already acted on each ruling. Every other line needs a person and leaves the key out. `--why` is the reason on the report's first line, quoted as one argument:
+`text` is the line as printed, without its `- `. `task` is the task the line names, left out when it names none. `path` is the run note or file the line names, repo-relative, left out when it names none; an out-of-lane line's path is the path itself. `needs_person = false` goes on a line that only informs: an `allowed` audit row, a run that was not audited, a check a gate covered (`did not run task <n> accept <i>: covered_by <command>`), a visual round the user accepted (`visual round <r> accepted: <states>; backlog <B-id>`, its `<states>` comma-separated and its waiver followed up by that backlog item), each gate exception the user decided, and every `requests:` line, since the drain has already acted on each ruling. The gate exceptions are a gate round accepted (`gate round <n> accepted: <commands>; backlog <B-id>`, its `<commands>` comma-separated, one line per `[[gate_accept]]` row of kind `accept`), one more round granted (`gate round <n>: one more round granted`, one line per row of kind `extra-round`), a base failure, one line per command of the round's latest run that is a base or partial base failure (`base failure: <command> <ids>, <fixed|backlogged|waived>`, by how the user settled it; a row of kind `base` is reported as `base failure: <command> <ids>, waived; backlog <B-id>`, and never as a gate accepted, since it waives only its ids and commits nothing by itself), and a visual inspector disagreement the user decided (`visual round <r>: inspector disagreement on <states>, decided by the user`). Every other line needs a person and leaves the key out. `--why` is the reason on the report's first line, quoted as one argument:
 
 ```bash
 tomlctl plan run report --slug <slug> --milestone <id> --why <why> --ndjson <scratch>/implement-<id>-report.toml

@@ -10,6 +10,8 @@ A milestone is UI when its rows add a surface the user sees or change the arrang
 
 Judge from what the rows will change, never from file types alone, since the step is stack neutral. A milestone whose files touch the `paths` of the project's `.claude/ui-capture.toml`, or a web or QML file, is a candidate on any stack: a web page, a QML or Quickshell window and a terminal UI such as ratatui all count. A candidate whose change leaves every arrangement as it was is judged not UI.
 
+In a project with no `.claude/ui-capture.toml`, read the decision Open recorded on whether the project has a UI to capture ([open-and-challenge.md, section 1](open-and-challenge.md#1-open)), the one whose text opens `UI to capture:` in `tomlctl plan view --slug <slug> --for human`, and do not ask it again. A no judges every milestone not UI, citing that decision, unless a milestone adds a surface the user sees; such a milestone goes in the list below as UI, and the question says the Open answer looks wrong. A plan opened before Open asked has no such decision: ask it here once and record it the way Open does.
+
 List every milestone with the call you made, UI or not UI, and one line of why each, and ask the user through `AskUserQuestion` whether the list stands, with "as listed" first. A milestone the user moves is judged their way. When no milestone is UI and the user agrees, the step ends here and records nothing.
 
 ## 2. Draft the options
@@ -74,7 +76,7 @@ Every file this step writes under `docs/flows/<slug>/design/` is committed with 
 
 ## 5. Declare the states, the controls and the look entries
 
-**States.** Name the capture states the milestone's visual pass judges, by the `ui-capture` skill's contract. Give every surface its content extremes, because dead space, a panel that grows with its container and a fixed-height panel show only there: empty, one item, many items, a long label, and a short and a tall window, or a short and a tall terminal. Where the project's capture command already exists, `<command> --list` prints the state names it knows; reuse those names, and give each new state a row of the milestone that teaches the command to reach it, the command's source in that row's `files`. A project with no `.claude/ui-capture.toml` gets a row that declares one, since the visual pass has nothing to run without it.
+**States.** Name the capture states the milestone's visual pass judges, by the `ui-capture` skill's contract. Give every surface its content extremes, because dead space, a panel that grows with its container and a fixed-height panel show only there: empty, one item, many items, a long label, and a short and a tall window, or a short and a tall terminal. Where the project's capture command already exists, `<command> --list` prints the state names it knows; reuse those names, and give each new state a row of the milestone that teaches the command to reach it, the command's source in that row's `files`. A project with no `.claude/ui-capture.toml` whose Open decision says it has a UI gets a row that declares one, in the first milestone judged UI, since the visual pass has nothing to run without it; the step reads that decision from section 1 and asks nothing more about the config.
 
 Name every state `<surface>-<n>`, as the `ui-capture` skill's Controls section sets out: one surface prefix per surface and a two-digit number. A name that describes the state leaks what it shows, so a control's name says nothing about its defect, and the control takes its own surface's looks.
 

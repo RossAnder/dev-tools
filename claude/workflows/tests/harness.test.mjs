@@ -544,6 +544,78 @@ test('implement-v2-milestone: without max_compile_parallel, max_parallel alone c
   assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done', 'done', 'done'])
 })
 
+test('implement-v2-milestone: a builds task waits for an empty pool, runs alone and is not starved', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([
+    task(1, ['a.md']),
+    task(2, ['b.rs'], { builds: true, needs: [1] }),
+    task(3, ['c.md']),
+    task(4, ['d.md']),
+    task(5, ['e.md']),
+  ]))
+  await tick()
+  assert.deepEqual(started(rt), [1, 3, 4, 5])
+  await finish(rt, 1)
+  // Task 2 is ready now, so nothing new starts while 3, 4 and 5 drain.
+  assert.deepEqual(inFlight(rt).sort(), [3, 4, 5])
+  await finish(rt, 3)
+  await finish(rt, 4)
+  assert.deepEqual(inFlight(rt), [5])
+  await finish(rt, 5)
+  assert.deepEqual(inFlight(rt), [2])
+  await finish(rt, 2)
+  const out = await done
+  assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done', 'done', 'done', 'done'])
+  assert.deepEqual(out.errors, [])
+})
+
+test('implement-v2-milestone: nothing starts beside a running builds task, and later ready tasks wait for it', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([
+    task(1, ['a.md']),
+    task(2, ['b.rs'], { builds: true }),
+    task(3, ['c.md']),
+    task(4, ['d.rs'], { builds: true }),
+    task(5, ['e.md']),
+  ]))
+  await tick()
+  // Task 2 is ready at launch, so task 1 does not start ahead of it.
+  assert.deepEqual(started(rt), [2])
+  await finish(rt, 2)
+  // Task 4 is ready too, and starts alone before any non-builds task.
+  assert.deepEqual(inFlight(rt), [4])
+  await finish(rt, 4)
+  assert.deepEqual(inFlight(rt).sort(), [1, 3, 5])
+  await finish(rt, 1)
+  await finish(rt, 3)
+  await finish(rt, 5)
+  const out = await done
+  assert.deepEqual(started(rt), [2, 4, 1, 3, 5])
+  assert.deepEqual(out.tasks.map((t) => t.status), ['done', 'done', 'done', 'done', 'done'])
+})
+
+test('implement-v2-milestone: builds false schedules as no flag does', async () => {
+  const rt = runtime(null, { deferred: true })
+  const done = rt.run('implement-v2-milestone', milestoneArgs([
+    task(1, ['a.rs'], { builds: false }), task(2, ['b.rs']),
+  ]))
+  await tick()
+  assert.deepEqual(started(rt), [1, 2])
+  await finish(rt, 1)
+  await finish(rt, 2)
+  await done
+})
+
+test('implement-v2-milestone: a non-boolean builds refuses the launch', async () => {
+  for (const bad of ['true', 1, null]) {
+    const rt = runtime(() => { throw new Error('no agent should start') })
+    const out = await rt.run('implement-v2-milestone', milestoneArgs([task(1, ['a.rs'], { builds: bad })]))
+    assert.deepEqual(rt.calls, [], `builds ${JSON.stringify(bad)}`)
+    assert.ok(out.errors.some((e) => e.startsWith('task 1: builds ')), `builds ${JSON.stringify(bad)}`)
+    assert.equal(out.errors.at(-1), 'no agent launched')
+  }
+})
+
 test('implement-v2-milestone: a malformed max_compile_parallel refuses the launch', async () => {
   for (const bad of [0, 9, 1.5, '2', null]) {
     const rt = runtime(() => { throw new Error('no agent should start') })

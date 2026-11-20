@@ -31,7 +31,7 @@ This carrier builds no flow envelope: a bare `flow resolve` returns no draft flo
 Run these in order, before anything else. Each failure stops the command with the message given.
 
 1. **The `tomlctl` skill.** Invoke the `tomlctl` skill, before the first `tomlctl` call below.
-2. **The `plan` group and `review apply`.** Run `tomlctl capabilities --get subcommands`, then `tomlctl capabilities --get features`. When `plan` is not in the first list, or `review_apply`, `milestone_schedule`, `decision_class` or `ui_look` is not in the second, the installed binary predates the verbs the plan and its Review step run: stop and name `cargo install --path tomlctl`, so no Workflow launches against a binary that cannot apply its findings.
+2. **The `plan` group and `review apply`.** Run `tomlctl capabilities --get subcommands`, then `tomlctl capabilities --get features`. When `plan` is not in the first list, or `review_apply`, `milestone_schedule`, `decision_class`, `ui_look`, `baseline_gates`, `handover_blocks`, `drift_affected_decisions` or `review_plan_digest` is not in the second, the installed binary predates the verbs the plan and its Review step run: stop and name `cargo install --path tomlctl`, so no Workflow launches against a binary that cannot apply its findings.
 3. **`AskUserQuestion`.** When the tool is unavailable, stop: this command runs attended only, and every question to the user comes from this conversation.
 4. **`Workflow`.** When the tool is absent, stop: Investigate and the cold read are saved Workflows with no Agent-tool fallback.
 

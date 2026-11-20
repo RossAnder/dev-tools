@@ -14,9 +14,10 @@ Your prompt carries:
 
 - `commands:` — an ordered list, one command per `- ` item. An item may carry indented option lines:
   - `timeout: <seconds>` — the command's budget. Default `540`.
-  - `rerun: <template>` — a narrow rerun of the command's failed tests. `{ids}` marks where the failed test ids go.
+  - `rerun: <template>` — a narrow rerun of the command's failed tests. `{ids}` marks where the failed test ids go as separate arguments; `{ids_regex}` marks where they go as one name pattern (Step 3.4.2).
 
-  A prompt carrying `command:` instead of `commands:` is a one-item list.
+  A prompt carrying `command:` instead of `commands:` is a one-item list. A command, or a `rerun:`, that must run in another directory carries its own `cd <dir> && ` prefix; it runs inside that command's own shell, so it moves nothing else.
+- `run_dir:` — optional. The directory to use as `<D>`, named by the orchestrator so it can find the run's files after you stop. Absent, Step 0 makes one with `mktemp`.
 - `transient:` — optional list of extended regexes, each naming an environmental failure (a locked linker output, a port already in use).
 - `keep_going: true` — optional. Run every command whatever the earlier ones returned. Absent, you stop at the first `fail` or `timeout`.
 
@@ -26,15 +27,22 @@ commands:
 - cargo nextest run --manifest-path app/Cargo.toml --no-fail-fast
   timeout: 1500
   rerun: cargo nextest run --manifest-path app/Cargo.toml --no-fail-fast -j 1 -- --exact {ids}
+- cd web && bun test
+  timeout: 900
+  rerun: cd web && bun test -t {ids_regex}
+- cd spa && npx vitest run
+  rerun: cd spa && npx vitest run {ids}
 transient:
 - rust-lld: failed to write output.*[Pp]ermission denied
 ```
+
+Pick the rerun form by how the runner selects tests. nextest and libtest take exact names, `{ids}`. `bun test -t` matches one regex against each test's name prefixed by its `describe` labels, so it takes `{ids_regex}`. The extractor records a vitest failure as its test file's path, which `vitest run` takes as a filter and `-t` would not match, so vitest takes `{ids}` with no `-t`.
 
 You have no wall-clock limit of your own; the budgets are the only limits. **Every Bash call passes `timeout: 600000`** — the tool's default of 120 s kills a build mid-run. Never use `run_in_background`.
 
 ## Procedure
 
-**Step 0 — setup, once.** Run this call verbatim:
+**Step 0 — setup, once.** Run this call verbatim. When your prompt carries `run_dir:`, replace its first line with `D='<run_dir>' && mkdir -p "$D" && { command -v cygpath >/dev/null && cygpath -m "$D" || echo "$D"; }`, the `run_dir:` value written in place of `<run_dir>`.
 
 ```bash
 D=$(mktemp -d) && { command -v cygpath >/dev/null && cygpath -m "$D" || echo "$D"; }
@@ -64,6 +72,9 @@ echo "FLAKY_MARKERS: $(grep -cE '^ *FLAKY |^ +[0-9]+ flaky *$|[0-9]+ rerun' "$L"
 echo "--- tail ---"
 tail -n 20 "$L"
 EXTRACT_EOF
+cat > "$D/ids_regex.sh" <<'IDS_REGEX_EOF'
+awk 'BEGIN{b=sprintf("%c",92)} {gsub(/ > /, " "); o=""; for(i=1;i<=length($0);i++){c=substr($0,i,1); if(index("[].*^$+?(){}|",c) || c==b) c=b c; o=o c} printf "%s%s", (NR>1?"|":""), o} END{print ""}' "$1"
+IDS_REGEX_EOF
 ```
 
 The first line it prints is the scratch directory, `<D>` below. Shell state does not survive between Bash calls, so write `<D>` out literally in every later call. A `TIMEOUT_BIN=` line names the timeout binary, `<T>` below; when no such line prints there is none. `<D>` is the only place you write.
@@ -87,9 +98,27 @@ With no `<T>`, drop `<T> <B> `; the Bash call's own 600 s ceiling is then the bu
 cat > '<D>/cN.sh' <<'VERIFY_CMD_EOF'
 <the command, byte-for-byte>
 VERIFY_CMD_EOF
+if [ -r /proc/$$/winpid ]; then
 nohup bash -c 'SECONDS=0; <T> <B> bash "<D>/cN.sh" </dev/null >"<D>/cN.log" 2>&1; echo "EXIT=$? DUR=$SECONDS" >"<D>/cN.exit"' >/dev/null 2>&1 </dev/null &
+cat "/proc/$!/winpid" >'<D>/cN.pid'
+elif command -v setsid >/dev/null; then
+setsid nohup bash -c 'echo "$$" >"<D>/cN.pid"; SECONDS=0; <T> <B> bash "<D>/cN.sh" </dev/null >"<D>/cN.log" 2>&1; echo "EXIT=$? DUR=$SECONDS" >"<D>/cN.exit"' >/dev/null 2>&1 </dev/null &
+else
+nohup bash -c 'SECONDS=0; <T> <B> bash "<D>/cN.sh" </dev/null >"<D>/cN.log" 2>&1; echo "EXIT=$? DUR=$SECONDS" >"<D>/cN.exit"' >/dev/null 2>&1 </dev/null &
+fi
 sleep 2; [ -f '<D>/cN.log' ] && echo launched || echo LAUNCH_FAILED
 ```
+
+`cN.pid` names the detached launch, so a caller can stop it if you are stopped first; a `cN.pid` with no `cN.exit` beside it is a launch still running or abandoned.
+
+- **MSYS or Git Bash.** The file holds the launch's Windows pid, read from `/proc/$!/winpid`. `taskkill //T` on it alone stops only that `bash`: every MSYS fork leaves its child's Windows parent dead, so the Windows tree breaks at each MSYS link. The tree is the launch's descendants in MSYS `ps`, whose `PID`, `PPID` and `WINPID` columns keep every link, and a `taskkill //PID <winpid> //T //F` on each of their `WINPID`s reaches the native processes below them:
+
+  ```bash
+  ps | awk -v w="$(cat '<D>/cN.pid')" 'NR>1{o=($1 ~ /^[0-9]+$/)?0:1; p=$(1+o); pp[p]=$(2+o); wp[p]=$(4+o); if(wp[p]==w) r=p} END{if(r=="") {print w; exit} k[r]=1; do{c=0; for(p in pp) if(!(p in k) && (pp[p] in k)){k[p]=1; c=1}} while(c); for(p in k) print wp[p]}' | while read -r x; do taskkill //PID "$x" //T //F; done
+  ```
+
+- **POSIX with `setsid`.** The launch runs in a session of its own, and the file holds its session id, which is also its process group id. `timeout` moves the command into a process group of its own, so `kill -TERM -<id>` would miss it; `pkill -TERM -s <id>` stops the whole session.
+- **Neither, as on stock macOS.** No `cN.pid` is written.
 
 Then repeat this call until it prints an `EXIT=` line, at most `<B> / 540 + 2` times (round down):
 
@@ -108,7 +137,7 @@ for i in $(seq 270); do [ -f '<D>/cN.exit' ] && break; sleep 2; done; cat '<D>/c
 3. `EXIT=0` → `pass`.
 4. Anything else → `fail`, then in order:
    1. **Transient.** If `transient:` was supplied and `grep -Eq '<pattern>' '<D>/cN.log'` matches any pattern, rerun this command once through Steps 1–3 as `cNt` (files `cNt.sh`, `cNt.log`) and take its outcome instead. Report `retried: transient`. Never a second time.
-   2. **Narrow rerun.** If the command has a `rerun:` and `FAILED_COUNT` is 1 to 10, replace `{ids}` with every line of the classified log's `.ids` file (`<D>/cN.log.ids`, or `<D>/cNt.log.ids` after a transient retry), each in single quotes, space-separated. Skip this step if an id contains `'`. Run the result through Steps 1–2 as `cNr`, same budget. Its `EXIT=0` with `PASSED_ANY: yes` → `flaky`; anything else stays `fail`.
+   2. **Narrow rerun.** If the command has a `rerun:` and `FAILED_COUNT` is 1 to 10, replace `{ids}` with every line of the classified log's `.ids` file (`<D>/cN.log.ids`, or `<D>/cNt.log.ids` after a transient retry), each in single quotes, space-separated. Replace `{ids_regex}` with the one line `bash '<D>/ids_regex.sh' '<that .ids file>'` prints, in single quotes: each id with its ` > ` separators turned to single spaces and every regex metacharacter backslash-escaped, the ids joined with `|`. Skip this step if an id contains `'`. Run the result through Steps 1–2 as `cNr`, same budget. Its `EXIT=0` with `PASSED_ANY: yes` → `flaky`; anything else stays `fail`.
 
 **Step 4 — report** the command's pass line or block (see Output). For a `flaky` outcome, also emit one line per flaked id, at most five:
 
@@ -122,7 +151,7 @@ After the last command, end. Do not summarise across commands.
 
 ## Hard rules
 
-- Do NOT modify the environment, install dependencies, or change directories beyond what each command itself does. Write nothing outside `<D>`.
+- Do NOT modify the environment, install dependencies, or change directories beyond what each command itself does. Write nothing outside `<D>`. A `cd` a command carries runs in that command's own shell.
 - Retry only as Step 3 allows: once on a supplied `transient:` match, once as a supplied `rerun:`. Never rerun a whole command for any other reason.
 - Do NOT interpret output beyond Step 2's extraction. Do not summarise, flag patterns, or aggregate across commands. `outcome:` comes from `EXIT=` and Step 3 only — a `cargo test` run prints `test result: ok` for every passing binary and still exits non-zero when one fails.
 - Do NOT reorder commands. The list is run top-to-bottom exactly as supplied.

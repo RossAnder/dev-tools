@@ -61,13 +61,26 @@ tomlctl plan milestone add --slug <slug> --id A --goal '<what the milestone deli
 
 **Milestone order.** Milestones run in any order their dependencies allow, store order only breaking ties. When one milestone must run after another that none of its rows needs, such as a risk-first order, a handover or install that must land first, or a change to the build environment, add `--after <id>` to the later milestone's `milestone add`. A deferred milestone is stored after every milestone whose output its elaboration may read, and gets `--after <id>` on each such milestone none of its rows already needs: after approval its new rows may need only milestones stored before it, no verb reorders milestones, and the schedule reports it ready to elaborate only from its recorded edges.
 
+**Self-edits.** A plan that edits the harness which will run it, such as an engine's references under `claude/skills/`, an agent body under `claude/agents/` or a saved Workflow script under `claude/workflows/`, puts every such row in a milestone after the one whose external gate installs the binary those files name, such as `cargo install --path tomlctl`, with `--after <id>` on the later milestone. The edited text then never names a verb or flag the installed binary lacks while it runs. While a milestone edits the engine running it, the implement engine drains from a snapshot of its references taken at launch ([run-milestone.md, Snapshot a self-edited engine](../../implement-v2-engine/references/run-milestone.md#snapshot-a-self-edited-engine)). An edited agent body or `SKILL.md` reaching the running session through the config dir's links is not used by it; the change takes effect from the next session, so a later milestone that needs it is run from a fresh session.
+
 A gate that can fail for reasons of this environment, such as a link or install script, gets a probe: add `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. Prove runs it (`design/shapes.md#gate-probes`).
 
 A gate that changes something outside the build, such as an install, a link or a deploy, is added with `--external-gate '<command>'` instead of `--gate`, so the drain holds it until the other gate commands pass.
 
+A gate that compares the tree against a reference, such as a snapshot, golden-file, parity or identity diff, can fail on noise the base tree already carries, such as a hash of the build's location or a line ending, and the drain would find it only after spending a round. Mark each one with `--baseline-gate '<command>'` beside its `--gate`, the exact same command, on `plan milestone add` or `update`. Prove proves it (section 4d): by one run on the unchanged tree when its tool exists now, or, when a task of the milestone creates the tool, by a null-control accept entry on that task, which runs the tool on the base against itself and fails on any difference:
+
+```toml
+[[record.spec.accept]]
+behaviour = "the comparison of the base tree against itself reports no difference"
+check = "<the tool's command, comparing the base with itself>"
+kind = "forward"
+```
+
+`plan check` reports `plan/baseline-gate-unproved` on a baseline gate with no standing proof.
+
 Upfront elaboration is the norm. Defer a later milestone only when its detail depends on what earlier ones will produce, and say why with `--defer --reason '<why>'`; its tasks then carry outcome, behaviour, constraints and estimated files, and gain `check`, premises and precedent when it is elaborated.
 
-**UI milestones.** Once the milestones are cut, and before any row is written, a milestone that adds a UI surface or reshapes the layout of one goes through [ui-layout.md](ui-layout.md): you judge which milestones are UI and list the call for every milestone so the user can correct it, the user picks among concrete layouts, and the pick is recorded as a `look` decision and a `design/ui-<milestone>.md` file. Its capture states and controls are declared with `--ui-state` and `--ui-control`, on `plan milestone add` when the step runs before the milestone is added, otherwise on `plan milestone update`. A deferred UI milestone runs the step when it is elaborated.
+**UI milestones.** Once the milestones are cut, and before any row is written, a milestone that adds a UI surface or reshapes the layout of one goes through [ui-layout.md](ui-layout.md): you judge which milestones are UI and list the call for every milestone so the user can correct it, the user picks among concrete layouts, and the pick is recorded as a `look` decision and a `design/ui-<milestone>.md` file. Record the UI or not-UI call of every milestone, not only the UI ones, as a decision, and set it on the milestone with `--ui yes` or `--ui no` on `plan milestone add` or `update` beside that decision, so a skipped call shows in the store; `plan check` reports `plan/ui-capture-missing` on a `--ui yes` milestone that declares no `--ui-state`. A UI milestone's capture states and controls are declared with `--ui-state` and `--ui-control`, on `plan milestone add` when the step runs before the milestone is added, otherwise on `plan milestone update`. A deferred UI milestone runs the step when it is elaborated.
 
 **Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. `direction.md` and each `ui-<milestone>.md` are design files of this kind, written by the steps above. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
 
@@ -87,6 +100,23 @@ tomlctl plan handover set --slug <slug> --ndjson <scratch>/handover.toml
 ```
 
 Landing work an agent can perform goes to its home (`design/handover.md#where-agent-performable-steps-go-instead`): an install or link is a gate on the last milestone. No handover is the expected case.
+
+**Blocking handovers.** An input only the user can supply that a task needs before it starts, such as a token in `.env` or an account set up on a console, is a handover that holds the task back, not a step after landing. Give it `blocks`, naming each task that needs the input, and a `ready_check`: a read-only command that exits 0 once the input is in place and never makes a network call or builds. While it is not done, `plan emit launch-args` withholds those tasks, and the implement engine runs the `ready_check` at the milestone's pick and asks the user to perform the handover when it fails ([run-milestone.md, section 2, Blocking handovers](../../implement-v2-engine/references/run-milestone.md#2-pick-the-milestone)). Its `when` says before the blocked task's milestone.
+
+```toml
+[[record]]
+reason = "credentials"
+action = "Put the deploy token in .env as DEPLOY_TOKEN."
+when = "Before milestone A starts."
+done_when = "The ready check exits 0."
+source_task = 6
+blocks = [6]
+ready_check = "grep -q '^DEPLOY_TOKEN=' .env"
+```
+
+`plan.toml` is committed, so neither `ready_check` nor `note` ever holds a secret's value: the `note` names where an input lives and its kind, and the `ready_check` tests presence, as `grep -q '^NAME=' .env` or `test -n "$NAME"` do, without printing it. `plan check` reports `plan/handover-blocks-unknown` on a `blocks` id no row carries.
+
+**Outside facts.** A fact about something outside the repo that you write yourself, such as a CLI's capability, a console label, an API field, a version or an image tag, into a row's `action`, `detail` or `spec`, a handover's `action` or a fix you apply by hand, cites a fetched source that covers that same object, not an analogous one: a note's `[[source]]` or a page you fetched under the `research-methods` source hierarchy. Without one, fetch it now under that hierarchy, or send it to an investigator lens, before writing it. A pin to a version or an image tag also gets an existence check Prove runs, usually a `--gate-probe` on the gate that consumes it, such as `docker manifest inspect <image>:<tag>` on the gate that builds the image. Make it a premise only when its check reads locally, such as a lockfile entry: the implement engine refuses a premise line that makes a network call.
 
 For a milestone that declares `ui_states`, record no handover asking the user to review the look or to reproduce a visual defect: the milestone's captures and its inspector settle those. State what the user would have checked as a look entry on the row that builds it (section 3).
 
@@ -227,7 +257,7 @@ Prove runs in this order: the store check, the premises, the cold read and its f
 tomlctl plan check --slug <slug>
 ```
 
-It exits 1 on any error-class finding. `plan stage` names the verb that clears each class; fix every error and re-run until none is left. A `plan/probe-absent` warning is expected here and is cleared in 4d. A `plan/file-only-chain` info finding names `needs` links that exist only because two rows edit one file; where its longest chain is most of the milestone, split that file so the rows can run together, or keep the chain and move on. A `plan/milestone-width` info finding names rows that could start with an earlier milestone; move each to the milestone its `detail` names with `tasks update --ndjson`, or merge the two milestones, unless the boundary is one the `How many` rule calls for, and with `--milestones few` clear every one. A deferred milestone raises none. A `plan/milestone-order-unqualified` warning names milestones that could run before an earlier one; add `--after` where the order matters, otherwise leave it. A moved row that shares a file with a row of its new milestone needs that row, or the other way round, so the two never run together. A `plan/generated-output-unheld` warning names a row that holds a generator input without all its outputs; add the output to the row's `files`, or confirm a dependent row holds it. A `plan/file-case-collision` warning names a planned file whose name without its last extension differs from a neighbour's only by letter case; rename it so the two differ by more than case, unless the collision is intended and the project has no rule against it. A `plan/needs-gate-effect` warning names a row that needs a same-milestone row whose external check only the gate runs; the effect will not exist while the row runs, so move the dependent row to a later milestone, or have it produce the effect itself and say so in its `detail`, unless the need is for file order alone.
+It exits 1 on any error-class finding. `plan stage` names the verb that clears each class; fix every error and re-run until none is left. A `plan/probe-absent` warning is expected here and is cleared in 4d, and so is a `plan/baseline-gate-unproved` warning, by 4d's baseline proofs. A `plan/ui-capture-missing` warning names a `--ui yes` milestone with no capture states; declare them by [ui-layout.md](ui-layout.md), or correct the call with `--ui no`. A `plan/file-only-chain` info finding names `needs` links that exist only because two rows edit one file; where its longest chain is most of the milestone, split that file so the rows can run together, or keep the chain and move on. A `plan/milestone-width` info finding names rows that could start with an earlier milestone; move each to the milestone its `detail` names with `tasks update --ndjson`, or merge the two milestones, unless the boundary is one the `How many` rule calls for, and with `--milestones few` clear every one. A deferred milestone raises none. A `plan/milestone-order-unqualified` warning names milestones that could run before an earlier one; add `--after` where the order matters, otherwise leave it. A moved row that shares a file with a row of its new milestone needs that row, or the other way round, so the two never run together. A `plan/generated-output-unheld` warning names a row that holds a generator input without all its outputs; add the output to the row's `files`, or confirm a dependent row holds it. A `plan/file-case-collision` warning names a planned file whose name without its last extension differs from a neighbour's only by letter case; rename it so the two differ by more than case, unless the collision is intended and the project has no rule against it. A `plan/needs-gate-effect` warning names a row that needs a same-milestone row whose external check only the gate runs; the effect will not exist while the row runs, so move the dependent row to a later milestone, or have it produce the effect itself and say so in its `detail`, unless the need is for file order alone.
 
 **Renamed and removed names.** Design can rename or remove a name Surface never swept, and `plan check` cannot see that. For each symbol, key, verb or flag a task's `outcome` renames, removes or reshapes, run the Scope sweep of [open-and-challenge.md, section 5](open-and-challenge.md#5-surface) on the old name now, against the rows as written. Every file with a hit must be in the `files` of a task whose outcome covers that site, tests and documentation included; a hit the plan means to leave is named in that task's `constraints`. A hit in a file no row holds is a missing file or a missing task: fix it with `tasks update --ndjson` or `tasks add-many` before the cold read, because a cold reader looks only at the files its milestone lists and a worker may not leave its own.
 
@@ -419,6 +449,43 @@ tomlctl plan probes --slug <slug> --record <scratch>/gates.out --gates
 ```
 
 A `fails` or `broken` verdict names a gate that cannot pass in this environment. Fix the environment, change the gate, or record a handover; do not leave it to the milestone's drain to find.
+
+**Baseline proofs.** Last, prove each baseline gate of every milestone that is not deferred, from Design's `--baseline-gate` marks:
+
+```bash
+tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --select id,elaboration,baseline_gates,baseline_proofs --lines
+```
+
+A gate whose tool a task of its milestone creates is proved by that task's null-control accept entry (section 1, Milestones), which the gate runs once the task is done. Confirm the entry is on the row, then record the proof, naming the task:
+
+```bash
+tomlctl plan milestone update --slug <slug> --id <id> --baseline-proof '<gate> :: null-control :: <task-id>'
+```
+
+Every other baseline gate is run once on the unchanged tree, before any task has run. Never run one inline: a comparison gate can take many minutes, past this step's limits. Dispatch the `verification` agent once, one-shot, with no `name:` and no `model:`, every such gate a `- ` item of its `commands:` with the `timeout:` the project documents for it, and `keep_going: true`, so one failing gate does not hide the next. Record each block's verdict on its milestone, `pass` for a `pass` or `flaky` block and `fail` for a `fail` or `timeout` one:
+
+```bash
+tomlctl plan milestone update --slug <slug> --id <id> --baseline-proof '<gate> :: <verdict>'
+```
+
+A later proof of the same gate replaces the earlier one. A `fail` goes to the user before approval, through `AskUserQuestion`, quoting the block's failing lines and the cause you read from them: fix the noise in this plan, by a task or a spec change on the task that owns the tool, then run the proof again; change or drop the gate; or accept the failure and let the drain's base rerun sort the milestone's failures from the base's. When the user accepts it, record a decision whose `provenance` is `user-stated` or `user-confirmed` and whose `decision` text contains the gate's exact command, binding the milestone's rows; `plan check` stops reporting `plan/baseline-gate-unproved` for that gate only then.
+
+```toml
+[[record]]
+decision = "Accept that `<gate>` fails on the unchanged tree; the drain sorts its base failures from the milestone's."
+why = "<the user's reason>"
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = ["<task id>"]
+evidence = "<the verification block of the baseline proof>"
+if_false = "the gate's base failures cost the milestone a fix round"
+surfaced = true
+```
+
+```bash
+tomlctl plan decide --slug <slug> --ndjson <scratch>/baseline-accept.toml
+```
 
 ### 4e. Where the plan stands
 

@@ -31,6 +31,27 @@ Then Edit `docs/flows/<slug>/brief.md`, which `plan open` wrote as a skeleton. F
 
 **Read-back.** Once the brief is filled, give the user a short account, from its Intent and Success criteria, of what they will see and do once the work lands: the screens, commands or outputs they meet and what each lets them do. Ask through `AskUserQuestion` whether it matches what they mean, and fold every correction into the brief before Investigate launches, since a misread caught here costs no investigation. The second read-back, before Design, is in [write-and-prove.md](write-and-prove.md#1-design).
 
+**Capture config.** When the repo has no `.claude/ui-capture.toml`, ask the user once, through `AskUserQuestion`, whether the project has a UI to capture: a web page, a QML or Quickshell window, or a terminal UI. Without the config the visual pass has nothing to run and no store check notices a UI milestone, so the answer has to be on record before Design cuts milestones. Put first the answer the repo suggests, yes when it holds web, QML or terminal-UI sources and no otherwise. Record the question before asking it, as Surface records an item (section 5), with `decision` opening `UI to capture:` so later steps find it in `tomlctl plan view --slug <slug> --for human`:
+
+```toml
+[[record]]
+decision = "UI to capture: <yes, the project has a UI; the first UI milestone declares .claude/ui-capture.toml | no, the project has no UI to capture>"
+why = "the repo has no .claude/ui-capture.toml, so the visual pass and plan check cannot see a UI milestone without this answer"
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = ["docs/flows/<slug>/brief.md"]
+evidence = "<the UI sources found, or that none were>"
+if_false = "<a UI milestone goes unjudged, or a project without a UI is asked for capture states>"
+surfaced = true
+```
+
+```bash
+tomlctl plan decide --slug <slug> --ndjson <scratch>/capture-config.toml
+```
+
+Apply the answer with a row naming the printed id, by Surface's answer table. A yes leads the config row of [ui-layout.md, section 5](ui-layout.md#5-declare-the-states-the-controls-and-the-look-entries) in the first milestone judged UI, and ui-layout reads this decision rather than asking again. A repo that already has the config is not asked: the config is the answer.
+
 ## 2. Investigate
 
 A lens is one Unknown phrased as one question on one line, with an id matching `^[a-z0-9][a-z0-9-]*$`. At most 6 lenses go into one launch. Ids `structure-challenge` and those starting `cold-read-` or `backlog-` name other notes in the same directory, so a lens never takes one.
@@ -107,6 +128,8 @@ After the run finishes, check against it with the same arguments:
 ```bash
 bash <skill-dir>/scripts/fanout-check.sh check <dir> <slug> <note-path>...
 ```
+
+No repo writes while a launch is open: between a snapshot and its check nothing writes in the repo, by any tool, the brief and the notes included, besides the `plan run start` and `plan run finish` the step itself names. The check cannot tell your edit from an agent's, so an edit inside the window stops the plan on a question only the user can answer. Hold a correction in `<scratch>` and apply it after the check passes, which also keeps the brief on disk the brief the agents were launched with.
 
 Exit 0 means every capture is identical. Exit 2 means the config changed: the script prints the config diff and runs no other git command, and you run none either. Exit 1 names each capture that changed, printing the changed lines of the status and the untracked digests. Exit 3 is a usage error, such as a slug or a note path the script refuses. Exit 1 or 2 stops the plan: show the user the output and the changed paths, and change nothing yourself. A file that a `mismatch` entry names is such a change too; once the user has seen it, the status table's delete-and-relaunch applies.
 

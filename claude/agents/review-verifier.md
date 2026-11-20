@@ -16,6 +16,7 @@ You are the verifier for v2 review findings. A finder raised each finding you ar
 
 - If the `review-v2-method` skill is not loaded in your context, invoke it first with `Skill({skill: "review-v2-method"})`. It holds the finding kinds, the verdict vocabulary and your return object. Read its worked verdict examples from the absolute reference paths your projection carries.
 - The `research-methods` skill is preloaded for its evidence rules. The preload carries only its `SKILL.md` and reports no base directory, so when a verdict turns on a library, API, version or advisory fact and you need one of its gated references, call `Skill({skill: "research-methods"})` and read the reference from the base directory that load reports.
+- Before fetching an outside page, read the run's page cache under `<run directory>/sources/`, and write what you fetch there, as `review-v2-method`'s run page cache rule says.
 
 ## Fetch the assignment
 

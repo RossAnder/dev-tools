@@ -15,11 +15,13 @@ export const meta = {
 // their compile checks contend on one build lock. Whenever one returns, every
 // free slot is filled, in args order, with a task whose `needs` and `after` ids
 // all returned `done`, whose files no running task holds, and which a full
-// compile cap does not hold back. A task behind a
-// non-`done` return is reported `blocked` and never dispatched. Nothing is
+// compile cap does not hold back. A task marked `builds` runs its own building
+// check, so it starts only once the pool is empty and nothing starts beside it;
+// while one is ready and waiting, no other task starts, so it is never starved.
+// A task behind a non-`done` return is reported `blocked` and never dispatched. Nothing is
 // retried; the engine's drain decides what runs again. `error` is a thrown
 // error or a bad return, and null otherwise.
-const SCRIPT_VERSION = '5'
+const SCRIPT_VERSION = '6'
 const MAX_PARALLEL = 8
 const MAX_NEEDS_FILES = 16
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -106,6 +108,8 @@ const argProblems = () => {
   a.tasks.forEach((t, i) => {
     const name = isId(t && t.id) ? `task ${t.id}` : `task ${i}`
     if (!hasWorker(t && t.executor)) problems.push(`${name}: executor ${JSON.stringify(t && t.executor)} is neither lite nor deep`)
+    const buildsFlag = t && t.builds
+    if (buildsFlag !== undefined && typeof buildsFlag !== 'boolean') problems.push(`${name}: builds ${JSON.stringify(buildsFlag)} must be a boolean when present`)
     const needs = t && t.needs
     if (!Array.isArray(needs)) {
       problems.push(`${name}: needs must be an array`)
@@ -265,10 +269,15 @@ const COMPILE_CAP = a.max_compile_parallel === undefined ? a.max_parallel : a.ma
 const compiles = (t) => t.files.some((f) => /(\.rs|(^|\/)cargo\.toml)$/.test(fileKey(f)))
 const compilingInFlight = () => [...inFlight.values()].filter((r) => compiles(r.t)).length
 
+const builds = (t) => t.builds === true
+const buildingInFlight = () => [...inFlight.values()].some((r) => builds(r.t))
+
 const isDone = (id) => results.has(id) && results.get(id).status === 'done'
+const buildWaiting = () => pending.some((t) => builds(t) && gates(t).every(isDone))
 const canStart = (t) => gates(t).every(isDone)
   && !t.files.some((f) => held.has(fileKey(f)))
   && (!compiles(t) || compilingInFlight() < COMPILE_CAP)
+  && (builds(t) ? inFlight.size === 0 : !buildingInFlight() && !buildWaiting())
 
 const start = (t) => {
   t.files.forEach((f) => held.add(fileKey(f)))

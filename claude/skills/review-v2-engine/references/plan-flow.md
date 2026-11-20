@@ -254,6 +254,8 @@ Dispositions are the user's, as at the engine's stage 7. The grammar is the engi
 
   The row becomes `resolved` with its `addressed` targets, which section 10 re-checks.
 
+  A hand fix that brings in an outside value, such as a version, an image or package tag, a CLI flag, an API field or a console label, cites a fetched source covering that same object, never the local toolchain's own output or an analogous object; without one, fetch it under the `research-methods` source hierarchy, or send it to an investigator, before editing. A version or tag pin also gets an existence check, usually a `--gate-probe` on the gate that consumes it, and is re-probed by section 8. Name the source in the staged `addressed` text. The rule is the `plan-v2-engine` skill's `references/write-and-prove.md`, **Outside facts**.
+
 A `convert` in flow mode writes the replacement with `target`, `expect` and `new` per `plan-records.md`; it is minted `unverified` and verified in this run before section 9. Backlog picks go through the `backlog-capture` skill, as the engine's stage 8 says.
 
 ## 8. Re-probe
@@ -313,13 +315,21 @@ tomlctl review recheck-targets --run <run> --slug <slug>
 
 It prints `{run, targets}`: the distinct `applied.target` of every finding `review apply` wrote in `<run>` and every `addressed` entry, sorted. With `targets` empty, skip to section 11.
 
-**Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth:
+**From approval.** `/plan-v2`'s Approve step also opens a re-check, by its `references/approve.md`, when `plan stage` prints a non-empty `review_delta`: the plan records changed since the latest finished review run that covered them, such as re-check triage edits, hand fixes and rows added or moved after the targets above were fixed. There is no first run: `<run>` is the newest finished plan-family run, the one the delta was measured against, the last row of:
+
+```bash
+tomlctl review run list --slug <slug> --finished --where family=plan --lines
+```
+
+Its targets are the `review_delta` array `plan stage` printed, copied as it stands, in place of `review recheck-targets`; and its run start adds `--set recheck_scope=delta`, so the new run's `plan_digest` covers the delta and a clean finish empties it. Every other step below is unchanged.
+
+**Run start.** A fresh run at `quick`, recording the run it re-checks; `--propose` scales to the run's recorded depth. `rechecks=<run>` names the run whose targets, or whose `plan_digest` the delta was measured against, this run re-checks:
 
 ```bash
 tomlctl review run start --slug <slug> --command review-plan-v2 --family plan --depth quick --base HEAD --set-json 'scope=@<scratch>/review-scope.json' --set rechecks=<run> --set-json models=@<scratch>/review-models.json --set substrate=<workflow|agent-waves>
 ```
 
-`substrate` follows the engine's rule, as at section 2.
+A re-check opened from approval adds `--set recheck_scope=delta` to that command. `substrate` follows the engine's rule, as at section 2.
 
 Bind its `<recheck-run>` and `<recheck-dir>`.
 
@@ -351,7 +361,7 @@ Workflow({
 })
 ```
 
-`targets` is the `targets` array `review recheck-targets` printed, copied as it stands; never assemble it from the triage by hand. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened.
+`targets` is the `targets` array `review recheck-targets` printed, or, for a re-check opened from approval, the `review_delta` array `plan stage` printed, copied as it stands; never assemble it from the triage by hand. A recheck takes depth `quick` and a non-empty `targets`; the wrapper refuses anything else and launches nothing. `/plan-v2`'s step row stays the one section 4 opened, or, for a re-check opened from approval, the new `review` row approve.md opened for it.
 
 **On the return.** Read it by section 5, with the same fallback table, then mop up by section 6 against `<recheck-run>`. The re-check runs no follow-up wave except the one `review-finder` probe cell that collects its sweepers' escalations, as `compose.md` allows at `quick`.
 
@@ -376,7 +386,7 @@ tomlctl plan run finish --slug <slug> --step review --outcome <outcome>
 | A fallback fired, or a run finished `--incomplete` | `errors` |
 | The user stopped the review | `stopped` |
 
-Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and approves with `--review ran`. `plan approve` refuses while a plan-family run is unfinished, a user-tier or question-tier finding is open, or an edited `spec.accept` entry has no probe; `plan stage` applies the same rule, so `next` names what is left.
+Then `/plan-v2` goes on to its gate, which shows `review_edits` and `risks`, and approves with `--review ran`; after a re-check opened from approval, it starts its Approve step again from step 1, which reads `review_delta` afresh. `plan approve` refuses while a plan-family run is unfinished, a user-tier or question-tier finding is open, or an edited `spec.accept` entry has no probe; `plan stage` applies the same rule, so `next` names what is left.
 
 **Close summary.** Print:
 

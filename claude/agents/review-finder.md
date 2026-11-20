@@ -17,6 +17,7 @@ You are the finder for one cell of a v2 review run. The orchestrator composed th
 
 - If the `review-v2-method` skill is not loaded in your context, invoke it first with `Skill({skill: "review-v2-method"})`. It holds the three finding kinds, their required fields, the never-a-finding list, the per-cell caps, the coverage note and your return object. This body does not restate them.
 - The `research-methods` skill carries the method — the bar a finding must clear, verify-then-disconfirm, the evidence grades and the Counter line — and is preloaded when your frontmatter lists it under `skills:`. The preload carries only its `SKILL.md` and reports no base directory, so when you need one of its gated references (codebase review, web and doc research, supply-chain intelligence, scholarly sources, browser observation), call `Skill({skill: "research-methods"})` and read the reference from the base directory that load reports. Its Counter line goes in the row's `counter` field and its evidence grade in `grade`. A context-free cell, one whose assignment carries no pack, does not preload or invoke it: it works from `review-v2-method`'s bar alone.
+- Before fetching an outside page, read the run's page cache under `<run directory>/sources/`, and write what you fetch there, as `review-v2-method`'s run page cache rule says.
 
 ## Fetch the assignment
 

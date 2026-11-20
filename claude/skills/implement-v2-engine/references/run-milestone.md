@@ -14,7 +14,13 @@ Each check below stops the engine on failure, with the reason reported; none is 
 tomlctl plan stage --slug <slug>
 ```
 
-`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run, so report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>`, `reproduce:<id>` or `visual:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. An `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress in another session: leave it alone and never settle it here. It owns no task rows, so it is not an open run for the stale `in-progress` reset below either. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
+`stage` must read `approved` (every row still `pending`) or `running`. `done` means every row is `done`: there is nothing to run. Before reporting, settle the flow's undone handovers, since no milestone drain is left to commit a done-mark:
+
+```bash
+tomlctl items list .claude/flows/<slug>/plan.toml --array handover --where done=false --select id,reason,action,done_when,ready_check --lines
+```
+
+Offer each one to the user through `AskUserQuestion`, quoting its `action` and `done_when`: performed, or not yet. Each one the user reports performed is settled by the skill's rule 7, in this turn: its `ready_check` run, the mark, the `note`, and the commit of `plan.toml` and its sidecar staged by path. One left undone, or whose `ready_check` exits non-zero, stays in the report's `handovers:` section. Then report that the flow's status is still to be moved and stop. Any other stage means the plan is not approved: stop and name `/plan-v2 <slug>`, which owns everything before approval. `open_runs` naming an `implement:<id>`, `reproduce:<id>` or `visual:<id>` step is an open run, settled by the skill's Re-entry section before anything here continues. An `open_runs` entry `elaborate:<id>` or `cold-read:<id>` is a plan-v2 elaboration in progress in another session: leave it alone and never settle it here. It owns no task rows, so it is not an open run for the stale `in-progress` reset below either. A `blockers` entry other than an open run, such as a brief changed since approval, stops the engine with that entry quoted.
 
 The store checks run in step 2, scoped to the picked milestone, never flow-wide: a milestone being elaborated holds half-written rows that would otherwise refuse every milestone.
 
@@ -111,6 +117,21 @@ Read the script before running it, by the rule step 3 gives for a premise script
 
 `--record` prints `{"ok":true,"recorded":[{"milestone","gate_probe","verdict"}]}`, where `gate_probe` is the index into the milestone's `gate_probes`. Every verdict must be `holds`. On a `fails` or `broken` verdict, launch nothing: stop the engine, naming the gate the probe stands for and quoting the probe's row from the capture, its exit code, stdout and stderr. The fix is the environment, such as installing the missing tool, or a replan of the gate, and both are the user's.
 
+**Blocking handovers.** A handover whose `blocks` names a task is an input only the user can supply, such as a token in `.env`, that the task needs before it starts. While the handover is not done, step 4's `plan emit launch-args` withholds the task as `handover:<id>` and drops its dependents as `needs-withheld:<task>`. Settle each one here, once the milestone is known and before its first launch, beside the gate probes; a relaunch from the drain does not ask again. List the undone handovers and the milestone's rows:
+
+```bash
+tomlctl items list .claude/flows/<slug>/plan.toml --array handover --where done=false --select id,action,done_when,blocks,ready_check --lines
+tomlctl tasks list --slug <slug> --where checkpoint=<id> --where status=pending --select id --lines
+```
+
+A handover whose `blocks` names none of those rows is not this milestone's and is skipped. For each one that does:
+
+1. **Read its `ready_check`** before running it, by the rule step 3 gives for a premise line: it only reads, such as `grep -q '^NAME=' .env` or `test -n "$NAME"`, and it never makes a network call, builds or prints a secret's value. One that does any of those is not run: leave the handover undone, ask the user as in 2, and replan the check through `plan handover set` once the milestone is settled.
+2. **Run it** under `timeout 60`. Exit 0 means the input is in place: settle the handover by the skill's rule 7, its `note` saying the `ready_check` passed at the pick. A non-zero exit, or a handover with no `ready_check`, goes to the user through `AskUserQuestion`, quoting its `action` and `done_when` and naming the blocked tasks, with two options: performed now, or not now. On performed, settle it by rule 7, which runs the `ready_check` again and leaves the handover undone when it still exits non-zero.
+3. **Declined, or still failing.** The handover stays undone and its tasks stay `pending`: launch-args drops them, their dependents wait, and the rest of the milestone launches. Never park the row or replan it, since nothing in the task is wrong. The milestone cannot reach its gate while a blocked row is not `done`, so the report names each one under `withheld:`, recorded with `kind = "withheld"` and `needs_person` left `true`, as `task <n>: handover <id> not done — <action>`. The next invocation asks again at the pick.
+
+Every settled handover is committed in the same turn by rule 7, before step 3 runs, so the launch never stands on an uncommitted done-mark.
+
 ## 3. Premises
 
 A premise is a code fact a task stands on, with a `check` that exits 0 while the fact holds. Premises run before every launch, the first and every relaunch, because the code under a task moves as earlier tasks land and as commits arrive since approval. tomlctl never runs a stored command; you run the emitted script, with your own rights.
@@ -184,7 +205,8 @@ The call fails, naming `plan probes --emit --premises --milestone <id>`, when a 
 |---|---|---|
 | `not-pending` | The row is `done`, `failed`, `parked` or `in-progress`, outside this launch | Nowhere |
 | `withheld:<task>:<premise>:<verdict>` | Premise `<premise>` of the row did not hold: `fails`, `broken`, or `unchecked` for one with an empty check, an `after:` on a task outside the milestone, or an `after:` on a task this launch does not dispatch | The drain replan, with the premise and its verdict, by step 3's Withholding |
-| `needs-withheld:<task>` | The row transitively needs `<task>`, which was dropped for a reason of its own | Waits on `<task>`'s replan, then a later launch |
+| `handover:<id>` | The row is named in the `blocks` of handover `<id>`, which is not done, the first such handover in store order | No replan: the row stays `pending` until the user performs the handover, asked at the pick by step 2's Blocking handovers, and reported under `withheld:` while it is not done |
+| `needs-withheld:<task>` | The row transitively needs `<task>`, which was dropped for a reason of its own | Waits on `<task>`'s replan, or on its handover, then a later launch |
 | `executor:<value>` | The spec's `executor` is neither `lite` nor `deep` (`none` when the row has no spec). A `tool` or `clerk` row has no worker in this slice | The `needs_human` report, with its executor |
 | `no-files` | The row's `files` is empty: the Workflow refuses one, and a task that edits nothing has nothing to dispatch | The drain replan |
 | `need-not-done:<task>:<status>` | A need is neither `done` nor dispatched, such as one left unfinished in another milestone | The drain, reporting the need and its status |
@@ -224,6 +246,24 @@ Write the emitted `args` object, unchanged, with the Write tool to `<scratch>/im
 - A task with a non-empty `after` is dispatched once every task it names has returned `done`, and its prompt tells the worker to check its `after:` premises before editing.
 
 The Workflow refuses the whole launch, starting no agent, when `slug`, `milestone` or `root` is malformed, `max_parallel` or a present `max_compile_parallel` is out of range, `tasks` is empty, an id is not a positive integer or repeats, an `executor` is neither `lite` nor `deep`, `needs` or `after` names an id outside `tasks`, `files` is empty or holds a multi-line path, or the `needs` and `after` together form a cycle. The emit builds none of these, so a refusal means the args were not the emitted ones.
+
+### Snapshot a self-edited engine
+
+A milestone whose rows edit this engine's own references would change the procedure under the drain that follows them. At the milestone's first launch in this invocation, before the Workflow call, resolve where the engine skill lives, following the config dir's link to its target:
+
+```bash
+cd "$(readlink -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/implement-v2-engine")" && git rev-parse --show-toplevel --show-prefix
+```
+
+When the top level it prints is this repository's root and a `files` path of any task in `args.tasks` starts with the prefix it prints, copy the references into the scratchpad:
+
+```bash
+cp -r <engine-dir>/references <scratch>/engine-<id>
+```
+
+`<engine-dir>` is the resolved directory. From then until this milestone's commit, drain from the snapshot: read [drain.md](drain.md), [visual.md](visual.md), [questions.md](questions.md), [requests.md](requests.md), [apply-rows.md](apply-rows.md), [report.md](report.md) and this file from `<scratch>/engine-<id>/`, never from the skill directory. A relaunch from the drain reuses that snapshot and never copies again, so every round of the milestone runs the text it started with. When the prefix names no launched path, or the engine resolves outside this repository, take no snapshot.
+
+The snapshot covers the references only. Edits to the linked `SKILL.md` and agent bodies do not reach this session, as a probe on 2026-11-20 showed for a linked agent body: they take effect from the next session.
 
 ### Launch and record
 

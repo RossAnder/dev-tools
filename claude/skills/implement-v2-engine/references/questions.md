@@ -45,7 +45,7 @@ Put the question to the user with `AskUserQuestion`, one question per record:
 
 Several `QUESTION` messages waiting together go in one call, at most four questions to it.
 
-Before you open the picker, rule every `REQUEST` message waiting in this turn by [requests.md](requests.md). The open picker blocks every later turn until the user answers, and a request left behind it times out at its worker as a denial.
+Before you open the picker, rule every `REQUEST` message waiting in this turn by [requests.md](requests.md). An open picker is assumed to hold every later turn until the user answers, and a request left behind it times out at its worker as a denial; this is unverified, since no observation has settled whether a `SendMessage` arriving while a picker is open is queued or lost. The rule holds either way.
 
 Nothing times out while the picker is open: wait for the user, with no timer and no default. A worker whose own wait ends while the picker is open parks, and the answer still lands below.
 

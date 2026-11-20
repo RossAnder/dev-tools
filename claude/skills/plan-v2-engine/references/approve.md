@@ -37,6 +37,19 @@ End the turn and resume on the task notification. Unlike Investigate and the col
 
 The review ends with `plan run finish --step review`, by section 11. An open `review` row on re-entry is resumed from the store by section 13, never relaunched.
 
+### Review delta
+
+Plan records can change after the review's re-check fixed its targets: re-check triage edits, hand fixes, rows added or moved, and your own edits up to the gate. `plan stage` prints them as `review_delta`, the records changed since the latest finished review run that covered them. Approve step 1 reads it; when it is non-empty and the review ran, re-check exactly those records before the gate:
+
+1. Record a new step row, by the Run section's launch rule: `tomlctl plan run start --slug <slug> --step review --workflow plan-v2-review --run-id <runId> --session "$CLAUDE_CODE_SESSION_ID"` once the launch reports `async_launched`, or without `--workflow` and `--run-id` before a fallback.
+2. Run the re-check by `plan-flow.md` section 10, **From approval**: `rechecks=` names the newest finished plan-family run, the one the delta was measured against; the run start adds `--set recheck_scope=delta`; copy that run's `pack.md` and `profile.md`; and the launch's `targets` is the `review_delta` array `plan stage` printed, never one assembled by hand.
+3. Triage its findings and close it by sections 10 and 9, then finish the row by section 11.
+4. Start Approve again from step 1. Repeat until `review_delta` is empty.
+
+The user may stop the loop at any round and waive the delta instead. Then go to the gate with it: `plan gate` shows it under `risks` as the `review-delta` row, and approving takes `--waive-review-delta` with the user's reason, by Approve step 5. A waiver is never yours to give.
+
+A review that was skipped digests nothing, so its `review_delta` is empty. Under `plan approve --amend` the delta never refuses: show it at the gate and offer the re-check, which then runs by `plan-flow.md` section 12.
+
 ## Approve
 
 ### 1. Confirm the stage
@@ -46,6 +59,8 @@ tomlctl plan stage --slug <slug>
 ```
 
 Go on only when `stage` reads `ready`. Otherwise follow its `next` and come back; a blocker here is cheaper than a refusal after the plan is committed. An open run reads as a `relaunch step <s> or plan run abandon --step <s> --reason <why>` hint at any stage, and is settled by the open-run rule in `SKILL.md`.
+
+Then read `review_delta` from the same output. A non-empty one is never a blocker `stage` names, but on a first approval `plan approve --review ran` refuses it: re-check it by the Review delta section above before the gate, unless the user has already chosen to waive it there.
 
 ### 2. Scan for secrets
 
@@ -67,7 +82,7 @@ Show one screen, the arrays in the object's key order, because that order puts t
 
 1. `assumptions`: each `agent-assumed` decision with `why`, `binds`, `door`, `if_false` and `revisit_if`, in the order given, which ranks them by how much they bind, shown grouped by class (`structure`, `look`, `ux`, `cost`, `vocabulary`, `architecture`, `compromise`) so the user sees which kind of call was assumed.
 2. `one_way_doors`: each decision with its `provenance` and `revisit_if`.
-3. `risks`: each `skip-reason` row's `detail`, then each `review-finding` row as `id`, `severity`, `target` and `summary`. A `review-finding` row is an open critical or major defect, or an open re-check finding, which the user approves past or acts on.
+3. `risks`: each `skip-reason` row's `detail`, then each `review-finding` row as `id`, `severity`, `target` and `summary`, then the `review-delta` row's `targets`. A `review-finding` row is an open critical or major defect, or an open re-check finding, which the user approves past or acts on. A `review-delta` row lists plan records no finished review run covered, which the user re-checks or waives.
 4. `task_mix`: tasks by file-count bucket and `executor`.
 5. `review_edits`: each edit the review applied, as `id`, `target`, `tier`, `by` and `summary`, in the order given, which puts decisions first, then user, cited and mechanical.
 6. `deferred_milestones`: each with its `reason`.
@@ -80,7 +95,7 @@ After the totals, show what approving does to the v1 carriers. Print this block 
 
 > Bare v1 carriers will now pick this flow, `/review` and `/optimise` included, and none can run it: `tasks import-plan --slug` refuses it, `/implement` has no named halt for that, and `/review-plan` falls back to plan mode and can overwrite `brief.md`. Review it with `/review-plan-v2`, whose flow mode edits the plan's records. `/implement-v2` is the command that runs it. Pass `--flow` to v1 carriers, or clear it with `tomlctl flow active remove --slug <slug>`.
 
-Ask with `AskUserQuestion`: approve, or say what to change. When review was skipped, `risks` holds a `skip-reason` row; offer "review now" as a third option. Only "approve" goes on. "Review now" runs the Review step's Run section, then this step starts again from step 1, approving with `--review ran`; the skip row stays in `plan.toml` and still shows under `risks`. Any other answer, a secret-scan hit to remove included, routes back into the plan: the step that owns the change (Surface, Design, Write or Prove) makes it, Prove re-runs as far as the change unprobes, and this step starts again from step 1.
+Ask with `AskUserQuestion`: approve, or say what to change. When review was skipped, `risks` holds a `skip-reason` row; offer "review now" as a third option. Only "approve" goes on. "Review now" runs the Review step's Run section, then this step starts again from step 1, approving with `--review ran`; the skip row stays in `plan.toml` and still shows under `risks`. When `risks` holds a `review-delta` row, "approve" becomes "approve, waiving the review delta", which needs the user's reason in their own words, and "re-check the delta" is offered beside it: it runs the Review delta section, then this step starts again from step 1. Any other answer, a secret-scan hit to remove included, routes back into the plan: the step that owns the change (Surface, Design, Write or Prove) makes it, Prove re-runs as far as the change unprobes, and this step starts again from step 1.
 
 ### 4. Commit the plan
 
@@ -130,6 +145,14 @@ tomlctl plan approve --slug <slug> --review skipped-low-risk --reason '<reason f
 
 A review run after a skip, through "review now", approves with `--review ran`.
 
+When the user waived the review delta at the gate, pass their reason as the user gave it, never your own words, single-quoted like a skip reason:
+
+```bash
+tomlctl plan approve --slug <slug> --review ran --waive-review-delta '<why>'
+```
+
+The reason is stored as the approval's `delta_waiver`. A blank one is refused.
+
 Each precondition is a `kind=validation` refusal, and nothing is written until all pass:
 
 | Refusal | What clears it |
@@ -140,6 +163,7 @@ Each precondition is a `kind=validation` refusal, and nothing is written until a
 | `plan check` reports an error | The verb `plan stage` names for that class, then Prove from the change on. Step 1 should have caught this; a refusal here means something changed after it |
 | `` `--review ran` refused: `` with no finished plan-family run, or an unfinished one | Close the run by the review engine's `plan-flow.md` section 9, or resume an interrupted one by its section 13 |
 | `` `--review ran` refused: `` with an open user-tier or question-tier finding | Ask it by `plan-flow.md` section 7: a user-tier row is accepted and applied with `--user-accepted`, or vetoed and dismissed; a question-tier row is revised through the `plan` verbs or kept, then resolved with `review triage --resolve` |
+| `` `--review ran` refused: plan records changed since the last finished review run `` on a first approval, naming the records and `--waive-review-delta <why>` | Re-check them by the Review delta section, then step 1 again; or, only when the user waives it at the gate, approve with `--waive-review-delta` and their reason |
 | `` `--review ran` refused: `` with an applied `spec.accept` edit whose entry has no probe | Re-probe by `plan-flow.md` section 8; an entry the emit skips needs its `check` fixed through Prove first |
 | The flow's `status` is neither `draft` nor `in-progress` | An approved plan is refused without `--amend`, which is for a user-agreed change to intent (below). Any other status is not this engine's to change; stop and name it |
 | `git status` reports `tasks.toml`, `plan.toml`, `brief.md` or a `design/` file, ignored and untracked files included | Commit it as in step 4. An ignored design file cannot be staged without `-f`: ask the user whether it belongs in the plan, and move it out of `design/` when it does not |
