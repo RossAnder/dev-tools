@@ -15174,3 +15174,23 @@ evidence = [
     "tomlctl/src/review/recheck.rs",
 ]
 related = ["B-f007171d"]
+
+[[backlog]]
+id = "B-f19fe703"
+kind = "debt"
+summary = "drain.md is at 596 of its 600-line reference ceiling, so the next prose addition to the implement-v2 drain must first move a section into another references file"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "reference-ceiling",
+    "implement-v2",
+]
+status = "open"
+created = 2026-11-20T18:08:49Z
+last_seen = 2026-11-20T18:08:49Z
+seen_count = 1
+dedup_id = "f19fe7037804cd2b"
+origin = "implement-v2"
+flow = "v2-usage-audit-gaps"
+context = "skill_references_under_line_ceiling (cli::dispatch::tests, run by the pre-commit hook and every milestone gate) fails past 600 lines. Before the next edit to drain.md, move a self-contained section, such as step 8's tangential discoveries or the parked-row re-ask, into its own references file linked from SKILL.md. The same ceiling cost v2-usage-audit-gaps milestone A a gate fix round on tomlctl's plan.md."
+base_sha = "0c2dd3c2af98cd1bfc65aa3c9a364f16b9784a16"
+related = ["B-14c96cf2"]

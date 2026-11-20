@@ -709,6 +709,66 @@ rest = "a16877973b1f1354"
 rows = "9e42f3b5a7ce3288"
 specs = "0bb15dc36b861c75"
 
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "906eb03b41a942fe02581870ee3371114e895fa2ae29198e4b29ba9e96decd2d"
+run_id = "wf_f2ead470-2c3"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T17:58:42Z
+finished = 2026-11-20T18:07:11Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+]
+digest_at = 2026-11-20T17:58:18Z
+
+[run.store_digest]
+changes = "8638b925c2c671f0"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "492ff0dfd88f8bcf"
+specs = "d14bd4d0fba769d0"
+
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "f6c6af432bd9ba6d9a726838078826feb3ba5fccce210b982a1eb055af54ce5e"
+run_id = "wf_1526b1b5-5d3"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T18:08:04Z
+finished = 2026-11-20T18:08:27Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    38,
+    39,
+]
+digest_at = 2026-11-20T18:07:52Z
+
+[run.store_digest]
+changes = "fdb016107d4f6a19"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "5477ca329acb13eb"
+specs = "d1bb73cd253a0ac8"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -1411,6 +1471,532 @@ tangential = []
 command = "cargo nextest run -E 'test(/^plan_check::.*owner/) | test(/^plan_stage::/)'"
 result = "pass"
 
+[[attempt]]
+task = 16
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "drain step 7 reruns failures at base, routes base failures to the user, mints worker-run reproducers, checks fix rows against decisions and narrows after a whitespace round"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/drain.md"]
+
+[[attempt.deviations]]
+what = "The base-rerun record call writes its flags as `--base --blocks <path>`, not in the `--blocks <path> --base` order plan-run.md prints"
+why = "The accept check greps the literal `--base --blocks`; clap takes the flags in either order, and the installed binary's help lists both"
+means = "detail (1): record with `plan run gate ... --base --blocks <file>`"
+
+[[attempt.deviations]]
+what = "A backlog-routed base failure is found in later rounds by a fixed summary prefix (`base failure in <slug> milestone <id>: `) read with `backlog list --grep`, and a waived one by the milestone's `kind = base` gate_accept records"
+why = "The spec says a routed base failure is not asked about again but names no record for the backlog route; the backlog item is the only durable trace, and a fixed prefix avoids grepping for test ids full of regex metacharacters"
+means = "detail (2) and the carry constraint"
+
+[[attempt.deviations]]
+what = "The base call's verification items carry no `rerun:` option, only the gate's `timeout:` and `transient:`"
+why = "Each item is already the narrow rerun of the failed ids; a second narrow rerun at base would turn a load flake into a base pass and mint a fix for a failure that predates the milestone"
+means = "detail (1)"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+summary = "drain.md is now 584 lines against the 600-line reference ceiling, leaving task 17 (gate waiver, stopped-gate cleanup, source promotion) about 16 lines before it must move overflow into another references file"
+why = "skill_references_under_line_ceiling fails the gate past 600; task 17's edits to the same file will likely need a split"
+
+[[attempt.checks]]
+command = "grep -q -- '--base --blocks' claude/skills/implement-v2-engine/references/drain.md && grep -q -- '--after-round' claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q 'run_by = "worker"' claude/skills/implement-v2-engine/references/drain.md"""
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl plan run gate --help; tomlctl plan emit gate-list --help; tomlctl backlog list --help (flag names checked against the installed binary)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 17
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "the drain asks past the last gate round, kills a stopped gate's tree by its cN.pid, and promotes run-note sources into docs/references/"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/drain.md"]
+
+[[attempt.deviations]]
+what = "Gave each gate dispatch a run_dir of <scratch>/gate-<id>-<n>-<k>, k counting the round's dispatches from 1, rather than one directory per round"
+why = "A round can hold several verification dispatches (the first call, held commands, a timeout rerun, the base rerun, a re-dispatch after a stop); sharing one directory would let a later dispatch overwrite the cN files a stopped one left"
+means = "dispatch every gate with a run_dir: in the scratchpad"
+
+[[attempt.deviations]]
+what = "Wrote the reference entry format and the extra-round cap read inline in prose, with no example block"
+why = "drain.md stood at 584 lines before this task and the skill reference ceiling is 600; inline text kept the file at 596 without moving content to another file, which this task does not hold and D10 argues against for step 7"
+means = "Move overflow into a further references file linked from the body"
+
+[[attempt.tangential]]
+kind = "question"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+summary = "drain.md is at 596 of its 600-line ceiling"
+why = "The next prose addition to the drain will trip skill_references_under_line_ceiling and need a section moved out first"
+
+[[attempt.checks]]
+command = "grep -q 'extra-round' claude/skills/implement-v2-engine/references/drain.md && grep -q 'cN.pid' claude/skills/implement-v2-engine/references/drain.md && grep -q 'docs/references/' claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "wc -l claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt]]
+task = 18
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "the engine skill commits on a gate acceptance, settles handover done-marks with their own commit, and the report prints the new gate and visual exceptions"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The Visual pass step's skip condition also reads a gate acceptance for the last round, not only the Commit step and the Unstamped re-entry paragraph"
+why = "The Commit step needs a passed visual pass or a visual accept for a milestone with ui_states, and the visual pass was skipped whenever the gate had not passed, so an accepted gate on a UI milestone could never reach its commit. The alternative, committing an accepted UI milestone without its visual pass, would skip the look check the user never waived."
+means = "detail: the Commit step's skip condition and the Unstamped re-entry paragraph"
+
+[[attempt.checks]]
+command = "grep -q 'gate acceptance' claude/skills/implement-v2-engine/SKILL.md && grep -q 'accepted: <commands>' claude/skills/implement-v2-engine/references/report.md"
+result = "pass"
+
+[[attempt]]
+task = 19
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "verification takes run_dir:, writes cN.pid at each detached launch, and gains {ids_regex} with bun and vitest rerun forms"
+block = "present"
+files_touched = ["claude/agents/verification.md"]
+
+[[attempt.deviations]]
+what = "Step 1b documents how to stop the tree that cN.pid names: under MSYS a walk over MSYS ps descendants of the row whose WINPID is in the file, taskkilling each WINPID with //T; under POSIX pkill -TERM -s <id> rather than kill -TERM -<pgid>"
+why = "Probed on this machine: taskkill //T on /proc/$!/winpid stopped only that bash, because every MSYS fork leaves the exec'd child's Windows parent dead (timeout.exe and the c1.sh bash had dead Windows parents), so the native tree was unreachable. The ps walk stopped the whole tree including a native cmd/ping grandchild. On POSIX, GNU timeout calls setpgid itself (MSYS ps showed the timeout process leading its own PGID), so a kill of the launch's process group misses the command; the session id setsid gives covers it. The file still holds the winpid and the setsid process group id the detail names; only the stop recipe beside it differs from what D13 assumed."
+means = "detail: the Windows pid from /proc/$!/winpid, which taskkill can reach; on POSIX the process group id"
+
+[[attempt.deviations]]
+what = "{ids_regex} turns each id's ' > ' separators into single spaces before escaping"
+why = "bun test -t matches against the test name prefixed by its describe labels joined with spaces (Context7, oven-sh/bun docs/test/discovery.mdx), while bun's (fail) lines, which the extractor records, join them with ' > '; without the translation the bun rerun would match nothing"
+means = "detail: each id regex-escaped, joined with |"
+
+[[attempt.deviations]]
+what = "Without setsid and outside MSYS, as on stock macOS, no cN.pid is written and the launch check needs only cN.log"
+why = "Writing $$ from a non-session-leader would hand the caller the agent's own session or group to kill"
+means = "detail: on POSIX launch under setsid and write the process group id"
+
+[[attempt.deviations]]
+what = 'The regex escaper is an awk helper written in Step 0 (ids_regex.sh) that builds the backslash with sprintf("%c",92)'
+why = 'Through the Bash tool a doubled backslash inside single quotes reached sed as one (s/.../\\&/ printed a bare &), and \x5c in a sed replacement is GNU-only; the awk form passed a match test on ids holding ( ) . [ ] * | \ $ ^ + ? { }'
+means = "none; the detail leaves the escaping mechanism open"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+summary = "The stopped-gate drain row (task 17) must not kill a cN.pid with taskkill //T alone or kill -TERM -<pgid>; neither reaches the gate's tree"
+why = "D13's text implies those forms; verification.md's Step 1b now holds the recipes that work (MSYS ps descendant walk, pkill -s), which the drain row should cite rather than restate"
+
+[[attempt.checks]]
+command = "grep -q 'run_dir:' claude/agents/verification.md && grep -q 'cN.pid' claude/agents/verification.md && grep -q 'winpid' claude/agents/verification.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 20
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "the milestone pool gives a `builds` task an exclusive slot: it waits for an empty pool, runs alone, and blocks new starts while it waits."
+block = "present"
+files_touched = [
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/workflows/tests/harness.test.mjs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "A ready builds task also blocks every new non-builds start until it has run, not only while it is in flight"
+why = "Without it a stream of ready non-builds tasks keeps the pool non-empty and starves the builds task; the alternative, admitting a builds task beside non-compiling ones (the fix-rounds note's 'no other compiling or building task'), would break the task's 'runs alone' outcome. Ready means every needs and after id returned done, so a builds task still waiting on its own gates holds nothing back."
+means = "task detail: a builds task waits until the pool is empty, then runs alone"
+
+[[attempt.deviations]]
+what = "argProblems refuses a non-boolean builds, and SCRIPT_VERSION goes from 5 to 6"
+why = "Every other launch-entry field is shape-checked and a refusal is the script's idiom; the version bump marks the changed scheduling in the returned index. A launch without builds is unaffected by either."
+means = "none; choice left open by the detail"
+
+[[attempt.checks]]
+command = '''grep -qE '\.builds\b' claude/workflows/implement-v2-milestone.js'''
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'builds' claude/workflows/tests/harness.test.mjs && node --test claude/workflows/tests/harness.test.mjs"
+result = "pass"
+
+[[attempt]]
+task = 21
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "both workers' shared procedure now runs a building reproducer before and after the edit, records verified outside values in [[sources]], and reads docs/references/ before an outside lookup"
+block = "present"
+files_touched = [
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "A reproducer whose pre-edit run passes, where the outcome says it fails, stops the task: edit nothing and return failed with the run's output, for the replan to re-spec the reproducer"
+why = "The detail says to confirm the failure but not what happens when it does not reproduce; a fix made against a check that already passes is blind, the thing the rule exists to stop. The alternative, carrying on and noting it, would ship an unverified fix. Easy to unwind in the shared block"
+means = "detail: run it once before the first edit to confirm it fails"
+
+[[attempt.deviations]]
+what = "The docs/references/ rule sits in a new 'Outside values' section of the shared procedure, which also points at [[sources]], and step 7 cross-references the reproducer run"
+why = "The procedure had no place for a lookup rule; a short section between Asking the orchestrator and Checks keeps the rule in one place, which both the note bullet and the deep tier's Judgement section build on"
+means = "detail: write that rule inside the shared procedure"
+
+[[attempt.checks]]
+command = '''grep -q '\[\[sources\]\]' claude/agents/plan-worker-lite.md && grep -q '\[\[sources\]\]' claude/agents/plan-worker-deep.md && grep -q 'docs/references/' claude/agents/plan-worker-deep.md && grep -q 'docs/references/' claude/agents/plan-worker-lite.md'''
+result = "pass"
+
+[[attempt.checks]]
+command = "cmp of the plan-worker-procedure block extracted with awk -v BINMODE=3 from both files"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "fail"
+
+[[attempt]]
+task = 22
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "run-milestone checks blocking handovers at the pick, snapshots a self-edited engine at launch, and offers undone handovers at a finished flow's pre-flight"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+
+[[attempt.deviations]]
+what = "A handover whose ready_check passes at the pick is settled by rule 7 without asking the user, with a note saying the check passed at the pick"
+why = "The detail says to ask only when the check fails or is absent; a passing check shows the input in place, and leaving it undone would keep launch-args withholding the task"
+means = "detail (1): ask the user when the ready_check fails or is absent"
+
+[[attempt.deviations]]
+what = "A declined handover's task is reported as a `withheld` report record with the text `task <n>: handover <id> not done — <action>`, needs_person left true"
+why = "report.md has no line for it and is not this task's file; `withheld` is the existing report kind for a row launch-args drops, and needs_person defaults to true"
+means = "detail (1): the report lists it with needs_person true"
+
+[[attempt.deviations]]
+what = "Self-edit detection resolves the engine with `readlink -f` on the config-dir entry, then `git rev-parse --show-toplevel --show-prefix` inside it, and compares the prefix with the launched rows' files"
+why = "readlink -f yields an MSYS path (/c/Users/...) that does not compare with repo-relative files; git prints the repo root and the repo-relative prefix, verified on this tree (claude/skills/implement-v2-engine/)"
+means = "detail (2): resolve config-dir links with readlink"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "claude/skills/implement-v2-engine/references/report.md"
+summary = "The report shape lists no `withheld:` line for a task held by an undone handover; run-milestone.md now names the text `task <n>: handover <id> not done — <action>`"
+why = "The report's line catalogue should carry every line form the engine writes, so a reader of report.md alone finds it"
+
+[[attempt.checks]]
+command = "grep -q 'ready_check' claude/skills/implement-v2-engine/references/run-milestone.md && grep -q 'handover:<id>' claude/skills/implement-v2-engine/references/run-milestone.md && grep -q 'drain from the snapshot' claude/skills/implement-v2-engine/references/run-milestone.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 23
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "visual.md keeps every state's capture each round and routes a fail at an unchanged location on a state the previous round passed to the user as an inspector disagreement"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/visual.md"]
+tangential = []
+
+[[attempt.deviations]]
+what = "What the user can pick for a disagreement: two options, 'the earlier pass stands' (nothing minted) and 'the new fail stands' (mints as today before the last round, or joins the last round's failing states)"
+why = "The detail says to put the disagreement to the user in the accept question but not what the user can choose. A fail the user upholds has to go somewhere, and minting it as today keeps the constraint that a real fail is never dropped. The question is asked in the round the disagreement arises, so nothing has to be carried between rounds. The other option weighed was holding disagreements until the last round's acceptance question, which needs a cross-round record that tomlctl's visual_accept payload has no field for."
+means = "detail: put it to the user in the accept question with both inspectors' notes"
+
+[[attempt.deviations]]
+what = "Unchanged at the defect means: the geometry.json entries whose locator names or contains the defect's location are identical in both copies (or absent from both), and for a text-grid state the rows the location spans are byte-identical. A byte-identical PNG also counts as unchanged. A location found in neither file, or a capture-class defect, counts as changed"
+why = "geometry.json holds layout violations, not element boxes (ui-capture SKILL.md, the geometry.json section), so 'compare the location in geometry.json' can only mean comparing the violations at that locator. Every case that cannot be judged falls back to minting, which keeps the 'changed mints as today' constraint conservative."
+means = "detail: compare the defect's location in geometry.json, and the text grid where there is one"
+
+[[attempt.deviations]]
+what = "The route is per defect and covers only an inspector's fail. A fail the orchestrator settles from unsure is minted, never treated as a disagreement. Whether the state passed in round r-1 is read from that round's inspector note"
+why = "A disagreement is between two inspectors, so the orchestrator's own settling is not one. A state with defects at both changed and unchanged locations mints only the changed ones. The round r-1 index is not kept across sessions, but its notes are."
+means = "detail"
+
+[[attempt.checks]]
+command = "grep -q 'disagreement' claude/skills/implement-v2-engine/references/visual.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 24
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "questions.md now marks the open-picker claim as unverified"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/questions.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'unverified' claude/skills/implement-v2-engine/references/questions.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 25
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "write-and-prove teaches baseline gates and proofs, blocking handovers, sourced outside facts with pin existence checks, the self-edit order and the per-milestone UI call"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+tangential = []
+
+[[attempt.deviations]]
+what = "A version or image-tag pin's existence check is steered to a --gate-probe on the gate that consumes the pin, and to a premise only when its check reads locally"
+why = "run-milestone.md section 3 refuses a premise line that makes a network call, so a docker manifest inspect premise would stop the milestone at its pick; a gate probe runs at Prove under the orchestrator's own rights"
+means = "detail (3): a version or image tag pin gets an existence check as a premise or gate probe"
+
+[[attempt.deviations]]
+what = "The null-control proof is recorded as '<gate> :: null-control :: <task-id>', naming the task"
+why = "milestone A shipped --baseline-proof with the null-control verdict carrying its task id (claude/skills/tomlctl/references/plan.md, plan milestone update table), and plan check treats a null-control proof without a task as missing"
+means = "detail (1): the proof is null-control"
+
+[[attempt.checks]]
+command = "grep -q -- '--baseline-gate' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'ready_check' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'manifest inspect' claude/skills/plan-v2-engine/references/write-and-prove.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl items list .claude/flows/v2-usage-audit-gaps/tasks.toml --array milestones --select id,elaboration,baseline_gates,baseline_proofs --lines"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 26
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "Open asks for a capture config, the fan-out window forbids repo writes, and ui-layout reads the Open answer"
+block = "present"
+files_touched = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The Open capture-config decision is recorded before asking, with class ux, door two-way, binds naming the brief, and decision text opening `UI to capture:` so later steps can find it in the human plan view"
+why = "The detail says only 'record the answer as a decision'; recording before asking and applying the answer by Surface's table matches how Surface and ui-layout record every asked item, the brief is the one path that exists at Open, and no read verb selects a decision by meaning, so a fixed text prefix is the locator. Alternatives weighed: record after the answer (diverges from the Surface idiom), bind a task id (none exist at Open)"
+means = "detail"
+
+[[attempt.deviations]]
+what = "The no-writes rule exempts the `plan run start` and `plan run finish` writes the step itself names"
+why = "Those write plan.toml under .claude/flows/<slug>/ inside the window by design, and the check already excludes that directory; a rule saying 'nothing writes by any tool' without the exception would contradict the step's own procedure"
+means = "detail"
+
+[[attempt.deviations]]
+what = "ui-layout section 1 covers a plan opened before Open asked: with no config and no Open decision, the step asks the question once and records it as Open does; a no answer judges every milestone not UI unless one adds a visible surface, which goes in the list as UI flagged against the Open answer"
+why = "Elaboration of an already-approved plan reaches ui-layout with no Open decision to read; without a fallback the config question would never be asked there, which is the reportdesignkit case"
+means = "detail"
+
+[[attempt.checks]]
+command = "grep -q 'ui-capture.toml' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'No repo writes while a launch is open' claude/skills/plan-v2-engine/references/open-and-challenge.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 27
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "elaboration now reconciles hand commits against decisions, sources outside facts, records the UI call and cites the no-writes rule"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/elaborate.md"]
+tangential = []
+
+[[attempt.deviations]]
+what = "Stale decisions found by plan drift are asked in section 2 outside its four-question budget, and the UI call is recorded as a decision of class look"
+why = "The detail sends every stale decision to the Surface round but the budget would silently drop some past four; class look matches ui-layout's own pick decision. Alternatives: count them inside the budget (risks an unasked stale decision) or class ux (D8's own class, but that names the plan-level capture question, not a milestone's call)"
+means = "detail"
+
+[[attempt.deviations]]
+what = "plan/brief-changed raised by the elaboration's own brief correction is exempted in 4a, section 5's re-check, the section 1 precondition on a resume and section 7, and settled by plan approve --amend after section 6's commit, then a second commit by approve.md section 7"
+why = "approve.md requires brief.md committed before the stamp and plan check treats plan/brief-changed as an error, so the amend cannot run before the elaboration commit; without the exemptions the procedure would stop on its own edit"
+means = "detail"
+
+[[attempt.checks]]
+command = "grep -q 'affected_decisions' claude/skills/plan-v2-engine/references/elaborate.md"
+result = "pass"
+
+[[attempt]]
+task = 28
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "approve.md re-checks the review delta or records the user's waiver; plan-flow.md takes the delta as re-check targets and requires sourced hand fixes"
+block = "present"
+files_touched = [
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The delta re-check's run start also passes --set recheck_scope=delta, beside rechecks=<run>"
+why = "tomlctl/src/review/runs.rs start_digest digests the review delta into the new run's plan_digest only when recheck_scope is delta; without it the re-check would finish and review_delta would stay non-empty, so the loop would never end. The approve refusal text in tomlctl/src/plan/approve.rs names the same pair."
+means = "detail: start a re-check review run with rechecks=<the latest finished review run>"
+
+[[attempt.deviations]]
+what = "The re-check loop runs automatically before the gate; the user can stop it at any round, and the waiver is offered at the gate only when a review-delta risk row is present"
+why = "The detail says both 'repeat until review_delta is empty' and 'at the gate the user may instead waive it'; this reading keeps the default as review and makes the waiver the user's explicit choice. Easy to unwind (prose only)."
+means = "detail: approve.md flow"
+
+[[attempt.checks]]
+command = "grep -q -- '--waive-review-delta' claude/skills/plan-v2-engine/references/approve.md && grep -q 'review_delta' claude/skills/review-v2-engine/references/plan-flow.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "wc -l on both edited references (ceiling 600)"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 29
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "platform rung and Context7-first line added"
+block = "present"
+files_touched = [
+    "claude/skills/research-methods/SKILL.md",
+    "claude/agents/plan-investigator.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'llms.txt' claude/skills/research-methods/SKILL.md && grep -q 'Context7 first' claude/agents/plan-investigator.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 30
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "review cells now share a per-run page cache under the run directory's sources/"
+block = "present"
+files_touched = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-finder-cf.md",
+    "claude/agents/review-verifier.md",
+    "claude/skills/review-v2-method/SKILL.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep for 'sources/' in the four files"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt]]
+task = 31
+run_id = "wf_f2ead470-2c3"
+milestone = "B"
+status = "done"
+summary = "pre-flights and CLAUDE.md updated"
+block = "present"
+files_touched = [
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "CLAUDE.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'gate_accept' claude/commands/implement-v2.md && grep -q 'review_plan_digest' claude/commands/plan-v2.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 38
+run_id = "wf_1526b1b5-5d3"
+milestone = "B"
+status = "done"
+summary = "drain.md's stopped-gate-agent paragraph now cites verification.md Step 1b for the kill"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/drain.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "! grep -q 'kill -TERM -<pid>' drain.md && grep -q 'verification.md' drain.md && test $(wc -l < drain.md) -le 600"
+result = "pass"
+
+[[attempt]]
+task = 39
+run_id = "wf_1526b1b5-5d3"
+milestone = "B"
+status = "done"
+summary = "report.md's withheld: section now lists the handover-withheld line"
+block = "present"
+files_touched = ["claude/skills/implement-v2-engine/references/report.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'handover <id> not done' claude/skills/implement-v2-engine/references/report.md"
+result = "pass"
+
 [[gate_round]]
 milestone = "A"
 round = 0
@@ -1552,3 +2138,327 @@ duration_s = 246
 summary = ""
 failed_ids = []
 log = ""
+
+[[gate_round]]
+milestone = "B"
+round = 0
+seq = 1
+at = 2026-11-20T18:09:09Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+exit = 0
+duration_s = 3
+summary = "libtest x1: 56 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+exit = 0
+duration_s = 0
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-20T18:10:02Z
+milestone = "B"
+why = "every milestone committed"
+
+[[report.entries]]
+kind = "handover"
+task = 6
+text = "H1 from task 6 (restart): Close every glimpse pane, run `cargo install --path glimpse --locked` from the dev-tools root so glimpse embeds the new tomlctl reader, then reopen the pane. — when: After milestone A's commit, before milestone B is launched.; done when: The glimpse pane opens this flow's task graph without a schema-version error."
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "gate"
+task = 1
+text = "milestone A did not run task 1 accept 3: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 3
+text = "milestone A did not run task 3 accept 2: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 4
+text = "milestone A did not run task 4 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 5
+text = "milestone A did not run task 5 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 6
+text = "milestone A did not run task 6 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 7
+text = "milestone A did not run task 7 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 8
+text = "milestone A did not run task 8 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 9
+text = "milestone A did not run task 9 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 10
+text = "milestone A did not run task 10 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 11
+text = "milestone A did not run task 11 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 12
+text = "milestone A did not run task 12 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 13
+text = "milestone A did not run task 13 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 14
+text = "milestone A did not run task 14 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 15
+text = "milestone A did not run task 15 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 34
+text = "milestone A did not run task 34 accept 0: covered_by cargo clippy --workspace --locked --all-targets"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 34
+text = "milestone A did not run task 34 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 35
+text = "milestone A did not run task 35 accept 0: covered_by cargo clippy --workspace --locked --all-targets"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 36
+text = "milestone A did not run task 36 accept 1: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 37
+text = "milestone A did not run task 37 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 16
+text = "milestone B did not run task 16 accept 2: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 17
+text = "milestone B did not run task 17 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 18
+text = "milestone B did not run task 18 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 20
+text = "milestone B did not run task 20 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 21
+text = "milestone B did not run task 21 accept 1: covered_by bash scripts/verify-shared-blocks.sh"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 22
+text = "milestone B did not run task 22 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 25
+text = "milestone B did not run task 25 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 27
+text = "milestone B did not run task 27 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 28
+text = "milestone B did not run task 28 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 30
+text = "milestone B did not run task 30 accept 1: covered_by bash scripts/verify-shared-blocks.sh"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 31
+text = "milestone B did not run task 31 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a20ec279dc62558df: cargo nextest run -E 'test(/^plan_milestone::/) | ...' in an isolated scratch copy of tomlctl (run wf_8f9400b7-ca5, task 6) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a8bda3efdf2d3ba62: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests (run wf_8f9400b7-ca5) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-ac02568b21563d742: cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_drift::/)' (run wf_8f9400b7-ca5) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-ae16b8f9f86e96370: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests (run wf_8f9400b7-ca5) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-acbe42e38839acfcd: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests (run wf_de75e79a-b9b) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-acbe42e38839acfcd: cargo test --manifest-path tomlctl/Cargo.toml --lib --no-run (run wf_de75e79a-b9b): a compile-only build of the lib test target, outside the allowed forms — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a1407c9d2058c29dd: cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::.*owner/) | test(/^plan_stage::/)' (run wf_a9ef9e2c-964) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a78e3a1f4abc2f5ed: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests (run wf_a9ef9e2c-964) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agents a187b0b3f7951d455, a2c3f9deb57f4d8d8, a2c97eac814bc5009, a46f2f0d562aee820, a6f50729ece842f42, a942b94e53a3d613c, ace631a881b034928: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests (run wf_f2ead470-2c3) — allowed"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-a96541a28969b2ca1: bash scripts/verify-shared-blocks.sh (run wf_f2ead470-2c3): a milestone B gate command run by a worker — breach"
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "agent-af8a52f2b557bc632: grep and git diff reads naming nextest and bun test (run wf_f2ead470-2c3): reading commands, nothing run — allowed"
+path = ""
+needs_person = false
