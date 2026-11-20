@@ -13908,7 +13908,7 @@ tags = [
     "implement-v2",
     "audit",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13920,6 +13920,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-0bc81d84"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks report-scripts-run-through-bun-e-or-node-e-in-agents-audit)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["report-scripts-run-through-bun-e-or-node-e-in-agents-audit"]
+resolved_commits = ["b5d333179bea1dc6585feba0d3a0a98fa8b02afc"]
 
 [[backlog]]
 id = "B-0d0afc35"
@@ -14020,7 +14025,7 @@ tags = [
     "implement-v2",
     "plan-check",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14032,6 +14037,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-3d4f9876"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks exempt-rows-off-the-capture-paths-from-planui-accept-structural)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["exempt-rows-off-the-capture-paths-from-planui-accept-structural"]
+resolved_commits = ["b5d333179bea1dc6585feba0d3a0a98fa8b02afc"]
 
 [[backlog]]
 id = "B-2a33255a"
@@ -14130,3 +14140,662 @@ origin = "plan-v2"
 flow = "implement-v2-run-hardening"
 context = "Found by the visual-accept investigation of implement-v2-run-hardening. The new plan run visual --accept record stores the round explicitly, which sidesteps the ambiguity, but the prose that fixes the cap still reads two ways. State the cap as a count of fix rounds or of passes, not both."
 base_sha = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+
+[[backlog]]
+id = "B-2cc7fc67"
+kind = "bug"
+summary = "review verifiers call tomlctl tasks show with a task ref, which takes numeric ids only, so every task:<ref> plan row costs a refused call"
+area = "tomlctl/src/tasks/show.rs"
+tags = [
+    "v2",
+    "review-v2",
+    "verifier",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "2cc7fc676f4518d4"
+origin = "v2-usage-audit"
+context = "Seen 2026-11-19/20: on partnerhub_pages 31 of 52 verifier dispatches hit it (75 refusals), on strapi-server 11 more. review-verifier.md tells the verifier to run tasks show <id> for a task:<ref> target without the ref-to-id lookup, and the worked examples in finding-kinds.md:50 and plan-records.md:133 even pass a ref. Cheapest fix: let tasks show accept a ref; otherwise add the lookup line to the agent and correct the examples. B-4e2fc7d8 was resolved by documenting the lookup in plan-records.md, which did not reach the verifier."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/agents/review-verifier.md:43"]
+related = ["B-4e2fc7d8"]
+
+[[backlog]]
+id = "B-1f5fd1d9"
+kind = "bug"
+summary = "plan emit lane-check reports other flows' uncommitted .claude/flows/<other>/ records as out of lane, though the run-milestone pre-flight exempts them in prose"
+area = "tomlctl/src/plan/lane.rs"
+tags = [
+    "v2",
+    "implement-v2",
+    "lane-check",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "1f5fd1d9cb3a5304"
+origin = "v2-usage-audit"
+context = "Seen on partnerhub_pages (2026-11-20) and reportdesignkit (2026-11-17): the orchestrator filtered the other flows' paths with hand-written regexes, and once tried --where-not-prefix, which the verb refused. lane.rs exempts only the backlog, inputs and linked review stores; drift skips only the running flow's own directories. Recurs whenever two flows are live in one repo."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = [
+    "tomlctl/src/plan/lane.rs:437",
+    "claude/skills/implement-v2-engine/references/run-milestone.md:41",
+]
+related = ["B-b86f492c"]
+
+[[backlog]]
+id = "B-7ed4dd68"
+kind = "bug"
+summary = "a plan worker can return done without writing its own task row, and the milestone Workflow trusts the returned status without reading the row back"
+area = "claude/workflows/implement-v2-milestone.js"
+tags = [
+    "v2",
+    "implement-v2",
+    "workflow",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "7ed4dd68c26ac62a"
+origin = "v2-usage-audit"
+context = "Seen twice: dev-tools task 13 (2026-11-18) and partnerhub_pages task 20 (2026-11-20); the worker transcripts hold no tasks update call. The orchestrator stamped the row by hand and relaunched a whole Workflow run. plan run notes flags the note/row mismatch but drain.md defines no remedy. Fix: read each row back after the worker returns (or in the drain) and stamp or fail it."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/workflows/implement-v2-milestone.js:219"]
+
+[[backlog]]
+id = "B-686f291e"
+kind = "debt"
+summary = "a milestone gate still failing after round 2 has no recorded user-accept path, so a commit-anyway decision is improvised and leaves no waiver in the store"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "686f291e532b8a85"
+origin = "v2-usage-audit"
+context = "Seen on reportdesignkit: milestone E ran gate rounds 3-5 on the user's word, and H committed on solo reruns after a red round 2; drain.md says to leave the milestone uncommitted. B-22eca7ef adds a waiver for a failed visual pass only; the same record shape (states/criteria waived -> gate commands waived) beside plan run gate would cover this."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+related = ["B-22eca7ef"]
+
+[[backlog]]
+id = "B-19a16669"
+kind = "bug"
+summary = "the no-recursive-grep rule lives only in dev-tools CLAUDE.md, so v2 agents in consumer repos grep -r from the repo root and hit the 120 s tool timeout"
+area = "claude/skills/research-methods"
+tags = [
+    "v2",
+    "agents",
+    "consumer-repo",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "19a1666982aed8e7"
+origin = "v2-usage-audit"
+context = "Seen on strapi-server 2026-11-16..19: investigators, finders, verifiers and cold readers made 582 grep -r calls, 15 of them timing out (about 30 agent-minutes). Only review-sweeper.md forbids it. Move the rule into the research-methods skill or a shared agent block so it travels with the harness."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-7db2ec0e"
+kind = "bug"
+summary = "verification extract.sh takes the second field of vitest's FAIL line, which is the |project| tag in a multi-project run, so failed ids come back as the project name and no narrow rerun is possible"
+area = "claude/agents/verification.md"
+tags = [
+    "v2",
+    "verification",
+    "vitest",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "7db2ec0e4c49fe55"
+origin = "v2-usage-audit"
+context = "Seen on reportdesignkit milestones D-K and apply-1: the ids file held only test:ui and |browser|; vitest prints ' FAIL  |browser| <file> > <name>'. The orchestrator grepped logs itself and hand-built 13 single-test rerun dispatches. Fix the pattern to skip a |project| field and capture file > name."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/agents/verification.md:57"]
+
+[[backlog]]
+id = "B-bd50caa8"
+kind = "debt"
+summary = "plan edits made after the plan review's re-check, such as hand-applied advisories and rows added or moved during triage, are never re-reviewed"
+area = "claude/skills/review-v2-engine/references/plan-flow.md"
+tags = [
+    "v2",
+    "review-plan-v2",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "bd50caa894dbd3cb"
+origin = "v2-usage-audit"
+context = "strapi-server: advisory F78 (unverified by design) pinned oven/bun:1.4.5, hand-applied after the re-check; the tag does not exist and the gate failed (fix task 31). dev-tools implement-v2-run-hardening: the U2 re-check covered only targeted records, not new task 16 or rows moved in a milestone re-cut. A post-triage delta check over changed records would close both."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-4f449e72"
+kind = "debt"
+summary = "gate probes check that a tool runs but not that each pinned base image or package version exists, so a nonexistent tag passes Prove and fails the gate"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "gate-probe",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "4f449e727d603439"
+origin = "v2-usage-audit"
+context = "strapi-server: the gate probe was docker info, which never pulls; the pinned oven/bun:1.4.5 did not exist (docker manifest inspect would have said so). Guidance should name 'inspect every pinned image/version the gate pulls' as the probe."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/skills/plan-v2-engine/references/write-and-prove.md:64"]
+
+[[backlog]]
+id = "B-42abaef9"
+kind = "bug"
+summary = "plan check has no class for a task with an empty files list, so such a task passes check, cold read and review and is refused only at Workflow launch"
+area = "tomlctl/src/plan/check.rs"
+tags = [
+    "v2",
+    "plan-v2",
+    "plan-check",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "42abaef9c8590810"
+origin = "v2-usage-audit"
+context = "partnerhub_pages site-worker-new-strapi task 1 (a git tag step) had files=[] and survived plan check, cold read A and two reviews (84 findings); implement-v2-milestone.js refuses it at launch. Add a plan/task-no-files error, and route git or external actions to a handover or a gate in write-and-prove.md."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/workflows/implement-v2-milestone.js:136"]
+
+[[backlog]]
+id = "B-0a337efc"
+kind = "debt"
+summary = "tasks remove --force does not list the plan records that name the removed id, so plan check then errors on dangling decision binds and handovers"
+area = "tomlctl/src/tasks/remove.rs"
+tags = [
+    "v2",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "0a337efc0187f6ca"
+origin = "v2-usage-audit"
+context = "partnerhub_pages 2026-11-20: removing the empty-files task broke D13's binds and handovers H3/H4, each fixed by hand. remove could print (or refuse without a flag) the decisions, handovers and premises that reference the id."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-8aee5fe3"
+kind = "debt"
+summary = "an input the user must supply before a task starts, such as an API token, can only be written as a handover, which runs after its source task, so the task launches without it and parks"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "v2",
+    "plan-v2",
+    "handover",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "8aee5fe36362472c"
+origin = "v2-usage-audit"
+context = "partnerhub_pages task 6 launched without handover H2 (token and zone id), got a 403 and parked; the user set H2 up mid-run. Distinct from B-0f9fc8b5 (gate-produced effect). Options: a handover field that blocks a task, or a premise such as test -n on the env var."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+related = ["B-0f9fc8b5"]
+
+[[backlog]]
+id = "B-5aa5c13f"
+kind = "debt"
+summary = "handover steps that name a third-party console's labels are written from memory with no fetched source, and the labels do not match what the user sees"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "handover",
+    "research",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "5aa5c13fed2a63c2"
+origin = "v2-usage-audit"
+context = "partnerhub_pages: H2 used API-style Cloudflare permission names and H5 / docs/deploy.md labels did not match the dashboard; the user flagged both, costing fetch agents and a reword mid-run. Rule: an action naming a third-party console cites the fetched doc; optionally the cold reader checks handovers."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/skills/plan-v2-engine/references/write-and-prove.md:72"]
+
+[[backlog]]
+id = "B-959255fa"
+kind = "debt"
+summary = "elaborate reads only each row's own commit, so fixes made by hand between milestones are not reconciled and the brief and decisions keep naming dropped choices"
+area = "claude/skills/plan-v2-engine/references/elaborate.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "elaborate",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "959255fa74056756"
+origin = "v2-usage-audit"
+context = "strapi-server milestone C elaboration (2026-11-19) found most of C already done during provisioning, while the brief and D3/D10 still named @napi-rs/image; the user had to ask to fix the loose ends (an extra amend cycle). Elaborate could run git log <last milestone commit>..HEAD over the milestone's files and check decisions against it."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-d05d1f05"
+kind = "question"
+summary = "a milestone that edits the engine skill running it has no rule; the orchestrator improvises a snapshot of drain.md, and plan reviews keep rediscovering the hazard"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "v2",
+    "implement-v2",
+    "self-hosting",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "d05d1f052ee4fc59"
+origin = "v2-usage-audit"
+context = "dev-tools: mid-run-requests F36 cites glimpse-v2-visibility D12 and v2-harness-tuning D16, and implement-v2-run-hardening D13 repeats it. The underlying claims (edited skills/agents load from the next session; AskUserQuestion blocks a SendMessage) are asserted from memory, never probed; one probe would settle the rule for both engine skills."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-80fd8af7"
+kind = "debt"
+summary = "a project with UI milestones but no .claude/ui-capture.toml is never asked to declare a capture command, so the visual chain silently becomes attended handovers"
+area = "claude/skills/plan-v2-engine/references/ui-layout.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "ui-capture",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "80fd8af7e2ccb7f5"
+origin = "v2-usage-audit"
+context = "reportdesignkit (UI-heavy) has no capture config, so no milestone carried ui_states; K's elaboration resized a page without the layout step and the user found defects by eye. Planning (or a plan check warning) should ask for the capture command when a milestone touches UI."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-604c8a82"
+kind = "bug"
+summary = "write-and-prove.md links to design/shapes.md and design/handover.md, which exist only in dev-tools' own flow folders, so a consumer-repo orchestrator goes looking for them"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "consumer-repo",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "604c8a8235dad7dd"
+origin = "v2-usage-audit"
+context = "strapi-server 2026-11-16: in a consumer repo design/ is the flow's own directory, so the orchestrator searched dev-tools. Inline the content or point at files inside the skill (also plan-risk.md:37)."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:64",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md:72",
+]
+
+[[backlog]]
+id = "B-6f75443a"
+kind = "bug"
+summary = "plan approve is refused at the end of authoring when the consumer's .gitignore ignores .claude/, and nothing checks this at plan open or pre-flight"
+area = "claude/skills/plan-v2-engine/references/approve.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "consumer-repo",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "6f75443a50e1c903"
+origin = "v2-usage-audit"
+context = "strapi-server 2026-11-16: refused after a 2-hour authoring session; approve.md forbids -f and offers no route, so the orchestrator improvised a .gitignore rewrite with the user. A git check-ignore probe in /plan-v2 pre-flight or plan open would surface it first."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-fd61eb0e"
+kind = "bug"
+summary = "tomlctl sweep reads every tracked file before sniffing for NUL bytes, so a repo tracking binary media takes 19-46 s per call and can hit the 120 s tool timeout"
+area = "tomlctl/src/sweep.rs"
+tags = [
+    "v2",
+    "review-v2",
+    "perf",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "fd61eb0e1d7b5f0d"
+origin = "v2-usage-audit"
+context = "strapi-server review cells took 19-46 s per sweep; the orchestrator's call timed out at 120 s; a re-run took 35 s scanning 634 files and skipping 6,417 binaries. review-sweeper.md promises seconds. Skip by extension or size before reading."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["tomlctl/src/sweep.rs:15"]
+
+[[backlog]]
+id = "B-70516037"
+kind = "annoyance"
+summary = "a held cargo install --path glimpse fails with os error 5 while glimpse.exe is running, and the drain has no rule for installing over a running binary"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "windows",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "70516037ee776f3e"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-18, twice in one gate; the user had to close glimpse. implement-v2-run-hardening works around it with handover H1. A transient pattern or a running-process check before the held install would make it mechanical."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-37932bb6"
+kind = "bug"
+summary = "a gate launched with nohup keeps running after the user stops the verification agent, with no PID file or cleanup rule, so the orphan holds the gate lock"
+area = "claude/agents/verification.md"
+tags = [
+    "v2",
+    "verification",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "37932bb6ff3ea705"
+origin = "v2-usage-audit"
+context = "reportdesignkit 2026-11-17: the orphaned gate's browser died, 52 minutes were lost and the stale .rdk/gates.lock was checked by hand. Step 1b could write cN.pid and the drain could name the cleanup for a stopped agent."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-f1e506dd"
+kind = "debt"
+summary = "drain.md is about 46 KB and is re-read several times per session, feeding mid-flow compactions of the implement-v2 orchestrator"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "context",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "f1e506dd209d58ad"
+origin = "v2-usage-audit"
+context = "reportdesignkit: 5 compactions mid-flow, drain.md re-read up to 4 times in one session, reference reads 150-220K characters per session. Split by step or have tomlctl emit step-scoped excerpts."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-06a30af5"
+kind = "debt"
+summary = "references/agents.md says agents.toml is git-ignored, but it is tracked and carries machine-local transcript paths, and milestone commits include or exclude it inconsistently"
+area = "claude/skills/tomlctl/references/agents.md"
+tags = [
+    "v2",
+    "agents",
+    "privacy",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "06a30af5f296c8d1"
+origin = "v2-usage-audit"
+context = "Flow stores were un-ignored on purpose 2026-11-12, so the doc is stale. In reportdesignkit (public) the orchestrator left agents.toml out of G's commit for privacy, then J, K and apply-1 committed it; 36 tracked files hold absolute Windows transcript paths. Decide: relativise or drop transcript_path on write, or ignore it, then state one rule in drain.md step 10."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/skills/tomlctl/references/agents.md:20"]
+
+[[backlog]]
+id = "B-789d81f8"
+kind = "question"
+summary = "/plan-v2 refuses to run below xhigh effort until the user overrides it"
+area = "claude/commands/plan-v2.md"
+tags = [
+    "v2",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "789d81f80bd16bb3"
+origin = "v2-usage-audit"
+context = "reportdesignkit 2026-11-16: the user had to say 'you can plan at the current level'. Decide whether the effort line is a hard refusal or advice."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/commands/plan-v2.md:12"]
+
+[[backlog]]
+id = "B-1f641966"
+kind = "debt"
+summary = "the worker trigger for running cli::dispatch::tests covers claude/**/*.md edits and new verbs but not a new plan check finding class, which broke the finding-class source-scan test twice"
+area = "CLAUDE.md"
+tags = [
+    "v2",
+    "dispatch-tests",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "1f64196642edd50b"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-18: fix tasks 35 and 21 each repaired it, the second time for a class name written through a constant. Extend the CLAUDE.md trigger (or make the scan follow constants)."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-16aaaaae"
+kind = "bug"
+summary = "plan decide upserts by id with no create-only guard, so a misnumbered new decision silently overwrites an existing one"
+area = "tomlctl/src/plan/records.rs"
+tags = [
+    "v2",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "16aaaaae3d71a865"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-17: D16 and D24 were overwritten and noticed only while binding decisions to tasks. A --new flag (refuse an existing id) or a printed 'replaced' action would catch it."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["tomlctl/src/plan/records.rs:189"]
+
+[[backlog]]
+id = "B-a313f5f5"
+kind = "debt"
+summary = "the plan contract section of references/plan.md never lists the accepted kinds, so orchestrators guess protocol and data and are refused"
+area = "claude/skills/tomlctl/references/plan.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "docs",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "a313f5f54848ecbc"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-17 and 11-18 (refused as protocol, then data); list the accepted kinds (invariant, interface, ...) in the flag table. About 13 other self-corrected flag or key refusals in planning sessions point the same way."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-4053fd70"
+kind = "debt"
+summary = "backlog-capture mints a related edge on an area-prefix match alone, so new rows link to loosely similar or unrelated resolved rows"
+area = "claude/skills/backlog-capture/SKILL.md"
+tags = ["backlog"]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "4053fd708f903062"
+origin = "v2-usage-audit"
+context = "All 13 rows captured 2026-11-20 carry related edges to loosely similar resolved rows; partnerhub-captured edges point at unrelated items. Require a wording or tag match, or a read of the candidate, before --related."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+evidence = ["claude/skills/backlog-capture/SKILL.md:50"]
+
+[[backlog]]
+id = "B-9fd68fe3"
+kind = "annoyance"
+summary = "implement-v2 milestone commits re-run the pre-commit cargo steps right after a passing gate, because nothing runs gate-stamp.sh run"
+area = "scripts/gate-stamp.sh"
+tags = [
+    "v2",
+    "implement-v2",
+    "pre-commit",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "9fd68fe366a5ec15"
+origin = "v2-usage-audit"
+context = "dev-tools milestone commits took 76-170 s with no 'gate stamp matches' skip line. Running bash scripts/gate-stamp.sh run as the last gate (dev-tools plans) or in drain.md before the commit would let the hook skip."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-0e158fd7"
+kind = "question"
+summary = "fix tasks minted by review schedule carry no project constraints such as a browser-test budget, so new tests overrun the cap and surface a gate round late"
+area = "claude/skills/apply-v2-engine"
+tags = [
+    "v2",
+    "apply-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "0e158fd7b78a359b"
+origin = "v2-usage-audit"
+context = "reportdesignkit E, J and apply-1 each overran ADR-0041's browser-test cap; the gate skips test:budget when test:ui fails, so the overrun showed a round late. Either the fix task spec carries project constraints or the gate runs the budget check regardless."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-ba011350"
+kind = "debt"
+summary = "the orchestrator can edit brief.md while the plan challenger runs, which the fan-out check flags as a change and stops the run"
+area = "claude/skills/plan-v2-engine/references/open-and-challenge.md"
+tags = [
+    "v2",
+    "plan-v2",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "ba01135014b4c804"
+origin = "v2-usage-audit"
+context = "strapi-server 2026-11-16: brief edited mid-launch, the check raised a safety question to the user. Add 'no edits to the brief while a launch runs' to the Running it section."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-98d14bca"
+kind = "debt"
+summary = "orchestrator-written elaboration specs, handover steps and hand-applied advisories assert platform facts with no fetched source; the research source rules bind agents only"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "v2",
+    "plan-v2",
+    "research",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "98d14bcaeda11d2c"
+origin = "v2-usage-audit"
+context = "Audit 2026-11-20: investigator notes were well sourced, but wrong claims leaked through orchestrator text: partnerhub task 34 was told to measure with wrangler tail (cannot see preview invocations) and failed round 1; console labels in handovers were wrong; strapi F78 pinned a nonexistent image tag. Apply the research-methods source hierarchy to elaboration and handover writing, or route such claims to an investigator."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-6d3fb3e3"
+kind = "debt"
+summary = "review finders and verifiers fetch the same outside doc pages independently within one review run, with no shared source note"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "v2",
+    "review-v2",
+    "research",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "6d3fb3e31a3b4be2"
+origin = "v2-usage-audit"
+context = "partnerhub_pages 2026-11-19: three finders and two verifiers each fetched the Cloudflare Pages/Workers header pages for one question (findings F65, F82). review-finder.md also has no line on when to look things up. A run-level sources note the cells read and append to would cut the repeats."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-8ec0b5b5"
+kind = "question"
+summary = "a working outside source a plan worker discovers stays in its run note only, so a later task or flow researches the same thing again"
+area = "claude/agents/plan-worker-deep.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "research",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "8ec0b5b5f697dfca"
+origin = "v2-usage-audit"
+context = "partnerhub_pages: the Cloudflare GraphQL Analytics CPU query found by task 34 was never written to a durable note, so preview-cpu-trim task 9 re-researched it (3 Context7, 2 searches, 2 fetches). Consider a flow or repo reference note workers append verified sources to."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-34d901f9"
+kind = "question"
+summary = "plan investigators skip the Context7 rung entirely and guess platform doc URLs, giving them a 12% miss or error rate on outside lookups"
+area = "claude/agents/plan-investigator.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "research",
+]
+status = "open"
+created = 2026-11-20T14:57:17Z
+last_seen = 2026-11-20T14:57:17Z
+seen_count = 1
+dedup_id = "34d901f99ba81275"
+origin = "v2-usage-audit"
+context = "Census 2026-11-14..20: investigators made 0 Context7 calls against 101 WebFetch and about 92 curl lookups; 15 of 126 calls missed or 404'd on guessed Cloudflare and Strapi URLs. Plan workers do follow Context7-first. Decide whether investigators should try Context7 (or a search) before guessing URLs."
+base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"

@@ -1,0 +1,13 @@
+Diff in \\?\C:\Users\rossa\dev\dev-tools\tomlctl\tests\agents_audit.rs:104:
+     assert_eq!(rows[0]["command"], "bun test");
+     let cut = rows[1]["command"].as_str().unwrap();
+     assert!(cut.ends_with("..."), "cut row carries the end marker");
+[31m-    assert_eq!(cut.chars().count(), 200 + 3, "COMMAND_CAP chars plus marker");
+[0m[32m+    assert_eq!(
+[0m[32m+        cut.chars().count(),
+[0m[32m+        200 + 3,
+[0m[32m+        "COMMAND_CAP chars plus marker"
+[0m[32m+    );
+[0m }
+ 
+ #[test]

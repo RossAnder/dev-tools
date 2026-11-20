@@ -128,7 +128,7 @@ check = "grep -q 'fn uncommitted_files' tomlctl/src/plan/drift.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -197,7 +197,7 @@ check = "grep -q 'const SCHEMA_VERSION: i64 = 3' tomlctl/src/tasks/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -207,7 +207,7 @@ check = "grep -q 'fn owner_problem' tomlctl/src/tasks/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -263,7 +263,7 @@ check = "grep -q 'fn gate_probes_for' tomlctl/src/plan/milestone.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -312,7 +312,7 @@ check = "grep -q 'fn gate_list' tomlctl/src/plan/emit.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -372,7 +372,7 @@ check = "grep -q 'plan/gate-probe-unknown' tomlctl/src/plan/check.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -433,7 +433,7 @@ check = "grep -q 'ROW_KEYS' tomlctl/src/plan/run_gate.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -476,7 +476,7 @@ check = "grep -q 'fn compile' tomlctl/src/agents/audit.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -531,7 +531,7 @@ check = "grep -q 'plan_emit_lane_check' tomlctl/src/cli/types/mod.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -727,7 +727,7 @@ check = "grep -q 'fn write_version' tomlctl/src/plan/schema.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -737,7 +737,7 @@ check = "grep -q 'enum PlanRunOp' tomlctl/src/cli/types/plan.rs"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -792,7 +792,7 @@ check = "grep -q 'fn ui_scope_findings' tomlctl/src/plan/check.rs && grep -q 'fn
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "d840a59bdbfab07012e476f5ec5ed163c7026426"
 neg_rc = 0
 verdict = "holds"
 
@@ -1022,6 +1022,109 @@ at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
 neg_rc = 0
 verdict = "holds"
 
+[[specs]]
+ref = "format-plancheckrs"
+outcome = "tomlctl/src/plan/check.rs is formatted as rustfmt (edition 2024) formats it"
+constraints = ["Change formatting only; no code change"]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "check.rs passes the format check"
+check = "rustfmt --edition 2024 --check tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs]]
+ref = "fix-the-agents_audit-long-command-cut-assertion"
+outcome = "audit_reports_a_bun_suite_and_cuts_long_commands asserts the cut row as the verb produces it: COMMAND_CAP (200) characters of the command followed by the `...` end marker, 203 characters in all"
+constraints = [
+    "Change only the test; the cut in tomlctl/src/agents/audit.rs is correct and its unit tests already assert COMMAND_CAP + 3",
+    "Assert the marker as well as the length, so the test says why the count is 203",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The audit test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=agents_audit::audit_reports_a_bun_suite_and_cuts_long_commands)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "fix-gate_list_holds_marked_gates_and_checks"
+outcome = 'plan_emit::gate_list_holds_marked_gates_and_checks seeds a milestone carrying external_gates and a gate-owned accept entry with effect = "external", and passes: gate-list lists the unmarked gate and checks under commands and the marked gate and external check under held'
+constraints = [
+    "The test's fixture must reach the milestone the way the rendered store actually lays it out; read how the store() helper renders milestones before indexing",
+    "Change tomlctl/src/plan/emit.rs only if, once the fixture is right, the verb's output is what is wrong; say which in the note",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "The gate-list held test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=plan_emit::gate_list_holds_marked_gates_and_checks)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "fix-the-visual-accept-state-refusal-test-payloads"
+outcome = "Each case of a_state_or_look_the_milestone_does_not_hold_is_refused_writing_nothing reaches the refusal it names, and the test passes"
+constraints = [
+    "Change only the test: the verb checks the payload's own consistency before the milestone's ui_states, and that order stays",
+    "In the cases that replace `states`, also clear or adjust `defects` so no defect names a state outside the payload's states",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The visual-accept refusal test passes"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(=plan_run_records::a_state_or_look_the_milestone_does_not_hold_is_refused_writing_nothing)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "format-testsagents_auditrs"
+outcome = "tomlctl/tests/agents_audit.rs is formatted as rustfmt (edition 2024) formats it"
+constraints = [
+    "Change formatting only; no code change",
+    "Run rustfmt --edition 2024 --check on the file before returning; it must report nothing",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "agents_audit.rs passes the format check"
+check = "rustfmt --edition 2024 --check tomlctl/tests/agents_audit.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1044,12 +1147,57 @@ elaboration = "upfront"
 defer_reason = ""
 after = ["A"]
 
+[[changes]]
+at = 2026-11-20T14:46:54Z
+ref = "format-plancheckrs"
+field = "*"
+old = ""
+new = "Format plan/check.rs"
+actor = "orchestrator"
+reason = "gate A round 1: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check reports a diff in tomlctl/src/plan/check.rs at the ui_findings call near line 188"
+
+[[changes]]
+at = 2026-11-20T14:46:54Z
+ref = "fix-the-agents_audit-long-command-cut-assertion"
+field = "*"
+old = ""
+new = "Fix the agents_audit long-command cut assertion"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails agents_audit::audit_reports_a_bun_suite_and_cuts_long_commands at tests/agents_audit.rs:105, left 203 right 200: the cut command carries COMMAND_CAP characters plus a `...` marker"
+
+[[changes]]
+at = 2026-11-20T14:46:54Z
+ref = "fix-gate_list_holds_marked_gates_and_checks"
+field = "*"
+old = ""
+new = "Fix gate_list_holds_marked_gates_and_checks"
+actor = "orchestrator"
+reason = 'gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails plan_emit::gate_list_holds_marked_gates_and_checks, panicking `index not found` at tests/plan_emit.rs:881, where the test indexes doc["milestones"][0]["external_gates"] on the rendered gate_store TOML'
+
+[[changes]]
+at = 2026-11-20T14:46:54Z
+ref = "fix-the-visual-accept-state-refusal-test-payloads"
+field = "*"
+old = ""
+new = "Fix the visual-accept state refusal test payloads"
+actor = "orchestrator"
+reason = "gate A round 1: cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast fails plan_run_records::a_state_or_look_the_milestone_does_not_hold_is_refused_writing_nothing at tests/plan_run_records.rs:1175: the states-replacing cases keep accepted()'s defect on state list-full, so the payload's defect-state check refuses first with `defects[0]: state list-full is not one of this acceptance's states` instead of the milestone state check"
+
+[[changes]]
+at = 2026-11-20T14:56:17Z
+ref = "format-testsagents_auditrs"
+field = "*"
+old = ""
+new = "Format tests/agents_audit.rs"
+actor = "orchestrator"
+reason = "gate A round 2: cargo fmt --manifest-path tomlctl/Cargo.toml -- --check reports a diff in tomlctl/tests/agents_audit.rs near line 104, the assert_eq on the cut row's length added by task 18"
+
 [[items]]
 id = 1
 ref = "add-the-plan-emit-commit-paths-leaf"
 title = "Add the plan emit commit-paths leaf"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1072,15 +1220,15 @@ deps_note = ""
 action = "Add `tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work|flow`, which prints the paths one of the drain's two commits stages."
 detail = "Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` for this form comes from a second status read with `--ignored=matching` over the same pathspecs (the flow store directory, `docs/flows/<slug>/notes/run/`, the backlog and inputs pairs, the linked review stores), since a plain status read omits ignored files: each `!!` path is listed with its `git check-ignore -v` rule. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused; `--for flow` lists a changed review store that a row's `[[finding_links]]` entry names outside the flow directory, with its sidecar, and a changed `.claude/inputs.toml` pair; a changed row file the ignore rules hide is in `ignored` with its rule and in no `paths`; a deleted row file is in `--for work`'s `paths`. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`. Add a test where a gate log under the flow directory, hidden by an ignore rule, appears in `--for flow`'s `ignored` with its rule."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 2
 ref = "store-the-external-effect-mark-on-accept-entries-and-milestones"
 title = "Store the external-effect mark on accept entries and milestones"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1105,15 +1253,15 @@ deps_note = ""
 action = "Add an optional `effect` key to an accept entry and an `external_gates` list to a milestone, and stamp a store that holds either at schema_version 4."
 detail = """`Accept` gains `effect` (empty or `external`), wired wherever `covered_by` is: the `ACCEPT_FIELDS` whitelist and `accept_entry` in tasks/add.rs, `accept_from_toml` and `accept_to_toml` (written only when set), the `accept_json` projection in tasks/show.rs, tasks/snapshot.rs, and `entry_matches` in plan/store.rs. An unknown `effect` value is refused naming the vocabulary. `Accept::owner_problem` gains an arm refusing `effect = "external"` unless the entry's owner is `gate`, so the parser and `plan check` both enforce it and `plan probes` can never run a marked command. `MilestoneSpec` gains `external_gates: Vec<String>`, read and written by `milestone_from_toml` and `milestone_to_toml` only when non-empty; no CLI flag sets it in this task. Every `Accept` and `MilestoneSpec` struct literal in this task's files gains the new field (plan/milestone.rs holds two more `MilestoneSpec` literals: give each the empty list and change nothing else in that file, which the next task extends). Raise `SCHEMA_VERSION` to 4 and add a `holds_v4_keys` predicate beside `holds_v3_keys` so only a store holding an `effect` or a non-empty `external_gates` is stamped 4; a store holding neither keeps the stamp it has today. Document the `effect` key in the `spec` row of references/tasks-write.md and the accept-owner section of references/tasks-store.md, and `external_gates` and the version-4 stamp in tasks-store.md's store shape. Tests: an `effect = "external"` entry with `run_by = "gate"` round-trips and stamps 4; the same mark on a worker-owned, `covered` or `look` entry is refused; a store with no mark keeps its stamp. Keep a separate constant for the version-3 stamp that `holds_v3_keys` selects, so raising `SCHEMA_VERSION` (the newest version read) to 4 does not restamp a version-3 store."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 3
 ref = "add-external-gate-to-plan-milestone-add-and-update"
 title = "Add --external-gate to plan milestone add and update"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1133,15 +1281,15 @@ deps_note = ""
 action = "Add a repeatable `--external-gate '<command>'` flag to `plan milestone add` and `plan milestone update` that stores the command as a gate and marks it in `external_gates`."
 detail = """On `add`, each `--external-gate` command is appended to the milestone's `gates` after the `--gate` commands, in the order given, and recorded in `external_gates`; a command given as both `--gate` and `--external-gate` is stored once, marked. On `update`, passing `--gate`, `--external-gate` or both replaces the whole gate list and the whole mark list with what the call gives, so `--gate` alone leaves no gate marked; `--clear-gate` empties both and is refused alongside `--external-gate`; an update that passes neither keeps both. A `--gate-probe` may name an external gate. On an audited store an update that changes the marks appends a `[[changes]]` row with `field = "external_gates"`, `old` and `new` as compact JSON, as `gate_probes` does. Fill the two `MilestoneSpec` literals in plan/milestone.rs. Add the flag to both flag tables and synopsis lines in references/plan.md, name `external_gates` in the update section's list of changed fields, and correct the `## plan emit` pointer there so it names every emit leaf including `commit-paths`. Tests in tests/plan_milestone.rs: add stores the gate once and marks it; update replaces both lists; `--clear-gate` with `--external-gate` is refused."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 4
 ref = "print-held-commands-from-plan-emit-gate-list"
 title = "Print held commands from plan emit gate-list"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1160,15 +1308,15 @@ deps_note = ""
 action = "Make `plan emit gate-list` print each marked command under a `held` key instead of `commands`."
 detail = "In `gate_list`, a milestone gate listed in `external_gates`, and a gate-owned accept check whose `effect` is `external`, goes to `held: [{command, source}]` with the `source` value it would have had in `commands`, in the same order. Test the mark before the duplicate test, so a command that is marked anywhere is held and never also listed under `commands`. Print `held` only when it is not empty, as `visual` is, so the output of a milestone with no mark is unchanged and the existing key-set test stands. Rewrite the function's doc comment, which says no hold is printed. In references/plan-engine.md, add `held` to the gate-list output keys and replace the sentence saying holds stay the orchestrator's with one saying the held commands are the `held` rows. Tests in tests/plan_emit.rs: an external gate and an external gate-run accept check both land in `held` and not in `commands`; an unmarked milestone still prints exactly `commands` and `skipped`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 5
 ref = "add-the-needs-gate-effect-and-external-gate-unknown-plan-checks"
 title = "Add the needs-gate-effect and external-gate-unknown plan checks"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1187,15 +1335,15 @@ deps_note = ""
 action = "Add two `plan check` classes: `plan/needs-gate-effect` (warning) and `plan/external-gate-unknown` (error)."
 detail = """`plan/needs-gate-effect`: for each pending row R, walk `needs` transitively with a visited set; report R once, as a warning, when a reached row E other than R has the same `checkpoint` as R and holds an accept entry with `effect = "external"` whose owner is `gate`. The detail names R, E and the check command, and says the effect exists only after the milestone's gate, so R cannot observe it while it runs. Rows reached in another milestone are not reported. `plan/external-gate-unknown`: an `external_gates` entry that equals none of the milestone's `gates` is an error, beside `plan/gate-probe-unknown` and worded like it. Add both rows to the check-class table in references/plan.md. Tests in tests/plan_check.rs: a same-milestone need on a row with a gate-run external accept warns; the same need across milestones does not; a row with no such need does not; a hand-edited `external_gates` entry naming no gate errors."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 6
 ref = "let-plan-run-gate-read-the-verification-agents-blocks"
 title = "Let plan run gate read the verification agent's blocks"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1214,15 +1362,15 @@ deps_note = ""
 action = "Add `--blocks <path>` to `plan run gate`, which parses the `verification` agent's returned text into the rows `--ndjson` takes."
 detail = "`--blocks` takes a file path or `-` for stdin and excludes `--ndjson`; exactly one of the two is required. The parser lives in the new plan/gate_blocks.rs and yields the same row shape `parse_row` reads, so everything after parsing (the `--rerun` merge, the kept log tail) is unchanged. The format is fixed by claude/agents/verification.md, which this task does not edit. A pass is one line `outcome: pass | command: <command> | duration: <n> | summary: <text> | log: <path>` with an optional ` | retried: transient` tail; read `command` from after `command: ` up to the last ` | duration: ` that is followed by an integer and ` | summary: `, and `summary` up to the last ` | log: `, because a command may hold a shell pipe and a vitest summary holds ` | `. A pass row gets `exit = 0`; `summary: none` is the empty summary. A fail, timeout or flaky result is a block opening with a `command: <command>` line directly followed by a line starting `outcome: `, then `exit:` (`none` means absent), `duration_s:`, `log:`, `summary:` and optional `failed_ids:`, `retried:`, `rerun:` and a final `tail:` followed by raw log lines. A tail runs until a `command: ` line directly followed by an `outcome: ` line, a line starting `outcome: pass | command: `, a line starting `not_run:`, or the end; `retried:`, `rerun:`, `tail:`, `TANGENTIAL:` and `not_run:` lines produce no row key. For `failed_ids`, when `<log>.ids` exists beside the block's log (read through the same temp-directory allowance `read_temp_log` uses), take its lines, one id each; otherwise split the block's `failed_ids:` value on spaces and drop a trailing `(+<n> more)`. A refused-command block carrying only `command`, `outcome`, `exit: none` and `tail:` parses with the verb's defaults. Text that yields no row is refused. Document the flag in the `plan run gate` flag table and synopsis of references/plan-run.md, with the failed-ids rule. Tests in tests/plan_run_records.rs: a pass line whose command holds a pipe and whose summary holds ` | `; a fail block whose tail contains a line starting `command:`; a command with both quote kinds and a backslash stored byte for byte and replaced, not duplicated, under `--rerun`; ids read from a `.ids` file with a space inside an id; `--blocks` with `--ndjson` refused. Also test: a flaky block (its `rerun:` and `TANGENTIAL:` lines produce no key); a pass line stores `exit = 0`; a pass line ending ` | retried: transient` keeps its log path clean."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 7
 ref = "report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
 title = "Report scripts run through bun -e or node -e in agents audit"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1238,15 +1386,15 @@ deps_note = ""
 action = "Add a default `agents audit` pattern matching a `bun -e`, `bun --eval`, `node -e` or `node --eval` command that names a file under `scripts/`."
 detail = """Add one regex to the default pattern list in audit.rs, matching `bun` or `node`, then `-e` or `--eval`, then, later in the same command, a path segment `scripts/` followed by a file name. It must match `bun -e "await import('./scripts/preview-deploy.ts')"` and `node --eval "require('./scripts/x.js')"`, and must not match `bun run scripts/x.ts`, `bun -e "console.log(1)"` or `rg -n foo scripts/`. Extend the two unit tests of the default patterns in the same file with those five commands. In references/agents.md, add the pattern to the description of the defaults."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 8
 ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
 title = "Advertise the milestone A features and bump tomlctl to 0.26.0"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1264,8 +1412,8 @@ deps_note = ""
 action = "Add the feature strings `plan_emit_commit_paths`, `effect_mark` and `plan_run_gate_blocks`, and bump the crate to 0.26.0."
 detail = """Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append the three strings to `FEATURES`, after `plan_emit_lane_check`'s neighbours in the plan block. (2) tomlctl/tests/capabilities.rs: add the three strings to the list in `capabilities_features_contains_every_plan_feature`, and change the version literal `capabilities_version_matches_cargo_toml` pins, and its message, from 0.25.0 to 0.26.0. (3) tomlctl/README.md: add the three to the sample capabilities block and the feature table, change that sample block's `"version"` to 0.26.0 (`readme_sample_version_matches_cargo_toml` compares it with Cargo.toml), and name `commit-paths` wherever the `plan emit` leaves are listed. (4) tomlctl/Cargo.toml: `version = "0.26.0"`. (5) Cargo.lock: the tomlctl package entry's version to 0.26.0, by running `cargo update --manifest-path tomlctl/Cargo.toml -p tomlctl --offline` from the repo root, or by editing that one line. The verbs themselves are other tasks' work; this task adds only the strings."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 9
@@ -1324,7 +1472,7 @@ id = 11
 ref = "add-plan-run-visual-accept-and-its-plan-store-record"
 title = "Add plan run visual --accept and its plan-store record"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1347,15 +1495,15 @@ deps_note = ""
 action = "Add `tomlctl plan run visual --slug <slug> --milestone <id> --round <n> --accept --json '@<path>'`, which records the user's acceptance of a failed visual round in a new `[[visual_accept]]` array of plan.toml."
 detail = """The record holds `milestone`, `round`, `at` (stamped by the verb), `why`, `states`, `looks` (`[{task, accept}]`), `defects` (`[{state, class, location, detail, note}]`, `state` required and one of the record's `states`, the other four strings that may be empty) and `backlog`. The payload carries `why`, `states`, `looks`, `defects` and `backlog`; an unknown key is refused naming the accepted set. `--accept` is a required bare flag, leaving room for another mode. Refuse: a blank `why`; an empty `states`; a state that is not in the milestone's `ui_states` (a control is not a state); a `looks` entry that is not a `run_by = "look"` accept entry, by the 0-based index `gate-list`'s `visual.looks` prints as `accept`, on a row whose `checkpoint` is the milestone; a `backlog` that is not a non-blank id; an unknown milestone. The verb cannot know which states failed and does not try. A second call for the same milestone and round replaces that record. Add the array to `PlanStore`, its `from_toml` and `to_toml` and its `Default`, written only when non-empty, and give `write_version` a tier above the current highest that applies only when the array is non-empty, so a store without an acceptance keeps its stamp; fill every `PlanStore` literal in this task's files. Register the leaf in `PlanRunOp` and the plan run dispatch, with its `mod` line. Prints `{"ok":true,"milestone":"<id>","round":<n>}`. Add the case to tests/output_options.rs, a `## plan run visual` section with flag table, payload keys and output to references/plan-run.md, and the array with its keys and the new stamp to references/plan-store.md. Tests in tests/plan_run_records.rs: a valid acceptance is stored and round-trips, and a later unrelated plan write keeps it; a control named as a state, a non-look entry and a blank why are each refused; a second call for the same round replaces the first; a store without the array keeps its version. `SCHEMA_VERSION` in plan/schema.rs is both the newest stamp read and the request tier: raise the read ceiling by one for the acceptance tier and keep the request tier at its present number under its own name."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 12
 ref = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
 title = "Exempt rows off the capture paths from plan/ui-accept-structural"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1371,15 +1519,15 @@ deps_note = ""
 action = "Make `plan/ui-accept-structural` skip a row whose `files` match none of `.claude/ui-capture.toml`'s `paths`."
 detail = "`ui_capture::load_paths` already returns the `paths` globs and `ui_scope_findings` already matches a row's `files` against them through `normal_path`. Load the globs once in `findings`, pass them to `ui_findings` as well, and add to the `plan/ui-accept-structural` condition that at least one of the row's files matches a glob. When the glob set is empty, because the file or its `paths` key is absent, apply no filter, so the warning fires as today. A malformed config still yields the one warning `ui_scope_findings` already reports for it, not a second one, and applies no filter. Reword the class's row in references/plan.md to say a row touching no capture path is exempt when the project declares `paths`. Tests in tests/plan_check.rs beside the existing ui-accept-structural test, using `write_capture_config`: a row whose files match no path draws no warning; a row whose file matches still does; with no config the existing test's result stands. Name the first of those tests `ui_accept_structural_skips_a_row_off_the_capture_paths`, and use the word `exempt` in the reworded class row."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 13
 ref = "advertise-the-plan_run_visual-feature"
 title = "Advertise the plan_run_visual feature"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1395,8 +1543,8 @@ deps_note = ""
 action = "Add the feature string `plan_run_visual`."
 detail = "Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append `plan_run_visual` to `FEATURES` beside `plan_run_records`. (2) tomlctl/tests/capabilities.rs: add it to the list in `capabilities_features_contains_every_plan_feature`. (3) tomlctl/README.md: add it to the sample capabilities block and the feature table, and name `plan run visual` wherever the run-record leaves are listed."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
 
 [[items]]
 id = 14
@@ -1473,3 +1621,106 @@ detail = "In claude/commands/implement-v2.md, add the four strings to the featur
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 17
+ref = "format-plancheckrs"
+title = "Format plan/check.rs"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/check.rs"]
+needs = [12]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
+
+[[items]]
+id = 18
+ref = "fix-the-agents_audit-long-command-cut-assertion"
+title = "Fix the agents_audit long-command cut assertion"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/agents_audit.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
+
+[[items]]
+id = 19
+ref = "fix-gate_list_holds_marked_gates_and_checks"
+title = "Fix gate_list_holds_marked_gates_and_checks"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_emit.rs",
+    "tomlctl/src/plan/emit.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-deep"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
+
+[[items]]
+id = 20
+ref = "fix-the-visual-accept-state-refusal-test-payloads"
+title = "Fix the visual-accept state refusal test payloads"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/plan_run_records.rs"]
+needs = [11]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"
+
+[[items]]
+id = 21
+ref = "format-testsagents_auditrs"
+title = "Format tests/agents_audit.rs"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/tests/agents_audit.rs"]
+needs = [18]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "b5d333179bea1dc6585feba0d3a0a98fa8b02afc"

@@ -1,0 +1,12 @@
+Diff in \\?\C:\Users\rossa\dev\dev-tools\tomlctl\src\plan\check.rs:188:
+     found.extend(spec_findings(&tasks, &authored));
+     found.extend(milestone_findings(&tasks));
+     found.extend(needs_gate_effect_findings(&tasks));
+[31m-    found.extend(ui_findings(&tasks, ui_capture::load_paths(&root).ok().as_ref()));
+[0m[32m+    found.extend(ui_findings(
+[0m[32m+        &tasks,
+[0m[32m+        ui_capture::load_paths(&root).ok().as_ref(),
+[0m[32m+    ));
+[0m     found.extend(ui_scope_findings(&tasks, &root));
+     found.extend(generated_outputs::generated_output_findings(&tasks, &root));
+     found.extend(case_collision::case_collision_findings(&tasks, &root));
