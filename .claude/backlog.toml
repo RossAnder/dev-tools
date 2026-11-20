@@ -13818,7 +13818,7 @@ tags = [
     "implement-v2",
     "commit",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13828,6 +13828,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages milestone C: task 34's deliverable was docs/flows/<slug>/notes/preview-cpu.md, a row file the drift list omits by design, so following step 10 literally would have committed the milestone without it (caught by diffing the rows' files against the drift list by hand). The recipe also leaves the intersection to the orchestrator: tasks list --get files prints each row's array as one JSON line, so it needs --get 'files.*' plus sort/comm. A verb such as plan emit commit-paths (rows' files that git status reports changed, the flow's own directories included) would remove both traps."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-091e2d4f"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-d1b276a6"
@@ -13838,7 +13840,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13848,6 +13850,8 @@ flow = "site-worker-new-strapi"
 context = 'drain.md step 7 says a command that changes something outside the build is held for a second verification call, but gate-list carries no signal: on partnerhub_pages milestone C, bun run preview:deploy (an accept check, run_by gate) was spotted by name. A field on gates and accept entries (for example effect = "external") and a held flag or separate list in gate-list output would make holding mechanical and auditable.'
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-92183e4a"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-5a1c96eb"
@@ -13904,7 +13908,7 @@ tags = [
     "implement-v2",
     "audit",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13914,6 +13918,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages: the drain's audit passed --gate 'bun run preview:deploy', but the worker ran the same script through bun -e import(...), so nothing was reported and the live deploy was known only because the worker's note confessed it. Resolving each gate command's package.json script to the file it runs and matching that path too (or matching any bun -e/node -e that names a script under scripts/) would close the gap."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-0bc81d84"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-0d0afc35"
@@ -13947,7 +13953,7 @@ tags = [
     "implement-v2",
     "visual",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13957,6 +13963,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages milestone C: the banner failed visual round 2 on two cosmetic defects and the user chose to commit as is. The orchestrator had to improvise the commit, the stamp and the report wording, and nothing in the store records that the look criteria were waived. A documented override, for example a decision row or plan run visual --accept naming the states and criteria waived, with the commit step reading it, would keep the waiver auditable."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-5680c91a"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-799bfc99"
@@ -13967,7 +13975,7 @@ tags = [
     "implement-v2",
     "visual",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13977,6 +13985,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages milestone C: round 1's fix for clipped descenders (padding-block with a negative margin on the editor slot) passed its tests, but round 2 found the long address no longer ended in an ellipsis, with only round 2 left. The capture command is read-only and writes under an ignored directory, so letting a look-fix worker run it for its own states and read the result before returning done would catch such regressions inside the round."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-5680c91a"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-ac9b8d59"
@@ -14010,7 +14020,7 @@ tags = [
     "implement-v2",
     "plan-check",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14020,6 +14030,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages milestone C: tasks 34, 44, 45, 46 and 47 each drew the warning though none touches a file matching ui-capture.toml's paths. Exempting rows whose files match none of the declared capture paths would leave the warning for rows that can actually change the look."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-3d4f9876"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-2a33255a"
@@ -14030,7 +14042,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14040,6 +14052,8 @@ flow = "site-worker-new-strapi"
 context = "On partnerhub_pages milestone C the gate ran four times plus two held-command reruns; each needed the 11 blocks rewritten as [[record]] rows (command, outcome, exit, duration_s, summary, failed_ids, log) by hand, which is slow and error-prone (a command string with nested quotes must be re-escaped). plan run gate could accept the verification agent's block output directly, or the verification agent could also write the record file."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-8fb6b503"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-0f9fc8b5"
@@ -14050,7 +14064,7 @@ tags = [
     "plan-v2",
     "review",
 ]
-status = "open"
+status = "promoted"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14060,6 +14074,8 @@ flow = "site-worker-new-strapi"
 context = "Seen 2026-11-20 on partnerhub_pages milestone C: task 34 measured CPU on the deployed drafts preview and needed task 33, but task 33's deploy accept check was run_by gate, so no deploy of the finished tree could exist before task 34 ran; it failed, and a replan had to make task 34 deploy itself. A plan check or cold-read question (does any task's outcome rest on an effect only the gate produces?) would surface the ordering at authoring time."
 base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-651f0ed2"]
+promoted = 2026-11-20
+promoted_to = "implement-v2-run-hardening"
 
 [[backlog]]
 id = "B-7dc0645c"
@@ -14082,3 +14098,35 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-9e645146"]
 resolved = 2026-11-20
 resolution = "fixed in 2b9163ff"
+
+[[backlog]]
+id = "B-b86f492c"
+kind = "bug"
+summary = "plan emit lane-check inherits plan drift skip of docs/flows/<slug>/, so an out-of-lane edit under the flow docs directory outside notes/run is never reported"
+area = "tomlctl/src/plan/lane.rs"
+tags = []
+status = "open"
+created = 2026-11-20T13:57:36Z
+last_seen = 2026-11-20T13:57:36Z
+seen_count = 1
+dedup_id = "b86f492cd8af1068"
+origin = "plan-v2"
+flow = "implement-v2-run-hardening"
+context = "Found by the commit-paths investigation of implement-v2-run-hardening: lane-check reuses uncommitted_files, which drops every path under docs/flows/<slug>/ before row matching. That plan leaves the skip alone on purpose (its decision D3); a fix would pass lane-check a narrower skip, such as notes/run/ only."
+base_sha = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+
+[[backlog]]
+id = "B-6024ee29"
+kind = "debt"
+summary = "visual.md Two rounds at most is ambiguous about which pass is the last: the round is the minted count plus one, so the stop falls on pass three while readers take round 2 as the second pass"
+area = "claude/skills/implement-v2-engine/references/visual.md"
+tags = []
+status = "open"
+created = 2026-11-20T13:57:37Z
+last_seen = 2026-11-20T13:57:37Z
+seen_count = 1
+dedup_id = "6024ee290cdabbc2"
+origin = "plan-v2"
+flow = "implement-v2-run-hardening"
+context = "Found by the visual-accept investigation of implement-v2-run-hardening. The new plan run visual --accept record stores the round explicitly, which sidesteps the ambiguity, but the prose that fixes the cap still reads two ways. State the cap as a count of fix rounds or of passes, not both."
+base_sha = "1502e6b420be81caac7bc44ae0e369dc20e461c9"

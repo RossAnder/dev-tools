@@ -1067,3 +1067,10 @@ last_used = "2026-11-18T20:15:57.7374509Z"
 
 [active.binding]
 branch = "main"
+
+[[active]]
+slug = "implement-v2-run-hardening"
+last_used = "2026-11-20T14:01:16.4484833Z"
+
+[active.binding]
+branch = "main"
