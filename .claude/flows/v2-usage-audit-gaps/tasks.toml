@@ -1,0 +1,1943 @@
+schema_version = 4
+last_updated = 2026-11-20
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "tomlctl records, verbs, fields and checks for the audit gaps, installed"
+
+[[checkpoints]]
+id = "B"
+rationale = "engine, agent, Workflow, skill and carrier prose that uses the milestone A verbs"
+
+[[specs]]
+ref = "add-the-plan-store-schema-7-shapes"
+outcome = "plan.toml can hold a gate acceptance, base-rerun results, tree digests, blocking handovers, run-note sources and an approval delta waiver, stamped schema 7 only when one of them is present."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no existing field's meaning or serialised form.",
+]
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#plan-store-schema-7",
+]
+precedent = ["tomlctl/src/plan/run_visual.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the plan store declares schema version 7 for the new shapes"
+check = "grep -q 'GATE_ACCEPT_SCHEMA_VERSION: i64 = 7' tomlctl/src/plan/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "gate commands carry base-rerun results and approvals a delta waiver"
+check = "grep -q 'base_failed_ids' tomlctl/src/plan/schema.rs && grep -q 'delta_waiver' tomlctl/src/plan/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "plan-store.md documents the gate acceptance record"
+check = "grep -q 'gate_accept' claude/skills/tomlctl/references/plan-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "each new shape round-trips and an untouched store keeps its stamp"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::schema::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "the visual acceptance rung is schema 6"
+check = "grep -q 'VISUAL_ACCEPT_SCHEMA_VERSION: i64 = 6' tomlctl/src/plan/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-the-milestone-a-flags-to-the-plan-cli-types"
+outcome = "The plan CLI accepts --base, --accept with --json, --after-round, --baseline-gate, --baseline-proof and --waive-review-delta with the conflicts described."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every existing flag keeps its name, type and help.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "gate-list takes --after-round and approve takes --waive-review-delta"
+check = """grep -q 'long = "after-round"' tomlctl/src/cli/types/plan.rs && grep -q 'long = "waive-review-delta"' tomlctl/src/cli/types/plan.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "milestone add and update take the baseline flags"
+check = """grep -q 'long = "baseline-gate"' tomlctl/src/cli/types/plan.rs && grep -q 'long = "baseline-proof"' tomlctl/src/cli/types/plan.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "run gate takes --base"
+check = """grep -q 'long = "base"' tomlctl/src/cli/types/plan.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "record-base-reruns-and-tree-digests-in-plan-run-gate"
+outcome = "A gate round records which failed tests also fail at the milestone's base, and a failing round records whitespace-stripped digests of the milestone's changed files."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A call without --base records exactly what it records today, plus tree on a failing run.",
+    """In a --base call a held or forward-accept command's place is `skip: <command>` on its own line in --blocks text, or `{"command": "<command>", "skip": true}` in NDJSON; parse it in gate_blocks.rs, accept it only with --base, count it as one position of the order mapping, and leave that command base_checked = false. Test a base call with a skip between two reruns.""",
+    "Write base_whole_failed = true only for a command that is one of the milestone's gates; an id-less non-gate command that fails at base keeps base_checked = true with base_whole_failed absent, so no reader takes it for a base failure. Test it.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#base-rerun-on-a-gate-command",
+    "design/records.md#base-rerun-mapping",
+    "design/records.md#tree-digest-on-a-gate-round",
+]
+precedent = ["tomlctl/src/plan/commit_paths.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "run gate writes base-rerun results"
+check = "grep -q 'base_checked = true' tomlctl/src/plan/run_gate.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the digest helper exists for gate-list to read"
+check = "grep -q 'fn whitespace_digest' tomlctl/src/plan/run_gate.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a base rerun marks base failures, a bad one is refused, and a failing run records its tree"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_run_records::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "record-gate-acceptances-with-plan-run-gate-accept"
+outcome = "The user's acceptance of a gate still failing after the last round, or their grant of one more round, is recorded against the round's failing commands."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#gate-acceptance",
+]
+precedent = ["tomlctl/src/plan/run_visual.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "run gate knows the extra-round kind"
+check = "grep -q 'extra-round' tomlctl/tests/plan_run_records.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "an acceptance naming every failing command is recorded and one omitting a failing command is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_run_records::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "accept-a-building-reproducer-run-by-the-worker"
+outcome = "A task's accept entry may name a building check its own worker runs."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Probe and gate-list behaviour for other owners is unchanged.",
+]
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#task-store-milestone-fields",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the worker-plus-build refusal is gone"
+check = "! grep -q 'self.run_by == RUN_BY_WORKER && self.writes_build' tomlctl/src/tasks/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a worker-owned building check is accepted on add"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^tasks_spec_add::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.premises]]
+claim = "the accept validation refuses a worker-owned building check"
+check = "grep -q 'self.run_by == RUN_BY_WORKER && self.writes_build' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "store-baseline-gates-and-their-proofs-on-milestones"
+outcome = "A milestone can mark comparison or snapshot gates as baseline gates and record each one's proof on the unchanged tree."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A milestone without the new fields reads and writes as today, with its stamp unchanged.",
+    "A null-control proof is given as '<gate> :: null-control :: <task id>' and stores `task`; the id must name a row of the milestone holding at least one accept entry, else refuse naming it. pass and fail take no third part. Test the stored task and both refusals.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#task-store-milestone-fields",
+]
+precedent = ["tomlctl/src/plan/milestone.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "milestones carry baseline gates and proofs"
+check = "grep -q 'baseline_gates' tomlctl/src/tasks/schema.rs && grep -q 'baseline_proofs' tomlctl/src/plan/milestone.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a baseline gate is recorded and its proof upserts, and bad values are refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_milestone::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "narrow-gate-list-after-a-whitespace-round-and-mark-launch-args-builds-and-handover-holds"
+outcome = "After a whitespace-only fix round the gate list names only what failed, launch-args marks building tasks, and tasks blocked by an undone handover are withheld."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Without --after-round, and for stores with no worker-building checks or blocking handovers, every emit output is unchanged.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "gate-list reads --after-round and launch-args emits builds and handover withholding"
+check = """grep -q 'after_round' tomlctl/src/plan/emit.rs && grep -q '"builds"' tomlctl/src/plan/emit.rs && grep -q 'handover:' tomlctl/src/plan/emit.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a whitespace-only change narrows the list, any other change keeps it full, building tasks are marked and blocked tasks withheld"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_emit::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "accept-blocks-ready_check-and-note-on-plan-handover-set"
+outcome = "A handover can name the tasks it blocks, a read-only check that tells when its input is in place, and a note of what was observed when it was done."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#handover-blocks-ready-check-and-note",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "handover set accepts the new keys"
+check = """grep -q '"ready_check"' tomlctl/src/plan/records.rs && grep -q '"blocks"' tomlctl/src/plan/records.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a handover with blocks and ready_check is stored and an unknown blocked id is refused"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_records::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "list-affected-decisions-in-plan-drift"
+outcome = "plan drift names the decisions whose bound files were changed by commits no row owns."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Every existing drift output key keeps its shape.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "drift emits affected_decisions"
+check = "grep -q 'affected_decisions' tomlctl/src/plan/drift.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a hand commit on a bound file lists its decision with the commit"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_drift::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "carry-a-task-id-bind-to-rows-on-the-bound-tasks-files"
+outcome = "A fix row on a decision-bound task's files receives that decision in its worker view."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the bind-follows-files test exists"
+check = "grep -q 'fn a_task_bind_reaches_a_row_on_the_bound_tasks_files' tomlctl/tests/plan_view.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "a decision bound to a task reaches a row on that task's files and no other"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_view::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "parse-a-sources-table-in-run-notes"
+outcome = "A worker can record the outside values it verified in its run note, and they reach the store."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#run-note-sources",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the run-note block accepts sources"
+check = """grep -q '"sources"' tomlctl/src/plan/run_note.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "sources parse and a bad entry is dropped alone"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::run_note::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "stamp-a-plan-digest-on-review-runs-and-gate-approval-on-the-delta"
+outcome = "Plan records changed after the last finished review run are listed before approval, and approval needs either a recheck that covers them or the user's recorded waiver."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Review runs on stores without plan.toml, and code-family runs, are unchanged.",
+    "A run started with rechecks = <run> stores plan_digest for the targets review recheck-targets --run <run> yields at its start, plus, when started with --set recheck_scope=delta (a START_FIELDS key validated in review/fields.rs), every target in the review delta at its start; a run without rechecks stores every target. A target outside a recheck's set stays in the delta until a run that covered it. Test that a delta-scoped recheck clears a hand edit once finished and a plain recheck does not.",
+    "The digest has one key per field-level target: each task and spec field as its whole value (no [n] entries), each decision, contract and handover key, each milestone field, and each brief section and design heading anchor hashed over its section text, read directly since target::current returns None for prose.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#review-run-plan-digest",
+    "design/records.md#approval-delta-waiver",
+]
+precedent = ["tomlctl/src/plan/lane.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "review run start records a plan digest and approve stores a delta waiver"
+check = "grep -q 'plan_digest' tomlctl/src/review/runs.rs && grep -q 'waive_review_delta' tomlctl/src/plan/approve.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "an edit after the review run blocks approval until rechecked or waived"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_approve::/) | test(/^review_runs::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "add-the-baseline-handover-block-and-capture-config-plan-checks"
+outcome = "plan check reports an unproved baseline gate, a handover blocking an unknown or finished task, and UI work in a project with no capture config."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-a",
+    "design/records.md#task-store-milestone-fields",
+    "design/records.md#handover-blocks-ready-check-and-note",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the four classes exist"
+check = "grep -q 'plan/baseline-gate-unproved' tomlctl/src/plan/check.rs && grep -q 'plan/handover-blocks-unknown' tomlctl/src/plan/check.rs && grep -q 'plan/handover-blocks-done' tomlctl/src/plan/check.rs && grep -q 'plan/ui-capture-missing' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "each class fires on its case and stays silent otherwise"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "document-the-new-plan-flags-keys-output-and-classes-in-planmd"
+outcome = "plan.md documents every plan-group flag, key, output field and check class milestone A added."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan.md names the new flags, keys and classes"
+check = "grep -q -- '--baseline-gate' claude/skills/tomlctl/references/plan.md && grep -q 'ready_check' claude/skills/tomlctl/references/plan.md && grep -q 'affected_decisions' claude/skills/tomlctl/references/plan.md && grep -q -- '--waive-review-delta' claude/skills/tomlctl/references/plan.md && grep -q 'plan/ui-capture-missing' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the reference's commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0270"
+outcome = "tomlctl capabilities advertises every milestone A feature, so the pre-flights can refuse an older binary."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the new features are advertised and the version is 0.27.0"
+check = """grep -q '"gate_accept"' tomlctl/src/cli/types/mod.rs && grep -q '"review_plan_digest"' tomlctl/src/cli/types/mod.rs && grep -q '^version = "0.27.0"' tomlctl/Cargo.toml"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the capabilities test pins the new list"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "rerun-failures-at-base-and-narrow-reruns-in-the-drains-fix-rounds"
+outcome = "A milestone's fix rounds are spent only on failures it caused, fix workers reproduce their failure, fixes that contradict a decision reach the user first, and a whitespace-only round reruns only what failed."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+    "Fenced tomlctl commands use single-token placeholders.",
+    "The base worktree is prepared before the rerun (dependencies linked, the untracked env files the gate reads copied); a whole-command base rerun that fails before reaching its tests is not recorded with --base, and the command counts as the milestone's own failure.",
+    "A base failure routed to the backlog or waived is carried to the first gate run whose only failures are routed base failures; there the drain records one plan run gate --accept (kind accept, backlog the captured item) naming them and commits. It is not asked about again in later rounds.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#base-rerun-on-a-gate-command",
+    "design/records.md#base-rerun-mapping",
+    "design/records.md#gate-acceptance",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the drain reruns failures at base and narrows after a whitespace round"
+check = "grep -q -- '--base --blocks' claude/skills/implement-v2-engine/references/drain.md && grep -q -- '--after-round' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "fix reproducers are worker-run"
+check = """grep -q 'run_by = "worker"' claude/skills/implement-v2-engine/references/drain.md"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the drain's commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "add-the-gate-waiver-stopped-gate-cleanup-and-source-promotion-to-the-drain"
+outcome = "A gate red after the last round is accepted, extended or left by the user's recorded choice, a stopped gate leaves no process behind, and verified sources outlive their flow."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+    "plan emit commit-paths --for flow never prints docs/references/, so the flow-store commit stages each promoted docs/references/<topic>.md explicitly beside the printed paths, and step 10 says so.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#gate-acceptance",
+    "design/records.md#run-note-sources",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the drain records gate acceptances, kills stopped gates by pid and promotes sources"
+check = "grep -q 'extra-round' claude/skills/implement-v2-engine/references/drain.md && grep -q 'cN.pid' claude/skills/implement-v2-engine/references/drain.md && grep -q 'docs/references/' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the drain's commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "commit-on-a-gate-acceptance-and-report-the-new-exceptions"
+outcome = "The engine commits on a recorded gate acceptance, never re-gates it on re-entry, commits handover done-marks at once, and reports each exception the user granted."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#gate-acceptance",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the skill reads the gate acceptance and the report prints it"
+check = "grep -q 'gate acceptance' claude/skills/implement-v2-engine/SKILL.md && grep -q 'accepted: <commands>' claude/skills/implement-v2-engine/references/report.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the skill's commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "give-the-verification-agent-a-run-directory-pid-files-and-runner-rerun-forms"
+outcome = "A stopped gate agent leaves files that name its processes, and failed tests of any common runner can be rerun narrowly."
+constraints = [
+    "Touch no file outside this task's files.",
+    "The agent still interprets nothing and changes no directory beyond what a command does.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the agent takes run_dir and writes pid files"
+check = "grep -q 'run_dir:' claude/agents/verification.md && grep -q 'cN.pid' claude/agents/verification.md && grep -q 'winpid' claude/agents/verification.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "give-building-tasks-an-exclusive-slot-in-the-milestone-pool"
+outcome = "Workers running their own building reproducers never share the build or compile a sibling's half-finished edit."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A launch with no builds task schedules exactly as today.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the pool reads the builds flag of a launch entry"
+check = '''grep -qE '\.builds\b' claude/workflows/implement-v2-milestone.js'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the Workflow script stays valid for the dispatch gates"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs.accept]]
+behaviour = "a builds task runs alone and later ready tasks do not starve it"
+check = "grep -q 'builds' claude/workflows/tests/harness.test.mjs && node --test claude/workflows/tests/harness.test.mjs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "teach-workers-to-run-their-reproducer-and-record-their-sources"
+outcome = "Workers reproduce what they fix, and their verified outside facts reach later tasks."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep each SHARED-BLOCK byte-identical across both files.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#run-note-sources",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "both workers record sources and read the reference store"
+check = '''grep -q '\[\[sources\]\]' claude/agents/plan-worker-lite.md && grep -q '\[\[sources\]\]' claude/agents/plan-worker-deep.md && grep -q 'docs/references/' claude/agents/plan-worker-deep.md && grep -q 'docs/references/' claude/agents/plan-worker-lite.md'''
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared blocks stay identical"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs]]
+ref = "hold-blocked-tasks-for-their-handover-and-snapshot-a-self-edited-engine-at-launch"
+outcome = "A task needing the user's input waits for it, a run that edits its own engine drains against the text it started with, and a finished flow still gets its handovers committed."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#handover-blocks-ready-check-and-note",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "run-milestone runs ready checks, routes a declined handover and drains a self-edit from a snapshot"
+check = "grep -q 'ready_check' claude/skills/implement-v2-engine/references/run-milestone.md && grep -q 'handover:<id>' claude/skills/implement-v2-engine/references/run-milestone.md && grep -q 'drain from the snapshot' claude/skills/implement-v2-engine/references/run-milestone.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "its commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "route-an-inspector-disagreement-on-an-unchanged-state-to-the-user"
+outcome = "A later visual round does not spend a fix round on a state an earlier round passed whose capture did not change at the defect."
+constraints = [
+    "Touch no file outside this task's files.",
+    "A fail on a changed location, or on a state never passed, mints as today.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "visual.md names the disagreement route"
+check = "grep -q 'disagreement' claude/skills/implement-v2-engine/references/visual.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "state-the-open-picker-claim-as-unverified"
+outcome = "questions.md no longer states an unprobed harness behaviour as fact."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the claim is marked unverified"
+check = "grep -q 'unverified' claude/skills/implement-v2-engine/references/questions.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "teach-plan-authoring-baseline-gates-blocking-handovers-sourced-facts-and-the-self-edit-order"
+outcome = "Plans prove comparison gates on the unchanged tree, hold tasks for user inputs, source the outside facts the orchestrator writes, and order self-edits after the install."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+    "Fenced tomlctl commands use single-token placeholders.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#task-store-milestone-fields",
+    "design/records.md#handover-blocks-ready-check-and-note",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "write-and-prove covers baseline gates, blocking handovers and pin existence checks"
+check = "grep -q -- '--baseline-gate' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'ready_check' claude/skills/plan-v2-engine/references/write-and-prove.md && grep -q 'manifest inspect' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "its commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "ask-for-a-capture-config-at-open-and-keep-launches-free-of-repo-writes"
+outcome = "A UI project without a capture config is asked for one at Open, and the orchestrator's own edits no longer trip the fan-out check."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "Open asks about the capture config and the no-writes rule is stated"
+check = "grep -q 'ui-capture.toml' claude/skills/plan-v2-engine/references/open-and-challenge.md && grep -q 'No repo writes while a launch is open' claude/skills/plan-v2-engine/references/open-and-challenge.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "reconcile-hand-commits-and-source-outside-facts-in-elaboration"
+outcome = "Elaborating a milestone catches decisions a hand commit made stale and settles them in the same gate, and its specs carry sourced outside facts."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#emit-outputs",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "elaborate reads affected decisions"
+check = "grep -q 'affected_decisions' claude/skills/plan-v2-engine/references/elaborate.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "its commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "recheck-plan-edits-made-after-the-review-and-source-hand-fixes"
+outcome = "No plan edit made after the review reaches approval unreviewed unless the user waived it on the record, and hand fixes carry sourced values."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every tomlctl verb and flag exactly as milestone A shipped them.",
+]
+premises = []
+means = []
+design = [
+    "design/direction.md#milestone-b",
+    "design/records.md#review-run-plan-digest",
+    "design/records.md#approval-delta-waiver",
+]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "approve reads the review delta and offers the waiver"
+check = "grep -q -- '--waive-review-delta' claude/skills/plan-v2-engine/references/approve.md && grep -q 'review_delta' claude/skills/review-v2-engine/references/plan-flow.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "their commands parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "add-the-platform-rung-and-context7-first-to-investigators"
+outcome = "Investigators reach for Context7 or a search before guessing a documentation URL."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the hierarchy has the platform rung and the investigator the Context7-first line"
+check = "grep -q 'llms.txt' claude/skills/research-methods/SKILL.md && grep -q 'Context7 first' claude/agents/plan-investigator.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "share-fetched-pages-within-a-review-run"
+outcome = "One review run fetches each outside page once, and its cells share the bytes but not each other's conclusions."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "finder, context-free finder, verifier and method name the run's page cache"
+check = "grep -q 'sources/' claude/agents/review-finder.md && grep -q 'sources/' claude/agents/review-finder-cf.md && grep -q 'sources/' claude/agents/review-verifier.md && grep -q 'sources/' claude/skills/review-v2-method/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the finder bodies stay identical"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs]]
+ref = "require-the-new-features-in-both-pre-flights-and-correct-claudemd"
+outcome = "Both carriers refuse a binary without milestone A's verbs, and CLAUDE.md states the probed reload behaviour and the worker build licence."
+constraints = ["Touch no file outside this task's files."]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "both pre-flights name the new features"
+check = "grep -q 'gate_accept' claude/commands/implement-v2.md && grep -q 'review_plan_digest' claude/commands/plan-v2.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the carriers parse against the CLI"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --workspace --locked --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+external_gates = ["cargo install --path tomlctl --locked"]
+
+[[milestones.gate_probes]]
+gate = "cargo install --path tomlctl --locked"
+probe = "cargo install --list"
+verdict = "holds"
+at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "bash scripts/verify-shared-blocks.sh",
+]
+elaboration = "upfront"
+defer_reason = ""
+after = ["A"]
+
+[[items]]
+id = 1
+ref = "add-the-plan-store-schema-7-shapes"
+title = "Add the plan store schema 7 shapes"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "claude/skills/tomlctl/references/plan-store.md",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/run_notes.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the gate acceptance record, the base-rerun and tree-digest fields on gate rounds, the handover blocks, ready_check and note fields, attempt sources and the approval delta waiver to the plan store, with schema version 7."
+detail = "Every shape is in design/records.md, section Plan store schema 7: read it as the contract. Follow how VisualAccept was added for the new record (the struct, its from-TOML and to-TOML conversion, its store vector, and the write_version rung). Add GATE_ACCEPT_SCHEMA_VERSION = 7 above VISUAL_ACCEPT_SCHEMA_VERSION, make SCHEMA_VERSION point at it, extend the compile-time ordering asserts, and stamp 7 by the rule records.md gives. The new fields go on existing structs that derive no Default (Approval, Handover, Attempt, GateRound, GateCommand), so initialise each new field empty at every existing struct literal, in approve.rs, records.rs, run_gate.rs (its test module included) and run_notes.rs, and change nothing else in those files: the crate must compile when this task is done. Every new field reads as absent or empty from an older store and is written only when set, so a store using none of them keeps its stamp. Document each shape in plan-store.md. Add unit tests in schema.rs: a round trip for each new shape, and a store using none of them keeping its old stamp."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "add-the-milestone-a-flags-to-the-plan-cli-types"
+title = "Add the milestone A flags to the plan CLI types"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/cli/types/plan.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the clap arguments milestone A's verbs read, so the tasks that implement them need not touch this file."
+detail = "Add to PlanRunGateArgs: `--base` (bool: the rows or blocks are the base rerun's results, mapped to the round's failing commands by order, design/records.md#base-rerun-mapping) and `--accept` (bool) with `--json <SRC>` (the acceptance payload of design/records.md#gate-acceptance; `-` for stdin, a path, a leading `@` accepted, a `.toml` path a record file). Clap's ArgGroup has no required-unless, so add `accept` to the gate_rows group's args, keeping it required with multiple(false), so exactly one of --ndjson, --blocks or --accept is given; `--json` requires `--accept`; `--accept` conflicts with `--rerun` and `--base`; `--base` conflicts with `--rerun`. Add `--after-round <N>` (u32, optional) to PlanEmitGateListArgs. Add `--baseline-gate <COMMAND>` (repeatable) to PlanMilestoneAddArgs and PlanMilestoneUpdateArgs, and `--baseline-proof '<gate> :: <verdict>'` (repeatable) to PlanMilestoneUpdateArgs. Add `--waive-review-delta <WHY>` to PlanApproveArgs. Give each a help string in the style of its neighbours. The fields are read by later tasks of this milestone; leave the handlers alone. Also add `--ui <yes|no>` to PlanMilestoneAddArgs and PlanMilestoneUpdateArgs (the milestone's UI call, design/records.md#task-store-milestone-fields)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "record-base-reruns-and-tree-digests-in-plan-run-gate"
+title = "Record base reruns and tree digests in plan run gate"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/gate_blocks.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Implement `plan run gate --base`, and write the tree digest on every failing run."
+detail = "With `--base`, the rows (or `--blocks`, parsed as today) are the base rerun of the round's latest run's failing commands, mapped by order as design/records.md#base-rerun-mapping says: refuse a count that differs from the number of failing commands, and refuse when the round has no run, naming the command to record it first. For each failing command set `base_checked = true`, `base_failed_ids` to the base result's failed ids that are among the command's own, and `base_whole_failed` as records.md says. Without `--base`, when the recorded run's outcome is `fail`, compute `tree` per design/records.md#tree-digest-on-a-gate-round: every path in the files of the milestone's rows, read from disk with no git call, each with its raw and whitespace-stripped SHA-256, `deleted` for a missing path. Put the digest helper in run_gate.rs as `pub(super) fn whitespace_digest`, returning both digests, since plan emit gate-list reads it. Tests in plan_run_records.rs: a base rerun marks base and partial base failures; a whole command (no failed_ids) that fails at base is a base failure with base_whole_failed = true; a whole command that fails in the round but passes at base is not a base failure, though its empty base_failed_ids equals its empty failed_ids; base ids outside the command's failed_ids are ignored; a base call on a round with no run is refused; a base call with the wrong count is refused; a failing run records its tree; a passing run records none. Document `--base`, its order mapping and `tree` in plan-run.md."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "record-gate-acceptances-with-plan-run-gate-accept"
+title = "Record gate acceptances with plan run gate --accept"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Implement `plan run gate --accept --json <payload>`, upserting a gate acceptance keyed on (milestone, round)."
+detail = "The payload and its rules are design/records.md#gate-acceptance: kind accept or extra-round, why required, backlog required for accept and empty for extra-round, each command a `fail` in the round's latest run with failed_ids a subset of that run's, and for accept every failing command named. Refuse anything else with a message naming the field. Mirror plan run visual --accept (run_visual.rs) for payload parsing, the upsert and the output envelope. Tests in plan_run_records.rs: an accept that names every failing command is recorded; one that omits a failing command is refused; an extra-round needs no backlog; an accept with an empty backlog is refused; a command that passed, or failed_ids not a subset of the run's, is refused; a second record for the same round replaces the first. Document the leaf mode in plan-run.md. Also accept kind = base per design/records.md#gate-acceptance: each entry names a base or partial base failure of that run with failed_ids a subset of its base_failed_ids (or the command alone when base_whole_failed is true), backlog required, every failing command not required; key base records on (milestone, round, kind). Test a base record naming a non-base id is refused."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "accept-a-building-reproducer-run-by-the-worker"
+title = "Accept a building reproducer run by the worker"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = 'Drop the refusal of an accept entry with run_by = "worker" and writes_build = true.'
+detail = "Remove the branch of the accept validation that refuses run_by worker with writes_build true; owner() and every other rule stay. Flip the test in tasks_spec_add.rs that asserts the refusal into one that asserts the row is accepted and shows `Run by: worker`. In tasks-store.md, say that a worker-owned check may build: the worker runs it, the gate does not list it, and probes skip it."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "store-baseline-gates-and-their-proofs-on-milestones"
+title = "Store baseline gates and their proofs on milestones"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "tomlctl/src/plan/lane.rs",
+]
+needs = [
+    2,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add baseline_gates and baseline_proofs to milestones and wire --baseline-gate and --baseline-proof into plan milestone add and update."
+detail = "Shapes and the schema stamp are design/records.md#task-store-milestone-fields; follow how external_gates and gate_probes were added (MilestoneSpec, its TOML read and write, and milestone.rs). MilestoneSpec derives no Default, so initialise the new fields empty at every existing literal, including the one in lane.rs's test module, changing nothing else in lane.rs. `--baseline-gate` must name a command already in the milestone's gates or external_gates, else refuse naming it. `--baseline-proof '<gate> :: <verdict>'` must name a baseline gate and a verdict of pass, fail or null-control; it upserts by gate and stamps `at`. Tests in plan_milestone.rs: add and update with a baseline gate; a baseline gate naming no gate is refused; a proof upserts; a bad verdict is refused; a milestone holding a baseline gate stamps the new task-store schema version and a store without one keeps its stamp. Also store the milestone's `ui` call from `--ui yes|no` on add and update (records.md#task-store-milestone-fields), stamped on the same task-store rung; test it."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "narrow-gate-list-after-a-whitespace-round-and-mark-launch-args-builds-and-handover-holds"
+title = "Narrow gate-list after a whitespace round and mark launch-args builds and handover holds"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+needs = [
+    1,
+    2,
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Implement gate-list --after-round, the builds flag in launch-args and the handover withholding in launch-args."
+detail = "All three outputs are design/records.md#emit-outputs, which is the exact rule. gate-list --after-round <n>: compare every path in the files of the milestone's rows now with round n's latest run's tree through run_gate.rs's whitespace_digest; narrow only when every path is unchanged or whitespace-only and not whitespace-significant and every path has a tree entry; print the failed commands under commands, the passed ones under carried, and narrowed = true; else the full list with narrowed = false; held stays as today. launch-args: a task holding an accept entry with run_by = worker and writes_build = true gets builds = true; a task named in the blocks of a handover whose done is false is withheld with reason handover:<id>, in the same shape the premise withholding uses. Tests in plan_emit.rs for each branch: a whitespace-only change to a .rs file narrows; a whitespace change to a .md file, a token change, a path with no tree entry and a round with no tree each keep the full list; a building task is marked; a blocked task is withheld. Document all three in plan-engine.md."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "accept-blocks-ready_check-and-note-on-plan-handover-set"
+title = "Accept blocks, ready_check and note on plan handover set"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add blocks, ready_check and note to the keys plan handover set accepts."
+detail = "Extend HANDOVER_SET_KEYS and upsert_handover per design/records.md#handover-blocks-ready-check-and-note: blocks is an array of task ids, each of which must exist in the task store, else refuse naming it; ready_check and note are strings. done stays refused on set. Tests in plan_records.rs: set with blocks and ready_check; a blocks id naming no task is refused; note updates on an existing handover."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "list-affected-decisions-in-plan-drift"
+title = "List affected decisions in plan drift"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add affected_decisions to plan drift's output."
+detail = "Per design/records.md#emit-outputs: one {id, binds_hit, commits} entry per decision whose file binds (entries that are not all digits) intersect changed_files, where commits are the unowned commits since approval that touched those files, in the order git log gives. A decision with no hit is left out. Test in plan_drift.rs: a hand commit touching a bound file lists the decision with its commit; an untouched bind lists nothing."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "carry-a-task-id-bind-to-rows-on-the-bound-tasks-files"
+title = "Carry a task-id bind to rows on the bound task's files"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make a decision bound to a task id also bind every row that holds one of that task's files."
+detail = "In view.rs bind_names, an all-digit bind entry matches the row with that id, as today, and also any row whose files share a path with the bound task's files. Add the test a_task_bind_reaches_a_row_on_the_bound_tasks_files to plan_view.rs: a decision bound to task 1 appears in the worker view of a fix row holding one of task 1's files, and not in a row sharing none."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "parse-a-sources-table-in-run-notes"
+title = "Parse a sources table in run notes"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_note.rs",
+    "tomlctl/src/plan/run_notes.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Accept a [[sources]] table in the run-note block and record it on the attempt."
+detail = "Per design/records.md#run-note-sources: each entry needs claim and one of url or query; how_verified is optional. A malformed entry drops that entry with a reason, as an unknown check result does today, rather than making the whole note malformed; any other unknown key stays malformed. run_notes.rs carries the parsed sources onto the Attempt. Unit tests in run_note.rs: a note with sources parses; an entry without claim is dropped and the rest kept. Also parse `fetched_at` (a date, required) and `version` (optional) on each source, per design/records.md#run-note-sources; an entry without fetched_at is dropped with a reason."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "stamp-a-plan-digest-on-review-runs-and-gate-approval-on-the-delta"
+title = "Stamp a plan digest on review runs and gate approval on the delta"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/review_runs.rs",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Record a per-target plan digest at review run start, compute the review delta, show it in plan stage and plan gate, and refuse approve --review ran on a non-empty delta unless --waive-review-delta is given."
+detail = "design/records.md#review-run-plan-digest is the contract. In plan/target.rs add a function mapping every plan target, in the target grammar of claude/skills/review-v2-method/references/plan-records.md, to the SHA-256 of its current value, and a delta function. review run start, on a flow with plan.toml and a plan-family run, stores plan_digest on the run row: add the optional field to the typed Run in review/store.rs, and to the run key list review/fields.rs validates against if it has one. Compute the delta in PlanReviewState (plan/store.rs), the one review view plan gate, approve and stage share, so they cannot disagree. plan stage reports review_delta (the targets), plan gate adds a risks row of kind review-delta, and plan approve --review ran refuses while the delta is non-empty unless --waive-review-delta <why> is given, which is stored as the approval's delta_waiver. A run with no plan_digest (older stores) yields no delta. Tests: in review_runs.rs a plan-family start stores a digest; in plan_approve.rs an edit after the run refuses approve, the waiver approves and is stored, and an unchanged plan approves; a second finished run started after the edit clears the delta and approve then passes; a later run that is started but not finished leaves the delta in place; plan stage lists exactly the edited target in review_delta and plan gate shows a review-delta risk. The delta refuses only a first approval: under `plan approve --amend` report it in plan stage and as the review-delta risk in plan gate and never refuse (records.md#review-run-plan-digest); test an amend with a delta approves."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "add-the-baseline-handover-block-and-capture-config-plan-checks"
+title = "Add the baseline, handover-block and capture-config plan checks"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+needs = [
+    1,
+    6,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "Add four plan check classes: plan/baseline-gate-unproved, plan/handover-blocks-unknown, plan/handover-blocks-done and plan/ui-capture-missing."
+detail = "plan/baseline-gate-unproved (warning): a milestone's baseline gate with no baseline_proofs entry. plan/handover-blocks-unknown (error): a handover's blocks names no task. plan/handover-blocks-done (warning): an undone handover blocks a task already done. plan/ui-capture-missing (warning): the file root.join(ui_capture::CONFIG) does not exist while a decision has class look or a milestone declares ui_states; test the file's existence directly, since load_paths returns an empty set both for a missing file and for one without paths. Register each class where the existing classes are listed, and add a test per class in plan_check.rs, positive and negative. The finding-class parity test stays red until task 14 adds the classes to plan.md; that pair lands together at the gate. Retarget plan/ui-capture-missing: warn on a milestone whose `ui` is true and whose ui_states is empty, with or without a capture config, as design/records.md#task-store-milestone-fields now says; drop the look-decision trigger. plan/baseline-gate-unproved also fires when a baseline gate's latest proof is fail and no decision records the user accepting it, and treats a null-control proof as missing when its task is not a task of the milestone or holds no accept entry (design/records.md#task-store-milestone-fields); test both."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "document-the-new-plan-flags-keys-output-and-classes-in-planmd"
+title = "Document the new plan flags, keys, output and classes in plan.md"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/plan.md"]
+needs = [
+    6,
+    8,
+    9,
+    12,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add the milestone A surface to the plan group's reference."
+detail = "In plan.md: --baseline-gate and --baseline-proof in the milestone add and update flag tables; blocks, ready_check and note in the handover set keys, with the rule that done is still set by plan handover done; affected_decisions in plan drift's output; review_delta in plan stage, the review-delta risk in plan gate and --waive-review-delta in plan approve; the four new check classes in the check class table. Match each to the code as the earlier tasks wrote it. Include --ui on milestone add and update, and the base kind of the gate acceptance in plan-run.md is task 4s."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0270"
+title = "Advertise the milestone A features and bump tomlctl to 0.27.0"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+needs = [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Add the feature names gate_base_rerun, gate_accept, gate_list_after_round, worker_build_check, baseline_gates, launch_args_builds, handover_blocks, drift_affected_decisions, run_note_sources and review_plan_digest, and bump the version to 0.27.0."
+detail = "Add each name to FEATURES in cli/types/mod.rs, to the pinned list in tests/capabilities.rs, and to the README's sample block and feature table with one line on what it enables. Bump tomlctl/Cargo.toml to 0.27.0, update the version tests/capabilities.rs pins (it asserts 0.26.0 today), and refresh the tomlctl entry in the root Cargo.lock."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "rerun-failures-at-base-and-narrow-reruns-in-the-drains-fix-rounds"
+title = "Rerun failures at base and narrow reruns in the drain's fix rounds"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rewrite step 7's fix rounds so pre-existing failures cost no round, fix rows carry worker-run reproducers and are checked against decisions, and a whitespace-only round reruns only what failed."
+detail = """Read notes/fix-rounds.md and notes/decisions-and-baseline.md first. (1) Base rerun: when the gate fails, make a detached worktree of HEAD in the scratchpad (git worktree add --detach), and dispatch one verification call rerunning every fail command of the round's latest run, in the order that run lists them: `cd <worktree> && <the command's rerun form with its failed ids>`, or the whole command when it has no failed ids. Record it with `tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --base --blocks <file>`, which maps the blocks to the commands by that order. Remove the worktree after. (2) Mint fix rows only for the failed ids that pass at base, the milestone's own failures. Put the ids that also fail at base, a base failure or the base-failing part of a partial one, to the user through AskUserQuestion: fix them under a `base <id>:` reason prefix, which the round count does not match; capture them to the backlog; or waive the command through the gate acceptance. (3) Fix rows: a reproducer that builds is minted as an accept entry with run_by = "worker" (it may build), replacing the gate-owned reproducer; the pool runs such rows one at a time. (4) Before relaunching, read `tomlctl plan view --slug <slug> --for worker --task <id>` for each new fix row; when its outcome or constraints depart from a decision shown, ask the user before launch to amend the decision (plan decide on the same id, user-confirmed, binding the row) or reshape the fix; this replaces parking for fix rows. (5) Gate again with `tomlctl plan emit gate-list --slug <slug> --milestone <id> --after-round <n>`; when it prints narrowed = true, gate only those commands and report the carried ones. (6) Give each test gate command a rerun: option in the form verification.md documents for its runner (nextest, bun test, vitest), citing that file rather than restating the forms, so a timeout under load is reported flaky. Keep every existing rule this does not change. The waive option for a base failure is a gate acceptance of kind base (`--accept --json` with kind = "base", naming only the base-failing ids and a backlog id), which waives those ids in later rounds and does not by itself let the milestone commit. In the base call, a held command (the milestone's external_gates, an effect = "external" accept, or one the drain held by judgement) and a forward accept check are never rerun: their place is a skip entry in the form plan-run.md documents, so the order mapping still holds."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "add-the-gate-waiver-stopped-gate-cleanup-and-source-promotion-to-the-drain"
+title = "Add the gate waiver, stopped-gate cleanup and source promotion to the drain"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/drain.md"]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "Teach the drain to ask after the last round, clean up a stopped gate agent, and promote run-note sources to docs/references/."
+detail = "Read notes/gate-waiver-and-orphans.md and notes/research-sourcing.md. (1) Two rounds at most: the cap is two plus one per extra-round acceptance of the milestone. When the gate fails past the cap, ask through AskUserQuestion: accept and commit (capture a debt backlog item first, then `tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --accept --json <file>` naming every failing command, then commit), one more fix round (record kind extra-round, then mint as usual), or leave uncommitted (today's path). Step 10's commit condition and Stamping on re-entry read the gate acceptance as they read the visual one, so an accepted gate is never re-gated. (2) Stopped gate agent: dispatch every gate with a run_dir: in the scratchpad; when a gate agent is stopped, for each cN.pid there without cN.exit kill the process tree (taskkill //PID <pid> //T //F on Windows, kill -TERM -<pgid> on POSIX), confirm it is gone, add one report entry and re-dispatch the round. (3) Sources: for each attempt with sources, promote each into docs/references/<topic>.md (one heading per value: the claim, the url or query, how verified, the date, the flow and task), skipping one whose url and claim are already there; the drain is the only writer, and the file goes in the flow-store commit. Each promoted docs/references entry carries the source's fetched_at and version. Choose <topic> as the outside service or library the claim is about, lowercased and hyphenated (cloudflare-workers, strapi, docker-hub), one file per topic; dedupe within that file by url and claim."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "commit-on-a-gate-acceptance-and-report-the-new-exceptions"
+title = "Commit on a gate acceptance and report the new exceptions"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make the skill's commit step and re-entry honour a gate acceptance, state the handover done-mark commit, and add report lines for base failures, gate acceptances, extra rounds and inspector disagreements."
+detail = "SKILL.md: the Commit step's skip condition and the Unstamped re-entry paragraph read a gate acceptance as they read a visual one (a milestone with an accept record for its last round commits, an extra-round record raises the cap). Rule 7 gains: whenever the user reports a handover performed, run its ready_check when it has one, mark it with `tomlctl plan handover done`, record what was observed with `tomlctl plan handover set` (note), and commit plan.toml and its sidecar by path in the same turn. Rule 8 gains the exception: that done-mark commit is outside the two commits per milestone. report.md, each line with needs_person false because the user decided it: under gate:, `gate round <n> accepted: <commands>; backlog <B-id>`, `gate round <n>: one more round granted` and `base failure: <command> <ids>, <fixed|backlogged|waived>`; in the section that carries the visual accept line, `visual round <r>: inspector disagreement on <states>, decided by the user`. A gate acceptance of kind base does not satisfy the commit condition; it only makes its waived ids count as passing. Report it under gate: as `base failure: <command> <ids>, waived; backlog <B-id>`. A handover's note and ready_check never hold a secret's value, since plan.toml is committed: a note names where an input lives and its kind, and a ready_check tests presence without printing it (design/records.md#handover-blocks-ready-check-and-note)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "give-the-verification-agent-a-run-directory-pid-files-and-runner-rerun-forms"
+title = "Give the verification agent a run directory, pid files and runner rerun forms"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/agents/verification.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Take a run_dir: input in place of mktemp, write cN.pid at each detached launch, and document narrow rerun forms per runner."
+detail = "Read notes/gate-waiver-and-orphans.md. Step 0: when the prompt carries run_dir:, use it as <D> (create it) instead of mktemp. Step 1b: right after the nohup launch write cN.pid; under MSYS or Git Bash write the Windows pid from /proc/$!/winpid, which taskkill can reach, and on POSIX launch under setsid and write the process group id. Add a {ids_regex} placeholder beside {ids}: the failed ids, each regex-escaped, joined with | into one single-quoted pattern, a mechanical substitution like {ids}. Add rerun: examples for bun test (`bun test -t {ids_regex}`) and vitest (`vitest run {ids}`, since the extractor records a vitest failure as its test file's path, which -t would not match) beside the nextest one. Say a command may run in another directory through its own `cd <dir> &&` prefix, which is how the drain's base rerun reaches its worktree."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "give-building-tasks-an-exclusive-slot-in-the-milestone-pool"
+title = "Give building tasks an exclusive slot in the milestone pool"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/workflows/tests/harness.test.mjs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Start a task whose launch entry has builds = true only when no other task is running, and start nothing beside it."
+detail = "Read the pool section near the max_compile_parallel cap. A builds task waits until the pool is empty, then runs alone; tasks without builds keep today's rules. Read notes/fix-rounds.md, section Own reproducer. In claude/workflows/tests/harness.test.mjs add a test beside the max_compile_parallel ones: with a builds task ready while a non-builds task is in flight and more non-builds tasks ready, the builds task starts only when nothing is in flight, nothing else starts while it runs, and later ready tasks do not starve it."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "teach-workers-to-run-their-reproducer-and-record-their-sources"
+title = "Teach workers to run their reproducer and record their sources"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "In the shared worker procedure, run a Run by: worker check that builds before returning done, record verified outside values in [[sources]], and read docs/references/ before researching."
+detail = "The build rule sits in the SHARED-BLOCK procedure, identical in both files; edit it identically in both. A row owning a Run by: worker check that builds runs it once before its first edit when its outcome names a failure the check reproduces, confirming that it fails, and once after its edit always; it runs because the pool gave the row the build to itself. Add [[sources]] (url or query, claim, how_verified) to the run-note block description, for any exact outside value the worker settled. Before an outside lookup, read docs/references/ in the repo when it exists; write that rule inside the shared procedure so both workers carry it. Each [[sources]] entry carries fetched_at (the date the value was checked) and version when the claim holds for a version."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "hold-blocked-tasks-for-their-handover-and-snapshot-a-self-edited-engine-at-launch"
+title = "Hold blocked tasks for their handover and snapshot a self-edited engine at launch"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/run-milestone.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the handover check at the pick, the self-edit snapshot at launch and the finished-flow handover offer at pre-flight."
+detail = "Read notes/handovers-and-elaborate.md and notes/visual-and-self-edit.md. (1) At the pick, beside gate probes: for each undone handover whose blocks name a task of this milestone, run its ready_check (read-only, never a network call); when it fails or is absent, ask the user through AskUserQuestion to perform it now, then mark it done and commit as the skill's rule 7 says. launch-args withholds the task until then: add a `handover:<id>` row to the dropped-reason table, routed to the pick's question; when the user declines or cannot do it now, the task stays pending, its dependents wait, the rest of the milestone runs, and the report lists it with needs_person true; the milestone cannot gate until the task runs. (2) At the milestone's first launch in this invocation: when any launched row's files lie under the engine skill's own directory (resolve config-dir links with readlink), copy the engine's references into the scratchpad and drain from the snapshot; a relaunch from the drain reuses that snapshot and never copies again. Edits to linked agent and SKILL.md bodies take effect from the next session, per a probe on 2026-11-20. (3) Pre-flight at stage done: list undone handovers and offer to mark and commit each. A handover's note and ready_check never hold a secret's value, since plan.toml is committed: a note names where an input lives and its kind, and a ready_check tests presence without printing it (design/records.md#handover-blocks-ready-check-and-note)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "route-an-inspector-disagreement-on-an-unchanged-state-to-the-user"
+title = "Route an inspector disagreement on an unchanged state to the user"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/visual.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Keep every state's capture between rounds, and treat a state that passed in the previous round and fails now at an unchanged location as a disagreement for the user, not a fix round."
+detail = "Read notes/visual-and-self-edit.md. In step 7's Keep the evidence paragraph, copy every state's capture and geometry.json beside the notes, not only fail and unsure ones, before the verdicts are compared. Then for a fail on a state that passed in round r-1, compare the defect's location in geometry.json, and the state's text grid where there is one, against round r-1's copy; unchanged means a disagreement: mint nothing for it and put it to the user in the accept question with both inspectors' notes; changed mints as today. Report it with the line report.md gains."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "state-the-open-picker-claim-as-unverified"
+title = "State the open-picker claim as unverified"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/implement-v2-engine/references/questions.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Reword the claim that an open AskUserQuestion picker blocks every later turn as unverified, keeping the safe rules."
+detail = "The safe rules stay: rule requests before opening a picker, and read a request timeout as denial. Say no observation has settled whether a SendMessage arriving while a picker is open is queued or lost."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "teach-plan-authoring-baseline-gates-blocking-handovers-sourced-facts-and-the-self-edit-order"
+title = "Teach plan authoring baseline gates, blocking handovers, sourced facts and the self-edit order"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add baseline gates to Design and Prove, blocking handovers to Design, the source rule for outside facts, the self-edit ordering rule and the per-milestone UI call."
+detail = "Read notes/decisions-and-baseline.md, notes/handovers-and-elaborate.md, notes/research-sourcing.md and notes/visual-and-self-edit.md. (1) Milestones: a comparison or snapshot gate gets --baseline-gate; Prove 4d dispatches the verification agent once per baseline gate whose tool exists on the unchanged tree and records `tomlctl plan milestone update --slug <slug> --id <id> --baseline-proof '<gate> :: <verdict>'`; when a task creates the tool, that task's accept carries a null-control run of the base against itself and the proof is null-control. (2) Handovers: an input the user must supply before a task runs is a handover with blocks naming the task and a read-only ready_check. (3) An outside fact written into a spec, a handover action or a hand fix cites a fetched source covering the same object, or is fetched or sent to an investigator first; a version or image tag pin gets an existence check as a premise or gate probe (for example docker manifest inspect). (4) Self-edit: engine reference, agent and Workflow edits go in a milestone after the binary install. (5) UI: record the UI or not-UI call for every milestone as a decision. Record the UI call for every milestone with `--ui yes|no` on plan milestone add or update, beside the decision. A handover's note and ready_check never hold a secret's value, since plan.toml is committed: a note names where an input lives and its kind, and a ready_check tests presence without printing it (design/records.md#handover-blocks-ready-check-and-note)."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "ask-for-a-capture-config-at-open-and-keep-launches-free-of-repo-writes"
+title = "Ask for a capture config at Open and keep launches free of repo writes"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the capture-config question to Open, the no-writes window to the fan-out check, and move ui-layout's config row to read the Open answer."
+detail = "Read notes/visual-and-self-edit.md and notes/handovers-and-elaborate.md. Open: in a repo with no .claude/ui-capture.toml, ask once through AskUserQuestion whether the project has a UI to capture, and record the answer as a decision; a yes leads ui-layout's config row. Section 3, Running it: add a sentence opening `No repo writes while a launch is open`: nothing writes in the repo between a snapshot and its check, by any tool; hold a correction in the scratchpad and apply it after the check passes. ui-layout.md sections 1 and 5 read the Open decision rather than asking again."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "reconcile-hand-commits-and-source-outside-facts-in-elaboration"
+title = "Reconcile hand commits and source outside facts in elaboration"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/elaborate.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Run plan drift in section 1 and surface affected decisions, apply the source rule to specs written here, record the UI call, and cite the no-writes rule."
+detail = "Read notes/handovers-and-elaborate.md and notes/research-sourcing.md. Section 1: run `tomlctl plan drift --slug <slug>` and, for each affected_decisions entry, read the commits; a decision whose text no longer holds goes into section 2's Surface round with the brief line naming it, and on a yes the brief edit, plan decide and plan approve --amend happen inside this elaboration, in one gate. Specs written here follow write-and-prove's source rule for outside facts. Always open ui-layout.md and record the milestone's UI or not-UI call as a decision. Cite open-and-challenge's no-writes rule at the cold read. Record the milestone's UI call with `tomlctl plan milestone update --slug <slug> --id <id> --ui yes|no`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "recheck-plan-edits-made-after-the-review-and-source-hand-fixes"
+title = "Recheck plan edits made after the review and source hand fixes"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Run a quick recheck over the review delta before approval, or record the user's waiver, and require a fetched source for a hand fix that introduces an outside value."
+detail = "Read notes/decisions-and-baseline.md. approve.md: before the gate, read `tomlctl plan stage --slug <slug>`'s review_delta. When it is non-empty, reopen Review: record `tomlctl plan run start --step review` as a new row, start a re-check review run with rechecks=<the latest finished review run>, the run whose plan_digest the delta was measured against, copy that run's pack.md and profile.md, and take the targets from review_delta (the verb's output, never assembled by hand); run it through plan-flow.md section 10, triage, finish the row, and repeat until review_delta is empty. At the gate the user may instead waive it, recorded with `tomlctl plan approve --slug <slug> --review ran --waive-review-delta '<why>'`, and the review-delta risk shows in plan gate. plan-flow.md: section 10 accepts review_delta as a re-check's targets when the re-check is opened from approve.md, and says the run start's rechecks= names the run the delta was measured against; the Fixed by hand rule requires a fetched source, or an existence check for a version or tag pin, for any outside value the hand fix introduces."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "add-the-platform-rung-and-context7-first-to-investigators"
+title = "Add the platform rung and Context7-first to investigators"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/research-methods/SKILL.md",
+    "claude/agents/plan-investigator.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a rung for hosted platforms to the source hierarchy and an imperative Context7-first line to the investigator."
+detail = "Read notes/research-sourcing.md. SKILL.md source hierarchy: a hosted platform or service with no lockfile goes Context7, then the docs root's llms.txt or a search, then a fetch of a URL taken from one of those; a URL not taken from a search result, an llms.txt map or a link on a fetched page is a guess, and a 404 on one means search, never guess again. Read docs/references/ in the repo first when it exists. plan-investigator.md: one line mirroring plan-worker-deep's Context7-first rule."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "share-fetched-pages-within-a-review-run"
+title = "Share fetched pages within a review run"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-finder-cf.md",
+    "claude/agents/review-verifier.md",
+    "claude/skills/review-v2-method/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Give review cells a page cache under the run directory and say when a cell looks something up."
+detail = "Read notes/research-sourcing.md. Before fetching a URL, a finder or verifier reads <run directory>/sources/<slug of the URL>.md when it exists; after fetching, it writes that file with the URL, the fetch time and a raw excerpt only, never its reading of it, so the verifier's independence holds. A cell looks something up when a finding turns on an outside library, platform or service behaviour, following research-methods. Put the shared rule in review-v2-method's SKILL.md near its source-hierarchy line and one line in each agent pointing at it. review-finder.md's body is the review-finder-body shared block, byte-identical with review-finder-cf.md: make the same edit in both."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "require-the-new-features-in-both-pre-flights-and-correct-claudemd"
+title = "Require the new features in both pre-flights and correct CLAUDE.md"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/commands/implement-v2.md",
+    "claude/commands/plan-v2.md",
+    "CLAUDE.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add milestone A's feature names to the /implement-v2 and /plan-v2 pre-flight lists, and update CLAUDE.md's deploy and worker build lines."
+detail = "implement-v2.md: gate_base_rerun, gate_accept, gate_list_after_round, worker_build_check, launch_args_builds, handover_blocks, drift_affected_decisions and run_note_sources. plan-v2.md: baseline_gates, handover_blocks, drift_affected_decisions and review_plan_digest. CLAUDE.md: in the paragraph that opens 'Nothing in this repo deploys `claude/`', say an edit to a linked agent or SKILL.md body does not reach a session already running (probed 2026-11-20) while references read on demand are live; in the Implement v2 section's Deploy paragraph, add the new implement-v2 feature names to its list of what the pre-flight refuses a binary without; in Build discipline, say a v2 worker runs a Run by: worker building check only when the milestone pool gave its row the build to itself."
+acceptance = ""
+agent = ""
+commit = ""

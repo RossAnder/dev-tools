@@ -1,0 +1,606 @@
+schema_version = 4
+last_updated = 2026-11-20
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+D = 23
+H = 1
+
+[[decision]]
+id = "D1"
+decision = "When a gate command fails, rerun its failed tests at the milestone's base (HEAD, in a detached scratch worktree) through one more verification call; a failure that also fails there is recorded as a base failure, mints no round-counted fix, and goes to the user to fix outside the round count, send to the backlog, or waive."
+why = "Two rounds were spent on failures that predated the milestone (dev-tools agents_audit test, partnerhub live-Strapi test)."
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "tomlctl/src/plan/run_gate.rs",
+    "3",
+    "16",
+]
+rejected = []
+evidence = "notes/fix-rounds.md; drain.md Fix rounds and Two rounds at most; run_gate.rs row keys"
+if_false = "Pre-existing failures keep spending fix rounds, or every milestone pays a full baseline gate up front instead."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D2"
+decision = "Let a fix or diagnose row own a building reproducer (run_by worker, writes_build true) that its worker runs before returning done, and give the milestone pool an exclusive build slot so at most one such row runs while no other compiling row is in flight."
+why = "Fix workers shipped tests they never ran and a diagnose worker could not reproduce a 500; the worker contract forbids what CLAUDE.md allows."
+provenance = "user-confirmed"
+door = "two-way"
+class = "compromise"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "claude/workflows/implement-v2-milestone.js",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "5",
+    "7",
+    "20",
+    "21",
+]
+rejected = []
+evidence = "notes/fix-rounds.md; tasks/schema.rs refusal of run_by worker with writes_build; plan-worker-deep.md build rules; CLAUDE.md build discipline"
+if_false = "Fix rounds stay blind, or reproducers run in one orchestrator verification call before the gate, without worker iteration."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D3"
+decision = "After the last gate round, ask the user: accept and commit (recorded as a gate acceptance naming the waived commands and failed ids, with a backlog follow-up and a report line), one more fix round (recorded, raising the cap by one), or leave uncommitted."
+why = "reportdesignkit milestones E, H and J were committed past a red gate by improvisation with no record."
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "tomlctl/src/plan/schema.rs",
+    "4",
+    "17",
+    "18",
+]
+rejected = []
+evidence = "notes/gate-waiver-and-orphans.md; visual.md accept procedure; run_visual.rs"
+if_false = "The waiver offers only accept or leave, and a further round stays an off-record improvisation."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D4"
+decision = "Stamp a per-record digest of the plan when a review run starts; before approval, list the records changed since and not covered by a finished run, and run a quick recheck over exactly those, which the user may waive at the gate as a recorded risk."
+why = "Edits applied after the re-check (strapi F78, run-hardening's moved rows and task 16) reached approval unreviewed."
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+    "claude/skills/plan-v2-engine/references/approve.md",
+    "12",
+    "28",
+]
+rejected = []
+evidence = "notes/decisions-and-baseline.md; plan-flow.md re-check scope; approve.md risks"
+if_false = "The delta is only shown at the gate as a risk, with no recheck, or not tracked at all."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D5"
+decision = "Mark a comparison or snapshot gate as a baseline gate: when its tool exists at Prove, the verification agent runs it once on the unchanged tree and Prove records the verdict; when a milestone task creates the tool, that task's accept carries a null-control run of the base against itself; plan check warns on a baseline gate with neither."
+why = "partnerhub's static-identity gate failed 401 files on base-tree noise, found only at the milestone gate."
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "tomlctl/src/plan/check.rs",
+    "6",
+    "13",
+    "25",
+]
+rejected = []
+evidence = "notes/decisions-and-baseline.md; write-and-prove.md 4d gate probes"
+if_false = "Only the null-control rule is kept (no build at Prove), or comparison gates rely on the drain's base rerun alone."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D6"
+decision = "Let a worker record the outside values it verifies in a parsed [[sources]] table in its run note, and have the drain promote them, deduplicated, into a repo-level reference under docs/references/, which investigators, elaboration and workers read before searching."
+why = "A verified Cloudflare GraphQL query was lost between flows and researched again; the run-note parser refuses any sources key."
+provenance = "user-confirmed"
+door = "one-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/run_note.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "11",
+    "17",
+    "21",
+]
+rejected = []
+evidence = "notes/research-sourcing.md; run_note.rs unknown-key refusal"
+if_false = "Sources stay per flow (notes/sources.md) or in prose, and cross-flow repeats continue."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D7"
+decision = "Keep every state's capture between visual rounds; when a state that passed in round r-1 fails in round r at a location whose geometry and capture text are unchanged, treat it as an inspector disagreement: mint no fix round and put it to the user with both notes in the accept question."
+why = "partnerhub milestone C's last round failed an unchanged brand selector that round 1 had passed."
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "23",
+]
+rejected = []
+evidence = "notes/visual-and-self-edit.md; visual.md capture scope and verdict table"
+if_false = "Rounds re-judge only fix-touched states (losing the sibling-regression guard), or keep re-failing passed states."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D8"
+decision = "At Open, in a repo with no .claude/ui-capture.toml, ask once whether the project has a UI to capture and record the answer as a decision; Design and elaboration then record the UI or not-UI call for every milestone, and plan check flags a UI milestone with no capture states in a project that has a UI."
+why = "reportdesignkit, a UI-heavy repo, never declared a capture command, so the visual chain silently became attended handovers."
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "claude/skills/plan-v2-engine/references/ui-layout.md",
+    "13",
+    "26",
+    "27",
+]
+rejected = []
+evidence = "notes/visual-and-self-edit.md; ui_capture.rs empty glob set; check.rs ui_scope_findings"
+if_false = "Only a plan check warning when look decisions or ui_states exist, which misses reportdesignkit's case."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D9"
+decision = "Cut two milestones: A lands every tomlctl record, verb and check change and installs the binary as a held external gate; B, after A, lands the engine, agent, skill and carrier prose that uses them."
+why = "This plan edits the engine that runs it; prose that names verbs the installed binary lacks, or that the drain reads while workers rewrite it, is the hazard D12, D16 and D13 kept rediscovering."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "tomlctl/src/plan/schema.rs",
+    "1",
+    "16",
+]
+evidence = "user choice at Design; notes/visual-and-self-edit.md (D12, D16, D13, F36); implement-v2-run-hardening milestones A and B"
+if_false = "One milestone runs everything with the install last, accepting mid-run engine drift."
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "One milestone"
+because = "the run's own drain would read engine text its workers are rewriting, and new prose would name verbs the installed binary lacks until the end"
+
+[[decision.rejected]]
+option = "Prose now, records later"
+because = "D3, D4 and D6 need records for their audit trail, which the user chose"
+
+[[decision]]
+id = "D10"
+decision = "Keep the present structure: land each cause on the seam the engine already has, with no extracted gate reference, no merged acceptance record and no merged worker prompt."
+why = "The structure challenge found every cause lands on an existing seam and both candidate restructures save no edit this change makes."
+provenance = "agent-assumed"
+door = "two-way"
+class = "structure"
+binds = ["claude/skills/implement-v2-engine/references/drain.md"]
+evidence = "notes/structure-challenge.md"
+if_false = "drain step 7 moves into its own reference before the gate edits"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Extract drain step 7 into a gate.md sibling"
+because = "the waiver edits also hit step 10, re-entry, SKILL.md and report.md, which an extraction does not spare"
+
+[[decision.rejected]]
+option = "One generic acceptance record for gate and visual"
+because = "stores already stamped 6 read visual_accept, and the payloads and round counts differ"
+
+[[decision]]
+id = "D11"
+decision = "Put every new plan-store shape under one schema rung, 7, and every new milestone field under one task-store rung, as design/records.md specifies, landed by one foundational task per store before any verb uses them."
+why = "schema.rs's write_version is a strict ladder; two tasks adding rungs would edit the same lines and disagree on numbering."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "1",
+    "6",
+]
+evidence = "tomlctl/src/plan/schema.rs write_version and the version constants; notes/structure-challenge.md sequencing"
+if_false = "each verb task adds its own rung, ordered by needs"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "One rung per new record kind"
+because = "three rungs for one release add ladder lines and test cases with no reader that needs to tell them apart"
+
+[[decision]]
+id = "D12"
+decision = "Narrow a gate after a whitespace-only fix round mechanically: plan run gate stores whitespace-stripped digests of the milestone's changed files on a failing round, and plan emit gate-list --after-round prints only that round's failed commands when nothing but whitespace changed, falling back to the full list otherwise."
+why = "drain.md forbids hand-narrowing the gate list, so the narrowing must come from the verb, and a judged rule would miss import reordering."
+provenance = "agent-assumed"
+door = "two-way"
+class = "cost"
+binds = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/run_gate.rs",
+    "3",
+    "7",
+]
+evidence = "notes/fix-rounds.md; drain.md gate-list rule"
+if_false = "every fix round reruns the full gate"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "An engine judgement rule on formatter-only fix rows"
+because = "unverified, and rustfmt's import reordering is not whitespace-only"
+
+[[decision]]
+id = "D13"
+decision = "Have the orchestrator pass the verification agent a run directory, have Step 1b write cN.pid (the Windows pid from /proc/$!/winpid under MSYS, the process group under POSIX), and add a drain row that kills the tree of every cN.pid without a cN.exit when a gate agent is stopped; project-owned locks stay the project's."
+why = "A stopped gate agent left a detached gate running for 52 minutes with nothing the orchestrator could find it by."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/agents/verification.md",
+    "17",
+    "19",
+]
+evidence = "notes/gate-waiver-and-orphans.md; verification.md Step 0 and Step 1b"
+if_false = "a stopped gate keeps holding resources until someone finds it by command line"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Delete project lock files from the harness"
+because = "locks are project-owned and generic text cannot name them; reportdesignkit's is already pid-checked"
+
+[[decision]]
+id = "D14"
+decision = "Make a task-id bind also reach every row holding a file of the bound task, and have the drain read the decisions each new fix row's worker view shows and ask the user before launch when the fix departs from one, amending the decision with plan decide or reshaping the fix."
+why = "partnerhub fix task 11 contradicted D8 because a task-id bind never reached a fix row on the same files, and the drain read no decisions."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/view.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "10",
+    "16",
+]
+evidence = "notes/decisions-and-baseline.md; view.rs bind_names; drain.md replan rule"
+if_false = "fix rows keep launching without the decisions that govern their files"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A plan check warning only"
+because = "it reports after the row is written and does not reach the worker"
+
+[[decision.rejected]]
+option = "Park the fix row"
+because = "drain.md's parked route costs a relaunch where one question before launch costs nothing"
+
+[[decision]]
+id = "D15"
+decision = "Let a handover block named tasks: launch-args withholds them while it is not done, the engine runs its read-only ready_check at the pick and asks the user to perform it when the check fails, then marks it done and lets the tasks launch."
+why = "partnerhub task 6 launched without the token handover H2 described as due before milestone A, got a 403 and parked."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/emit.rs",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "7",
+    "8",
+    "22",
+    "25",
+]
+evidence = "notes/handovers-and-elaborate.md; records.rs HANDOVER_SET_KEYS; emit.rs launch_args"
+if_false = "pre-task inputs stay post-landing handovers and their tasks keep parking"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A user-owned premise alone"
+because = "the action text would live in a premise rather than the handover the user reads"
+
+[[decision.rejected]]
+option = "A prose rule reading when text"
+because = "it matches free text"
+
+[[decision]]
+id = "D16"
+decision = "Whenever the user reports a handover performed, mark it with plan handover done, record what was observed in its note, and commit plan.toml and its sidecar by path in the same turn; pre-flight on a finished flow offers its undone handovers and commits the same way."
+why = "Three partnerhub done-marks were made after the last milestone and rode into an unrelated commit or stayed uncommitted."
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "18",
+    "22",
+]
+rejected = []
+evidence = "notes/handovers-and-elaborate.md; records.rs handover_done; drain.md flow-store commit"
+if_false = "done-marks keep drifting into whatever commit comes next"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D17"
+decision = "In elaboration section 1, run plan drift and put every decision in its affected_decisions whose text no longer holds against the unowned commits into section 2's Surface round, amending the brief and decisions in the same gate as the elaboration."
+why = "strapi milestone C's elaboration left D3/D10 naming a library a hand commit had replaced, costing a second amend cycle."
+provenance = "agent-assumed"
+door = "two-way"
+class = "structure"
+binds = [
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "tomlctl/src/plan/drift.rs",
+    "9",
+    "27",
+]
+rejected = []
+evidence = "notes/handovers-and-elaborate.md; plan drift changed_files"
+if_false = "stale decisions surface only when the user asks"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D18"
+decision = "Make no repo write of any kind between a fan-out snapshot and its check; hold a correction in the scratchpad and apply it after the check passes."
+why = "A brief correction during the challenger's window stopped a strapi plan on the safety check."
+provenance = "agent-assumed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/plan-v2-engine/references/open-and-challenge.md",
+    "26",
+    "27",
+]
+evidence = "notes/handovers-and-elaborate.md; fanout-check.sh tolerated set"
+if_false = "orchestrator edits during a launch keep tripping the check"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "Tolerate brief.md in the check"
+because = "the brief is an injection target"
+
+[[decision.rejected]]
+option = "A re-digest command for the orchestrator's own edit"
+because = "it would absorb an agent's write made before the edit"
+
+[[decision]]
+id = "D19"
+decision = "Bind the orchestrator to the source hierarchy: an outside fact it writes into a spec, a handover action or a hand-applied fix cites a fetched source covering the same object, or is fetched or sent to an investigator first; a version or image tag pin gets an existence check as a premise or gate probe. Leave a structured sources field on handovers out unless the prose rule slips again."
+why = "Three wrong outside facts (task 34's wrangler tail, H2/H5 console labels, F78's image tag) came from orchestrator text, never from investigator notes."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/plan-v2-engine/references/elaborate.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "claude/skills/review-v2-engine/references/plan-flow.md",
+    "25",
+    "27",
+    "28",
+]
+evidence = "notes/research-sourcing.md"
+if_false = "outside facts in orchestrator text stay unsourced"
+revisit_if = "an orchestrator-written outside fact is wrong again after this lands"
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A sources field on handovers and specs with a plan check"
+because = "a schema change for a rule not yet shown to need enforcement"
+
+[[decision]]
+id = "D20"
+decision = "Give research-methods a platform rung (Context7, then the docs root's llms.txt or a search, then a fetch of a URL taken from one of those), and add an imperative line to plan-investigator mirroring the workers' Context7-first rule."
+why = "Investigators made no Context7 calls and missed on guessed Cloudflare and Strapi URLs, while workers told Context7-first used it."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/research-methods/SKILL.md",
+    "claude/agents/plan-investigator.md",
+    "29",
+]
+evidence = "notes/research-sourcing.md census"
+if_false = "investigators keep guessing documentation URLs"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "A hook refusing a WebFetch with no prior search"
+because = "brittle, and it breaks fetches of known URLs"
+
+[[decision]]
+id = "D21"
+decision = "Give each review run a page cache, one file per URL under the run directory's sources/, holding the URL, fetch time and raw excerpt only, which finders and verifiers read before fetching and write after."
+why = "Five cells fetched the same three Cloudflare pages ten times in one partnerhub review run."
+provenance = "agent-assumed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/agents/review-finder.md",
+    "claude/agents/review-verifier.md",
+    "30",
+]
+evidence = "notes/research-sourcing.md; review-v2.js run directory preamble; fields.rs verifier projection"
+if_false = "cells keep refetching pages a sibling already has"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision.rejected]]
+option = "An orchestrator pre-fetch at survey"
+because = "it cannot predict pages"
+
+[[decision]]
+id = "D22"
+decision = "State one self-edit rule: Design orders engine reference, agent and Workflow edits into a milestone after the binary install, and run-milestone snapshots the engine's references into the scratchpad and drains from the snapshot whenever a launched row's files lie under the engine's own skill directory. Edits to linked agent bodies do not reach a running session, so a milestone's agent changes take effect from the next session."
+why = "Four plans re-derived the ordering from memory, and a probe on 2026-11-20 showed an edit to a symlinked agent body was not used by the next dispatch in the running session."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+    "claude/skills/plan-v2-engine/references/write-and-prove.md",
+    "22",
+    "25",
+    "31",
+]
+rejected = []
+evidence = "notes/visual-and-self-edit.md; probe 2026-11-20: a marker rule added to the linked claude/agents/verification.md was ignored by a verification dispatch in the same session, then reverted"
+if_false = "self-editing plans keep improvising the order and the snapshot"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D23"
+decision = "Leave the AskUserQuestion-versus-SendMessage claim unprobed and reword questions.md to state it as unverified, keeping the safe rules (rule requests before opening a picker; a timeout reads as denial)."
+why = "The rules built on the claim hold whether a message queues behind an open picker or not, and no transcript caught one either way."
+provenance = "agent-assumed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "24",
+]
+rejected = []
+evidence = "notes/visual-and-self-edit.md; mid-run-requests notes/worker-protocol.md"
+if_false = "questions.md keeps stating an unprobed claim as fact"
+revisit_if = "a worker request is seen lost or delayed past its wait while a picker was open"
+check = ""
+surfaced = false
+vetoed = false
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "e9286e086a4e8432c175bdc749b5d9e443a0dc8f0fed45f638f47957dcc91bab"
+run_id = "wf_7e96384b-af4"
+session = "3008d0bb-87ca-4418-a5ba-86b60e53aee0"
+started = 2026-11-20T15:34:44Z
+finished = 2026-11-20T15:43:28Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+session = "3008d0bb-87ca-4418-a5ba-86b60e53aee0"
+started = 2026-11-20T15:43:45Z
+finished = 2026-11-20T15:48:53Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "3008d0bb-87ca-4418-a5ba-86b60e53aee0"
+started = 2026-11-20T15:56:57Z
+finished = 2026-11-20T15:56:57Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "6cd7b360893ad3a2cfd22a3685daa404b9cf0c35be4286a9b68e830f42023165"
+run_id = "wf_71b0f3cb-08d"
+session = "3008d0bb-87ca-4418-a5ba-86b60e53aee0"
+started = 2026-11-20T16:09:35Z
+finished = 2026-11-20T16:14:39Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_6bcd8731-bfe"
+session = "3008d0bb-87ca-4418-a5ba-86b60e53aee0"
+started = 2026-11-20T16:18:18Z
+finished = 2026-11-20T17:00:48Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "restart"
+action = "Close every glimpse pane, run `cargo install --path glimpse --locked` from the dev-tools root so glimpse embeds the new tomlctl reader, then reopen the pane."
+when = "After milestone A's commit, before milestone B is launched."
+done_when = "The glimpse pane opens this flow's task graph without a schema-version error."
+source_task = 15
+done = false
