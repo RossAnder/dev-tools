@@ -539,10 +539,33 @@ fn worker(view: &Plan<'_>, id: u32, integrity: &ReadIntegrityArgs) -> Result<Str
         let cited: Vec<&str> = spec.design.iter().map(String::as_str).collect();
         design_block(&mut out, view.authored_dir, &cited);
     }
+    worker_handovers_block(&mut out, plan, row.id);
 
     out.truncate(out.trim_end().len());
     out.push('\n');
     Ok(out)
+}
+
+/// Every undone handover, the task's own first, so a worker refines one the
+/// plan holds rather than proposing it again.
+fn worker_handovers_block(out: &mut String, plan: &PlanStore, task: u32) {
+    let (own, other): (Vec<_>, Vec<_>) = plan
+        .handovers
+        .iter()
+        .filter(|h| !h.done)
+        .partition(|h| h.source_task == task);
+    if own.is_empty() && other.is_empty() {
+        return;
+    }
+    out.push_str("## Handovers the plan holds\n\n");
+    for handover in own.into_iter().chain(other) {
+        let reason = handover.reason.map_or("no reason", |r| r.as_str());
+        out.push_str(&format!(
+            "- {} ({reason}): {} When: {}. (after task {})\n",
+            handover.id, handover.action, handover.when, handover.source_task
+        ));
+    }
+    out.push('\n');
 }
 
 /// The findings the row's `[[finding_links]]` name, read from each review store

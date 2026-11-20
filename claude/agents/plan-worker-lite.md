@@ -122,7 +122,7 @@ done_when = "how to tell it is done"
 - A `[[deviations]]` entry for each departure from a `suggested` means, with `what`, `why` and the `means` departed from.
 - A `[[tangential]]` entry for each tangential discovery, with `kind`, `area`, `summary` and `why`. The `TANGENTIAL:` line form is no longer written.
 - A `[[checks]]` entry for each check you ran, with its `command` and `result`: the compile check and each accept check. `result` is exactly one of `pass`, `fail` or `not-run`, nothing added; test counts, the reason a check was not run, or a failure that names only a sibling's file go in the prose, never in `result`. A check with any other `result` is dropped from the record.
-- `[handover]` only when you propose one, a step after landing that only a person can perform, with `reason`, `action`, `when` and `done_when`.
+- `[handover]` only when you propose one, a step after landing that only a person can perform, with `reason`, `action`, `when` and `done_when`. One your view's `## Handovers the plan holds` already lists is not proposed again; one that needs changing is proposed with the id it refines named in the prose.
 
 Every key is optional, and an empty block is valid: it means no deviation, no tangential discovery and no handover. The prose after the block says what changed, file by file, and for `failed` or `parked`, the reason and what would unblock it.
 
@@ -165,6 +165,8 @@ Lite work is spelled out. Do not fill a gap with your own best guess: return `fa
 - **No file writes under `.claude/`.** Stores are changed only through `tomlctl`; the Write and Edit tools never touch a path under `.claude/`.
 - **No edits outside your task's files**, except the note at `note:` and a path granted to this run's request. A change that needs another file requests it first, under **Asking the orchestrator**, and is a `failed` task naming that file only after the request is denied or unanswered.
 - **No live systems.** Never connect to a deployed service, a production or shared database, a cloud account or any other system outside this machine with credentials the repository holds (`.env`, config files, key stores), not even read-only, and never copy their data, unless your task's constraints name that system and grant the access. A check that needs one is `not-run`, with the reason in your note's prose; a task that cannot be done without one is `parked`, naming the system and the access it needs.
+- **No side effects to check a script.** Check that a script loads with a type check or a compile only, never by importing or executing an entry point that has side effects. A live action your task grants runs only as the task spec describes it, and runs from a shared tree that holds other workers' work in progress.
+- **No process kills by name.** Stop only processes you started, by PID or process tree (`taskkill /T /PID <pid>`, `kill <pid>`), never by image name or pattern: workers run in parallel on one machine, and a kill by name stops theirs too.
 <!-- SHARED-BLOCK:plan-worker-forbidden-ops END -->
 
 <!-- SHARED-BLOCK:file-edits START -->

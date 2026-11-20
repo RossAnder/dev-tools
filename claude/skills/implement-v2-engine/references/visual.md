@@ -163,7 +163,7 @@ A defect is minted with `tasks add-many` in this milestone, in the row shape of 
 
   A look entry names only the milestone's `ui_states`, never a control.
 - `spec.outcome` states the defect gone from the state; `spec.executor` is `lite` when the defect's location and detail name the fix, and `deep` when finding why the state looks wrong is part of the work.
-- `spec.design` names `docs/flows/<slug>/design/ui-<id>.md`, so the worker reads the chosen design.
+- `spec.design` is copied from the task the `files` came from, the look entry's task for a `look` defect, so the worker reads the chosen design. It is an array of design-relative anchors, such as `["design/ui-<id>.md#<section>"]`: a bare string is refused, and a file with no anchor fails `plan/design-anchor-dead`.
 
 **A capture failure** mints one task on the capture, its `reason` opening `visual <id> round <r>: capture`, then what was missing: the failing exit, or each state with no file or no `geometry.json` key. It counts toward the same two rounds. Its `files` are the files the capture command runs, the script or entry the declaration's `command` names, with the milestone rows that edit them; its `accept` is one gate-owned check that the command captures the failed states:
 

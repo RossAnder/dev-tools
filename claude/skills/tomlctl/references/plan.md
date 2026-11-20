@@ -387,7 +387,8 @@ tomlctl plan view --slug <slug> --for worker --task <id>
   `Writes build: no`: `no` only when the entry sets `writes_build = false`. A `Run by:` line follows
   with the entry's [effective owner](tasks-store.md#accept-owner): `worker`, `gate`, or
   ``gate (covered by `<command>`)``. A worker runs the `worker` checks and no other. `human` prints
-  the same accept lines.
+  the same accept lines. A last `## Handovers the plan holds` section lists every undone handover,
+  the task's own first, and is left out when there is none.
 - **`digest`**: one JSON object for an orchestrator re-entering a plan. Works with no `tasks.toml`,
   which reads as empty.
 

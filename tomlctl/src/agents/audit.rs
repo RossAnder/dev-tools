@@ -22,7 +22,8 @@ pub(crate) const DEFAULT_PATTERNS: &[&str] = &[
     r"\bpytest\b",
 ];
 
-/// The longest command a row carries, in characters.
+/// The longest command a row carries, in characters, besides the `...`
+/// marking each end a longer command was cut at.
 pub(crate) const COMMAND_CAP: usize = 200;
 
 /// One `{agent, command}` row per matching Bash command, ordered by
@@ -54,11 +55,8 @@ pub(crate) fn rows(dir: &Path, patterns: &[String], gates: &[String]) -> Result<
             fs::read(&path).with_context(|| format!("agents audit: reading {}", path.display()))?;
         let text = String::from_utf8_lossy(&text);
         for command in bash_commands(&text) {
-            let collapsed = collapse(&command);
-            if regexes.iter().any(|re| re.is_match(&command))
-                || gates.iter().any(|g| collapsed.contains(g.as_str()))
-            {
-                out.push(json!({"agent": agent, "command": truncate(&command)}));
+            if let Some(shown) = matched(&command, &regexes, &gates) {
+                out.push(json!({"agent": agent, "command": shown}));
             }
         }
     }
@@ -111,8 +109,49 @@ fn bash_commands(text: &str) -> Vec<String> {
     out
 }
 
-fn truncate(command: &str) -> String {
-    command.chars().take(COMMAND_CAP).collect()
+/// The row text for a command that matches a pattern or contains a gate, or
+/// `None` when it does neither. A gate is found in the whitespace-collapsed
+/// command, so a long gate-matched command is windowed over that form.
+fn matched(command: &str, regexes: &[Regex], gates: &[String]) -> Option<String> {
+    if let Some(m) = regexes
+        .iter()
+        .filter_map(|re| re.find(command))
+        .min_by_key(|m| m.start())
+    {
+        return Some(window(command, m.start(), m.end()));
+    }
+    let collapsed = collapse(command);
+    let (start, end) = gates
+        .iter()
+        .filter_map(|g| collapsed.find(g.as_str()).map(|s| (s, s + g.len())))
+        .min_by_key(|&(s, _)| s)?;
+    if command.chars().count() <= COMMAND_CAP {
+        return Some(command.to_owned());
+    }
+    Some(window(&collapsed, start, end))
+}
+
+/// `text` whole when it fits `COMMAND_CAP` characters; otherwise a window of
+/// that many characters around the match at byte offsets `start..end`, each
+/// cut end marked `...`, so a match at the tail of a long command survives.
+fn window(text: &str, start: usize, end: usize) -> String {
+    let total = text.chars().count();
+    if total <= COMMAND_CAP {
+        return text.to_owned();
+    }
+    let match_start = text[..start].chars().count();
+    let match_len = text[start..end].chars().count();
+    let before = COMMAND_CAP.saturating_sub(match_len) / 2;
+    let from = match_start.saturating_sub(before).min(total - COMMAND_CAP);
+    let mut out = String::new();
+    if from > 0 {
+        out.push_str("...");
+    }
+    out.extend(text.chars().skip(from).take(COMMAND_CAP));
+    if from + COMMAND_CAP < total {
+        out.push_str("...");
+    }
+    out
 }
 
 fn collapse(command: &str) -> String {
@@ -162,9 +201,62 @@ mod tests {
         }
     }
 
+    fn shown(command: &str, gates: &[&str]) -> Option<String> {
+        let gates: Vec<String> = gates.iter().map(|g| collapse(g)).collect();
+        matched(command, &compile(&[]).unwrap(), &gates)
+    }
+
     #[test]
-    fn truncate_counts_characters() {
-        let long = "é".repeat(COMMAND_CAP + 5);
-        assert_eq!(truncate(&long).chars().count(), COMMAND_CAP);
+    fn window_counts_characters() {
+        let long = format!(
+            "{} cargo test {}",
+            "é".repeat(COMMAND_CAP),
+            "é".repeat(COMMAND_CAP)
+        );
+        let row = shown(&long, &[]).unwrap();
+        let inner = row
+            .strip_prefix("...")
+            .unwrap()
+            .strip_suffix("...")
+            .unwrap();
+        assert_eq!(inner.chars().count(), COMMAND_CAP);
+        assert!(inner.contains("cargo test"), "{row}");
+    }
+
+    #[test]
+    fn short_command_is_whole() {
+        let command = "cd a  &&  cargo test";
+        assert_eq!(shown(command, &[]).unwrap(), command);
+        assert_eq!(shown(command, &["cd a && cargo"]).unwrap(), command);
+        assert_eq!(shown("rg foo", &[]), None);
+    }
+
+    #[test]
+    fn long_command_keeps_a_match_at_its_tail() {
+        let command = format!(
+            "{} && cargo nextest run -E 'test(x)'",
+            "x".repeat(COMMAND_CAP * 2)
+        );
+        let row = shown(&command, &[]).unwrap();
+        assert!(row.starts_with("..."), "{row}");
+        assert!(!row.ends_with("..."), "{row}");
+        assert!(row.ends_with("cargo nextest run -E 'test(x)'"), "{row}");
+        assert_eq!(row.chars().count(), COMMAND_CAP + 3);
+    }
+
+    #[test]
+    fn long_command_keeps_a_match_at_its_head() {
+        let command = format!("cargo build && {}", "x".repeat(COMMAND_CAP * 2));
+        let row = shown(&command, &[]).unwrap();
+        assert!(row.starts_with("cargo build"), "{row}");
+        assert!(row.ends_with("..."), "{row}");
+    }
+
+    #[test]
+    fn long_command_windows_a_gate_match() {
+        let command = format!("{}  &&  bash  scripts/gate.sh", "x".repeat(COMMAND_CAP * 2));
+        let row = shown(&command, &["bash scripts/gate.sh"]).unwrap();
+        assert!(row.starts_with("..."), "{row}");
+        assert!(row.ends_with("&& bash scripts/gate.sh"), "{row}");
     }
 }

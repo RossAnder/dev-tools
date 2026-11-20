@@ -863,6 +863,34 @@ fn worker_view_prints_run_by() {
 }
 
 #[test]
+fn worker_view_lists_undone_handovers_its_task_first() {
+    let worker = Flow::standard().view(&["--for", "worker", "--task", "1"]);
+    assert!(
+        worker.contains(
+            "## Handovers the plan holds\n\n\
+             - H1 (restart): Restart open sessions. When: After the run.. (after task 1)\n"
+        ),
+        "an undone handover must reach the worker:\n{worker}"
+    );
+    assert!(!worker.contains("done-handover-action"), "{worker}");
+
+    let plan = PLAN.replace("done = true", "done = false");
+    let worker = Flow::seeded(Some(TASKS), &plan, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "2"]);
+    let own = worker.find("- H2 (attended)").expect(&worker);
+    let other = worker.find("- H1 (restart)").expect(&worker);
+    assert!(
+        own < other,
+        "the task's own handover comes first:\n{worker}"
+    );
+
+    let plan = PLAN.replace("done = false", "done = true");
+    let worker = Flow::seeded(Some(TASKS), &plan, Some(BRIEF.as_bytes()))
+        .view(&["--for", "worker", "--task", "1"]);
+    assert!(!worker.contains("Handovers"), "{worker}");
+}
+
+#[test]
 fn an_answered_surfaced_decision_is_not_open() {
     let plan = PLAN.replacen(
         "provenance = \"agent-assumed\"",
