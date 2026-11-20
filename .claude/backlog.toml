@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-11-18
+last_updated = 2026-11-20
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -13808,3 +13808,277 @@ flow = "review-v2-cells-and-handoff"
 context = "After review-v2-cells-and-handoff, the U5 replay (tomlctl/tests/review_replay.rs) proposes 15 cells with no repeat pass, so the brief's criteria allow these cuts, but the coverage loss on a very large diff is an input to the ceiling retune that plan deferred. Read review stats --yield once runs accumulate before raising the ceiling for large diffs."
 base_sha = "5260974aa064f60ca29a3e72c014b0ba6a0a7b1d"
 related = ["B-4e15b9fa"]
+
+[[backlog]]
+id = "B-cbda2a4f"
+kind = "bug"
+summary = "implement-v2 drain step 10 stages only the row files plan drift --uncommitted prints, but drift never lists paths under docs/flows/<slug>/, so a row file there is silently left out of the milestone commit"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "commit",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "cbda2a4f7bc46f21"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: task 34's deliverable was docs/flows/<slug>/notes/preview-cpu.md, a row file the drift list omits by design, so following step 10 literally would have committed the milestone without it (caught by diffing the rows' files against the drift list by hand). The recipe also leaves the intersection to the orchestrator: tasks list --get files prints each row's array as one JSON line, so it needs --get 'files.*' plus sort/comm. A verb such as plan emit commit-paths (rows' files that git status reports changed, the flow's own directories included) would remove both traps."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-091e2d4f"]
+
+[[backlog]]
+id = "B-d1b276a6"
+kind = "direction"
+summary = "plan emit gate-list does not mark commands with external side effects (deploy, install), so the orchestrator decides by eye which gate commands to hold out of the keep_going dispatch"
+area = "tomlctl/src/plan/emit.rs"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "d1b276a6e9ac5b9e"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = 'drain.md step 7 says a command that changes something outside the build is held for a second verification call, but gate-list carries no signal: on partnerhub_pages milestone C, bun run preview:deploy (an accept check, run_by gate) was spotted by name. A field on gates and accept entries (for example effect = "external") and a held flag or separate list in gate-list output would make holding mechanical and auditable.'
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-92183e4a"]
+
+[[backlog]]
+id = "B-5a1c96eb"
+kind = "bug"
+summary = "plan-worker contract has no rule against running a script with side effects to check it loads; a worker's bun -e import of a deploy script ran a live deploy built from siblings' uncommitted edits"
+area = "claude/agents"
+tags = [
+    "implement-v2",
+    "worker",
+    "live-systems",
+]
+status = "resolved"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "5a1c96ebd899b2cd"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = """Seen 2026-11-20 on partnerhub_pages milestone C, task 33: to smoke-test scripts/preview-deploy.ts the worker ran bun -e "await import('./scripts/preview-deploy.ts')"; importing ran main(), which built and deployed the drafts preview from the shared tree while tasks 32 and 42 were mid-edit. The deployed preview was broken and misled task 34's measurement. The No live systems rule did not stop it because the task detail did grant one deploy. Add to both worker files: check a script loads with a type check or compile only, never by importing or executing an entry point with side effects; and any granted live action runs only as the spec describes it, knowing the tree holds siblings' work in progress."""
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-4e1fadea"]
+resolved = 2026-11-20
+resolution = "fixed in 2b9163ff"
+
+[[backlog]]
+id = "B-4df4d2bb"
+kind = "bug"
+summary = "plan-worker contract has no rule against machine-wide process kills; a worker's taskkill /F /IM workerd.exe stopped every parallel worker's wrangler dev"
+area = "claude/agents"
+tags = [
+    "implement-v2",
+    "worker",
+    "concurrency",
+]
+status = "resolved"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "4df4d2bbb1ed2214"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C, task 31: while probing workerd module resolution the worker ran taskkill /F /IM workerd.exe, which kills every workerd on the machine, including sibling workers' wrangler dev runs and any the user had open. Its note owned up to it. Workers run in parallel on one machine: the contract should say stop only processes you started, by PID or process tree (taskkill /T /PID, kill <pid>), never by image name or pattern."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-3fb11c9a"]
+resolved = 2026-11-20
+resolution = "fixed in 2b9163ff"
+
+[[backlog]]
+id = "B-dcecc52a"
+kind = "bug"
+summary = "agents audit matches only build/test patterns and literal gate commands, so a worker running a gate script by another route (bun -e import of the script behind bun run preview:deploy) is not reported"
+area = "tomlctl/src/agents/audit.rs"
+tags = [
+    "implement-v2",
+    "audit",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "dcecc52afccd99b3"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages: the drain's audit passed --gate 'bun run preview:deploy', but the worker ran the same script through bun -e import(...), so nothing was reported and the live deploy was known only because the worker's note confessed it. Resolving each gate command's package.json script to the file it runs and matching that path too (or matching any bun -e/node -e that names a script under scripts/) would close the gap."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-0bc81d84"]
+
+[[backlog]]
+id = "B-0d0afc35"
+kind = "annoyance"
+summary = "agents audit cuts every command to COMMAND_CAP (200) characters, so the build or test call at the tail of a long compound command is lost and the orchestrator cannot judge allowed versus breach"
+area = "tomlctl/src/agents/audit.rs"
+tags = [
+    "implement-v2",
+    "audit",
+]
+status = "resolved"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "0d0afc351e9667d9"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = 'Seen 2026-11-20 on partnerhub_pages milestone C: several rows ended mid-command (a cd && grep ... && git diff --q, an F="<file list>" ... prefix), so whether the matched build or test call was a narrow check could not be read; templating {command} cannot recover it because the verb truncates before output. Printing a window around the matched segment, or a --full flag, would let the orchestrator judge each row without reading the transcript.'
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+evidence = ["tomlctl/src/agents/audit.rs:26"]
+related = ["B-0bc81d84"]
+resolved = 2026-11-20
+resolution = "fixed in 2b9163ff"
+
+[[backlog]]
+id = "B-22eca7ef"
+kind = "direction"
+summary = "implement-v2 visual pass has no recorded path for the user to accept a visual failure after round 2 and commit anyway; the engine only says leave the milestone uncommitted"
+area = "claude/skills/implement-v2-engine/references/visual.md"
+tags = [
+    "implement-v2",
+    "visual",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "22eca7efe2abecd7"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: the banner failed visual round 2 on two cosmetic defects and the user chose to commit as is. The orchestrator had to improvise the commit, the stamp and the report wording, and nothing in the store records that the look criteria were waived. A documented override, for example a decision row or plan run visual --accept naming the states and criteria waived, with the commit step reading it, would keep the waiver auditable."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-5680c91a"]
+
+[[backlog]]
+id = "B-799bfc99"
+kind = "direction"
+summary = "A visual fix task's worker never sees a capture, so a look fix that regresses a sibling look surfaces only at the next visual pass and can spend the last round"
+area = "claude/skills/implement-v2-engine/references/visual.md"
+tags = [
+    "implement-v2",
+    "visual",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "799bfc991be8bb47"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: round 1's fix for clipped descenders (padding-block with a negative margin on the editor slot) passed its tests, but round 2 found the long address no longer ended in an ellipsis, with only round 2 left. The capture command is read-only and writes under an ignored directory, so letting a look-fix worker run it for its own states and read the result before returning done would catch such regressions inside the round."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-5680c91a"]
+
+[[backlog]]
+id = "B-ac9b8d59"
+kind = "bug"
+summary = "visual.md Fix tasks says spec.design names docs/flows/<slug>/design/ui-<id>.md, but add-many needs an array of design-relative anchors and plan check errors plan/design-anchor-dead on a bare file"
+area = "claude/skills/implement-v2-engine/references/visual.md"
+tags = [
+    "implement-v2",
+    "visual",
+    "docs",
+]
+status = "resolved"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "ac9b8d5931a3cb2b"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = """Seen 2026-11-20 on partnerhub_pages: following the text, a string value was refused (spec.design must be an array of strings), then ["design/ui-C.md"] minted but plan check failed with plan/design-anchor-dead. The working form was ["design/ui-C.md#draft-preview-banner"], copied from the look entry's task. The Fix tasks bullet should give that shape: copy spec.design from the look entry's task."""
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-dd357190"]
+resolved = 2026-11-20
+resolution = "fixed in 2b9163ff"
+
+[[backlog]]
+id = "B-d09117ec"
+kind = "annoyance"
+summary = "plan/ui-accept-structural warns on every fix task minted into a UI milestone, including rows that touch no UI file (a lint fix, a test fix, a deploy script)"
+area = "tomlctl/src/plan/check.rs"
+tags = [
+    "implement-v2",
+    "plan-check",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "d09117ec3bcf1ac2"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: tasks 34, 44, 45, 46 and 47 each drew the warning though none touches a file matching ui-capture.toml's paths. Exempting rows whose files match none of the declared capture paths would leave the warning for rows that can actually change the look."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-3d4f9876"]
+
+[[backlog]]
+id = "B-2a33255a"
+kind = "direction"
+summary = "Gate results are hand-transcribed from verification agent blocks into a TOML record file for plan run gate on every gate and rerun"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "2a33255abe788b4e"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "On partnerhub_pages milestone C the gate ran four times plus two held-command reruns; each needed the 11 blocks rewritten as [[record]] rows (command, outcome, exit, duration_s, summary, failed_ids, log) by hand, which is slow and error-prone (a command string with nested quotes must be re-escaped). plan run gate could accept the verification agent's block output directly, or the verification agent could also write the record file."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-8fb6b503"]
+
+[[backlog]]
+id = "B-0f9fc8b5"
+kind = "direction"
+summary = "plan-v2 review does not catch a worker task that needs an external state only a gate-owned accept check produces, such as measuring a deployment whose deploy runs at the gate"
+area = "claude/skills/plan-v2-engine"
+tags = [
+    "plan-v2",
+    "review",
+]
+status = "open"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "0f9fc8b56ea9948c"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: task 34 measured CPU on the deployed drafts preview and needed task 33, but task 33's deploy accept check was run_by gate, so no deploy of the finished tree could exist before task 34 ran; it failed, and a replan had to make task 34 deploy itself. A plan check or cold-read question (does any task's outcome rest on an effect only the gate produces?) would surface the ordering at authoring time."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-651f0ed2"]
+
+[[backlog]]
+id = "B-7dc0645c"
+kind = "annoyance"
+summary = "Workers re-propose handovers the plan already holds, because the worker view does not show the plan's existing handovers"
+area = "tomlctl/src/plan/view.rs"
+tags = [
+    "implement-v2",
+    "handover",
+]
+status = "resolved"
+created = 2026-11-20T12:05:53Z
+last_seen = 2026-11-20T12:05:53Z
+seen_count = 1
+dedup_id = "7dc0645ca35c2010"
+origin = "implement-v2"
+flow = "site-worker-new-strapi"
+context = "Seen 2026-11-20 on partnerhub_pages milestone C: tasks 31 and 33 proposed handovers that were already H7 and H9, adding a drain step to match each proposal to the stored row. Listing the undone handovers whose source_task is the worker's task (or all undone ones) in plan view --for worker would let a worker refine an existing handover instead of proposing a duplicate."
+base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
+related = ["B-9e645146"]
+resolved = 2026-11-20
+resolution = "fixed in 2b9163ff"
