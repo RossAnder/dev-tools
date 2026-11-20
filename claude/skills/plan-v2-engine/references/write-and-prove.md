@@ -31,12 +31,12 @@ revisit_if = "a second caller wants retries"
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/decide.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/decide.toml --new
 ```
 
-`binds` may name only paths that exist yet, or paths a row's `files` will claim once Write lands; `plan check` reports `plan/decision-bind-unknown` for anything else. Task ids are added after Write (section 3).
+`--new` refuses the batch if any row carries an `id`, so a new decision can never overwrite an existing one; leave it off only to update a decision by its `id`. `binds` may name only paths that exist yet, or paths a row's `files` will claim once Write lands; `plan check` reports `plan/decision-bind-unknown` for anything else. Task ids are added after Write (section 3).
 
-**Contracts.** A claim that spans two tasks, such as one producing a shape the other consumes, is a `[[contract]]`, checked at the join rather than inside either task. Give it a `check` that exits non-zero when the claim fails, and its `tasks` once they exist:
+**Contracts.** A claim that spans two tasks, such as one producing a shape the other consumes, is a `[[contract]]`, checked at the join rather than inside either task. Give it a `check` that exits non-zero when the claim fails, and its `tasks` once they exist. `kind` is `interface` (one task provides, another consumes) or `invariant` (true across the tasks); no other value is accepted.
 
 ```toml
 [[record]]
@@ -63,7 +63,9 @@ tomlctl plan milestone add --slug <slug> --id A --goal '<what the milestone deli
 
 **Self-edits.** A plan that edits the harness which will run it, such as an engine's references under `claude/skills/`, an agent body under `claude/agents/` or a saved Workflow script under `claude/workflows/`, puts every such row in a milestone after the one whose external gate installs the binary those files name, such as `cargo install --path tomlctl`, with `--after <id>` on the later milestone. The edited text then never names a verb or flag the installed binary lacks while it runs. While a milestone edits the engine running it, the implement engine drains from a snapshot of its references taken at launch ([run-milestone.md, Snapshot a self-edited engine](../../implement-v2-engine/references/run-milestone.md#snapshot-a-self-edited-engine)). An edited agent body or `SKILL.md` reaching the running session through the config dir's links is not used by it; the change takes effect from the next session, so a later milestone that needs it is run from a fresh session.
 
-A gate that can fail for reasons of this environment, such as a link or install script, gets a probe: add `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. Prove runs it (`design/shapes.md#gate-probes`).
+A gate that can fail for reasons of this environment, such as a link or install script, gets a probe: add `--gate-probe '<gate> :: <probe>'`, the probe being a cheap command such as the gate's own dry run. Prove runs it ([gate probes](../../tomlctl/references/plan-probes.md#gate-probes)).
+
+A check that guards a project limit, such as a test budget or a bundle size, is its own `--gate` command, never chained after another with `&&`: the gate runs every command whatever the others return, so the limit is reported in the same round as a failing suite and not one round later.
 
 A gate that changes something outside the build, such as an install, a link or a deploy, is added with `--external-gate '<command>'` instead of `--gate`, so the drain holds it until the other gate commands pass.
 
@@ -84,7 +86,7 @@ Upfront elaboration is the norm. Defer a later milestone only when its detail de
 
 **Design files.** Write `docs/flows/<slug>/design/<name>.md` only where a task needs prose no record holds: a data shape, a lock order, a migration sequence. `direction.md` and each `ui-<milestone>.md` are design files of this kind, written by the steps above. A task cites a section as `design/<name>.md#<anchor>`, the anchor being the heading slugged by the task store's ref rule, so `## Lock order` is `#lock-order`. `plan check` reports a citation that resolves to no section as `plan/design-anchor-dead`.
 
-**Handovers.** A handover is recorded only for a step no agent can perform, one of the six reasons of `design/handover.md#reasons`. Record one step per row, with `reason`, `action`, `when`, `done_when` and `source_task`. Stage the rows with Write once the tasks exist, since `source_task` names a row, then load them:
+**Handovers.** A handover is recorded only for a step no agent can perform, one of the six `reason` values in [`plan handover set`](../../tomlctl/references/plan.md#plan-handover-set). Record one step per row, with `reason`, `action`, `when`, `done_when` and `source_task`. Stage the rows with Write once the tasks exist, since `source_task` names a row, then load them:
 
 ```toml
 [[record]]
@@ -99,7 +101,7 @@ source_task = 3
 tomlctl plan handover set --slug <slug> --ndjson <scratch>/handover.toml
 ```
 
-Landing work an agent can perform goes to its home (`design/handover.md#where-agent-performable-steps-go-instead`): an install or link is a gate on the last milestone. No handover is the expected case.
+Landing work an agent can perform goes to its home, never to a handover: an edit is a task, an install, link or deploy is an external gate on the last milestone, and a success criterion is a task's `accept` check. No handover is the expected case.
 
 **Blocking handovers.** An input only the user can supply that a task needs before it starts, such as a token in `.env` or an account set up on a console, is a handover that holds the task back, not a step after landing. Give it `blocks`, naming each task that needs the input, and a `ready_check`: a read-only command that exits 0 once the input is in place and never makes a network call or builds. While it is not done, `plan emit launch-args` withholds those tasks, and the implement engine runs the `ready_check` at the milestone's pick and asks the user to perform the handover when it fails ([run-milestone.md, section 2, Blocking handovers](../../implement-v2-engine/references/run-milestone.md#2-pick-the-milestone)). Its `when` says before the blocked task's milestone.
 
@@ -213,12 +215,13 @@ states = ["settings-empty", "settings-many", "settings-short-window"]
 ```
 
 - `writes_build = false` is what gets probed. Mark it on every check that only reads, such as `grep`, `test -f`, `git diff` or a `tomlctl` read verb. Leave it out on a check that builds, tests or writes anything, which then runs only at the milestone's gate; absent counts as true.
-- `run_by` is set only where the default is wrong (`design/shapes.md#accept-owner`). `gate` marks a read-only check that only the gate can pass. `covered`, with `covered_by` naming the exact gate command, marks a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`. A gate-run accept check that deploys or installs carries `effect = "external"`; the mark is refused on any entry the gate does not run.
+- `run_by` is set only where the default is wrong ([accept owner](../../tomlctl/references/tasks-store.md#accept-owner)). `gate` marks a read-only check that only the gate can pass. `covered`, with `covered_by` naming the exact gate command, marks a narrow test the milestone's suite gate already runs, so it is not run twice; a worker's own narrow run of such a test is named in `detail`. A gate-run accept check that deploys or installs carries `effect = "external"`; the mark is refused on any entry the gate does not run.
 - `means` is empty by default. Name a means only when a worker left free would go wrong, and give every `required` entry its reason in `detail`, since wrong or over-specified instructions do more harm than missing ones. A `tool` or `clerk` task gets its targets enumerated, because it will not generalise an instruction from one item to the next; a `deep` task gets a scope clause in `constraints`, because it can expand scope.
 - `premises` are the code facts the task stands on, each with a `check` that exits 0 while the fact holds. `at` is `base` for a fact true now, or `after:<id>` for one an earlier task makes true.
 - A row whose `files` match an `input` in `.claude/generated.toml` holds each output that generator writes, and its `detail` names the regenerate command, unless a dependent row holds the output and regenerates.
 - `executor` is `tool`, `clerk`, `lite` or `deep`. Choose `lite` when the spec states the edit itself and it stays inside one or two files: a doc section, a table row, a flag threaded through, a test for behaviour already written. Choose `deep` when the worker must decide something the spec leaves open, reason across files, or touch security-sensitive code. `deep` is not the safe default: it costs several times the time and context of `lite` on the same task, and a spec too loose for `lite` is usually a spec to tighten.
 - A file where every new verb, type or test case is registered, such as a dispatch table or a `mod.rs` of re-exports, is claimed by every task that adds one. Say so in `files` rather than leaving it out to keep tasks disjoint: a task that cannot reach its registration point fails or bends its design to avoid it. Order those tasks with `needs` and keep the per-task work in files only that task holds. A new `tomlctl review` verb puts its clap arguments and its `Verb` impl in its own `tomlctl/src/review/<verb>.rs` and registers in `tomlctl/src/review/mod.rs` alone: the `mod` line, the `ReviewOp` variant whose doc comment is the verb's help, and a one-line `dispatch` arm. A `review run` leaf registers in `tomlctl/src/review/runs.rs` instead. Outside the group, the `FEATURES` list in `tomlctl/src/cli/types/mod.rs` is claimed by a task that adds a capability, together with the three places a test pins to it or that read it: `tomlctl/tests/capabilities.rs`, the sample block and feature table in `tomlctl/README.md`, and the pre-flight list in `claude/commands/implement-v2.md` when the engine depends on the feature; and `tomlctl/tests/output_options.rs` by every task that adds a leaf verb.
+- A step that edits no file, such as a git tag, a push or an external action, is not a task. It is a handover (`plan handover set`) when only a person can do it, or a gate command on the milestone when an agent can; `plan check` refuses a task with no `files` as `plan/task-no-files`.
 
 **Retitling a row.** A row's `ref` derives from its title, so `tasks update` refuses a new `title` alone. Give the new ref as a row key beside `id`, never inside `set`, and update every design anchor and finding target that names the old ref:
 
@@ -350,7 +353,7 @@ surfaced = false
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/cold-read-unread.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/cold-read-unread.toml --new
 ```
 
 `binds` names the milestone's pending task ids, as strings.
@@ -484,7 +487,7 @@ surfaced = true
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/baseline-accept.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/baseline-accept.toml --new
 ```
 
 ### 4e. Where the plan stands

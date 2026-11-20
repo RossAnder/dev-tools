@@ -261,7 +261,7 @@ When the top level it prints is this repository's root and a `files` path of any
 cp -r <engine-dir>/references <scratch>/engine-<id>
 ```
 
-`<engine-dir>` is the resolved directory. From then until this milestone's commit, drain from the snapshot: read [drain.md](drain.md), [visual.md](visual.md), [questions.md](questions.md), [requests.md](requests.md), [apply-rows.md](apply-rows.md), [report.md](report.md) and this file from `<scratch>/engine-<id>/`, never from the skill directory. A relaunch from the drain reuses that snapshot and never copies again, so every round of the milestone runs the text it started with. When the prefix names no launched path, or the engine resolves outside this repository, take no snapshot.
+`<engine-dir>` is the resolved directory. From then until this milestone's commit, drain from the snapshot: read [drain.md](drain.md), [gate.md](gate.md), [finish.md](finish.md), [visual.md](visual.md), [questions.md](questions.md), [requests.md](requests.md), [apply-rows.md](apply-rows.md), [report.md](report.md) and this file from `<scratch>/engine-<id>/`, never from the skill directory. A relaunch from the drain reuses that snapshot and never copies again, so every round of the milestone runs the text it started with. When the prefix names no launched path, or the engine resolves outside this repository, take no snapshot.
 
 The snapshot covers the references only. Edits to the linked `SKILL.md` and agent bodies do not reach this session, as a probe on 2026-11-20 showed for a linked agent body: they take effect from the next session.
 

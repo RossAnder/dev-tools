@@ -38,7 +38,7 @@ transient:
 
 Pick the rerun form by how the runner selects tests. nextest and libtest take exact names, `{ids}`. `bun test -t` matches one regex against each test's name prefixed by its `describe` labels, so it takes `{ids_regex}`. The extractor records a vitest failure as its test file's path, which `vitest run` takes as a filter and `-t` would not match, so vitest takes `{ids}` with no `-t`.
 
-You have no wall-clock limit of your own; the budgets are the only limits. **Every Bash call passes `timeout: 600000`** — the tool's default of 120 s kills a build mid-run. Never use `run_in_background`.
+You have no wall-clock limit of your own; the budgets are the only limits. **Every Bash call passes `timeout: 600000`** — the tool's default of 120 s kills a build mid-run. No call may wait longer than 170 s: the tool moves a call still running at 180 s to the background, whatever its `timeout`. Never use `run_in_background`.
 
 ## Procedure
 
@@ -62,7 +62,7 @@ echo "$S" | grep -qE '(^|[^0-9])[1-9][0-9]* pass(ed)?([^a-z]|$)' && echo "PASSED
 { grep -E '^ *(TRY [0-9]+ )?(FAIL|FLAKY|TIMEOUT|ABORT|SIG[A-Z]+|LEAK-FAIL)( [0-9]+/[0-9]+)? +\[' "$L" | awk '{print $NF}'
   grep -E '^test .+ \.\.\. FAILED$' "$L" | awk '{print $2}'
   awk '/^ +[0-9]+ (failed|flaky) *$/{s=1; next} /^ +[0-9]+ [a-z]/{s=0} s && match($0, /[^ ]+:[0-9]+:[0-9]+/){x=substr($0, RSTART, RLENGTH); sub(/:[0-9]+$/, "", x); print x}' "$L"
-  grep -E '^ *FAIL(ED)? +[^ []' "$L" | awk '{print $2}'
+  sed -nE 's/^ *FAIL(ED)? +(\|[^|]*\| +)?([^ [|][^ ]*).*$/\3/p' "$L"
   grep -E '^ *--- FAIL: ' "$L" | awk '{print $3}'
   sed -nE 's/^ *\(fail\) (.+)$/\1/p' "$L" | sed -E 's/ \[[0-9.]+ ?m?s\]$//'
 } | sort -u > "$L.ids"
@@ -81,7 +81,7 @@ The first line it prints is the scratch directory, `<D>` below. Shell state does
 
 **Step 1 — run command N** (N = 1, 2, 3 … in list order; `<B>` = its budget). Copy the code below flush-left: the closing `VERIFY_CMD_EOF` must start its line, or the heredoc never ends.
 
-*Step 1a — `<B>` is 540 or less, or there is no `<T>`.* One call:
+*Step 1a — `<B>` is 170 or less and there is a `<T>`.* One call:
 
 ```bash
 cat > '<D>/cN.sh' <<'VERIFY_CMD_EOF'
@@ -90,9 +90,7 @@ VERIFY_CMD_EOF
 SECONDS=0; <T> <B> bash '<D>/cN.sh' </dev/null >'<D>/cN.log' 2>&1; echo "EXIT=$? DUR=$SECONDS"
 ```
 
-With no `<T>`, drop `<T> <B> `; the Bash call's own 600 s ceiling is then the budget.
-
-*Step 1b — `<B>` is over 540 and there is a `<T>`.* Launch detached:
+*Step 1b — otherwise.* Launch detached; with no `<T>`, drop `<T> <B> ` from the launch, and the poll count below is the budget:
 
 ```bash
 cat > '<D>/cN.sh' <<'VERIFY_CMD_EOF'
@@ -120,10 +118,10 @@ sleep 2; [ -f '<D>/cN.log' ] && echo launched || echo LAUNCH_FAILED
 - **POSIX with `setsid`.** The launch runs in a session of its own, and the file holds its session id, which is also its process group id. `timeout` moves the command into a process group of its own, so `kill -TERM -<id>` would miss it; `pkill -TERM -s <id>` stops the whole session.
 - **Neither, as on stock macOS.** No `cN.pid` is written.
 
-Then repeat this call until it prints an `EXIT=` line, at most `<B> / 540 + 2` times (round down):
+Then repeat this call until it prints an `EXIT=` line, at most `<B> / 160 + 2` times (round down):
 
 ```bash
-for i in $(seq 270); do [ -f '<D>/cN.exit' ] && break; sleep 2; done; cat '<D>/cN.exit' 2>/dev/null || echo PENDING
+for i in $(seq 80); do [ -f '<D>/cN.exit' ] && break; sleep 2; done; cat '<D>/cN.exit' 2>/dev/null || echo PENDING
 ```
 
 `LAUNCH_FAILED`, or `PENDING` on the last poll, means no `EXIT=` line.

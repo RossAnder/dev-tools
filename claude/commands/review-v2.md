@@ -11,7 +11,7 @@ Reviews code by composing coverage for the change at hand rather than broadcasti
 
 `/review` is unchanged and stays available beside this command. This carrier skips the user-inputs sweep and writes no v1 ledger.
 
-> **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
+> **Effort**: Best at `xhigh` or `max` — composition, audit and triage are judgement steps. At a lower level, say so once and continue; never stop or ask for it.
 
 ## Bindings
 

@@ -9,7 +9,7 @@ argument-hint: '<slug> | --scope <scope> [<finding ids> | --all]'
 
 A v2 review store is `.claude/flows/<slug>/review-v2.toml` for a review bound to a flow, or `.claude/review-v2/<scope>.toml` for a flow-less one; `/review-v2` and `/optimise-v2` write it, and their triage names this command with the findings the user picked. The selected defect and cleanup findings become fix tasks in a v2 flow, which `/implement-v2`'s engine runs; a finding blocked on evidence first gets a settle task, whose proposal the engine judges before the fix milestone. A review bound to a v1 flow has no apply path here; `/review-apply` and `/optimise-apply` are unchanged.
 
-> **Effort**: Requires `xhigh` or `max` — the gate resolution and the execution engine's premise verdicts, drain replan and fix rounds are judgement steps.
+> **Effort**: Best at `xhigh` or `max` — the gate resolution and the execution engine's premise verdicts, drain replan and fix rounds are judgement steps. At a lower level, say so once and continue; never stop or ask for it.
 
 ## Bindings
 

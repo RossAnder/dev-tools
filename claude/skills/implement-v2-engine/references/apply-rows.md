@@ -166,6 +166,8 @@ A finding that still reproduces gets one fix task in this milestone, minted with
 
   The gate runs it, never the worker, and it names no finding of its own.
 
+Before the relaunch, check each new fix row against the decisions binding it, by "Check each fix row against the decisions" in [gate.md](gate.md); a row that departs from one goes to the user before it runs.
+
 Then relaunch through [run-milestone.md](run-milestone.md), step 3, and come back here when every row is `done`.
 
 **Two rounds at most**, apart from the gate's own two. Count the rounds already minted for this milestone:

@@ -25,6 +25,14 @@ tomlctl plan open --slug <slug> [--from <id>[,<id>...]] --branch <branch> [--sco
 - `--branch` is the current branch, from the line above.
 - `--scope` repeats once per path glob the goal itself names, and is omitted when it names none. Do not infer globs from what you expect to touch; Design and the sweep below find that.
 
+**Ignored paths.** `plan approve` refuses while `plan.toml`, `tasks.toml`, `brief.md` or any `design/` file is ignored, and the approval's second commit carries `.claude/active-flow.toml`; without this check the refusal arrives only after authoring. Check now:
+
+```bash
+git check-ignore -v .claude/flows/<slug>/plan.toml .claude/flows/<slug>/tasks.toml docs/flows/<slug>/brief.md docs/flows/<slug>/design/direction.md .claude/active-flow.toml
+```
+
+No output, exit 1, means nothing is ignored. Each printed line names the ignore file, line and pattern hiding a path. Show the lines to the user and ask through `AskUserQuestion`, before the interview, whether to let the flow's paths be tracked or to stop. Tracking them takes an ignore-file edit, made by the user or by you on their answer. A directory pattern such as `.claude/` cannot be undone by a `!` line under it, because git never re-includes a file whose parent directory is excluded; it becomes `.claude/*` followed by `!.claude/flows/` and `!.claude/active-flow.toml*`. Run the check again until it prints nothing. That edit is not part of the plan's commit: name it to the user to commit. Never `git add -f`, and never change an ignore file without the user's answer.
+
 **Interview.** Before filling the brief, interview the user about the goals, the constraints and what good looks like once the work lands, in `AskUserQuestion` rounds of up to four questions. Scale the rounds with the work's complexity and ambiguity: a narrow fix may need one question confirming what done means, a new surface or a cross-cutting change several rounds. Ask what the discussion left open rather than what it already said, and ask again where an answer opens a question. The interview sets the flow-level direction that every task later carries, so a task never stands in for that vision with a generic implementation of its own.
 
 Then Edit `docs/flows/<slug>/brief.md`, which `plan open` wrote as a skeleton. Fill its six sections from the discussion and the interview: Intent, Non-goals, Scope budget, Success criteria, Background, Unknowns. Intent and Success criteria are what the user wants true, in their terms, and the structure challenge is built from them, so keep design out of both. Unknowns lists the questions the plan cannot be written without; each becomes a lens below, or is marked settled when reading settles it first.
@@ -47,7 +55,7 @@ surfaced = true
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/capture-config.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/capture-config.toml --new
 ```
 
 Apply the answer with a row naming the printed id, by Surface's answer table. A yes leads the config row of [ui-layout.md, section 5](ui-layout.md#5-declare-the-states-the-controls-and-the-look-entries) in the first milestone judged UI, and ui-layout reads this decision rather than asking again. A repo that already has the config is not asked: the config is the answer.
@@ -208,7 +216,7 @@ surfaced = true
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/surface.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/surface.toml --new
 ```
 
 `binds` may name only paths that exist yet, since no task does; Write adds the task ids. Then put each item to the user through `AskUserQuestion`, one question per item, the default first among the options. Apply the answer with a row naming the printed id:

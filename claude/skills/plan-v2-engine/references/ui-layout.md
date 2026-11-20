@@ -59,7 +59,7 @@ surfaced = true
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/layout-decide.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/layout-decide.toml --new
 ```
 
 `binds` names the design file below, which exists once written. The decision is bound to the milestone's UI rows by their ids: in Design, after Write lands them ([write-and-prove.md, section 3](write-and-prove.md#3-write)); in elaboration, now, since the rows exist. A bound decision is printed in each of those rows' worker view.

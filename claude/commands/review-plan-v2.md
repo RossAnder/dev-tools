@@ -11,7 +11,7 @@ Invoke the `review-v2-engine` skill before anything else and run its stages in o
 
 The run has two modes, fixed at stage 0. **Flow mode** applies when the resolved flow has `.claude/flows/<slug>/plan.toml`: the plan is a v2 flow's records, the procedure is the engine's `references/plan-flow.md`, and this file adds only the stage 0 bind, the stage 7 presentation and the stage 8 close below. **Markdown mode** is every other run, and is the rest of this file as written.
 
-> **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
+> **Effort**: Best at `xhigh` or `max` — composition, audit and triage are judgement steps. At a lower level, say so once and continue; never stop or ask for it.
 
 ## Bindings
 

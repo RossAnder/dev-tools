@@ -79,7 +79,7 @@ because = "the user picked <pick>"
 ```
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/implement-<id>-question-<qid>.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/implement-<id>-question-<qid>.toml --new
 ```
 
 - `decision` carries the pick, or the user's own words, without changing its meaning; the prompt and both input ids go in `evidence`, so the decision traces back to the record.

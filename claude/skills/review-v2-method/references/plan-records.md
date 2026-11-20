@@ -9,10 +9,10 @@ A v2 plan has no single markdown file. Its tasks and specs live in `.claude/flow
 ```bash
 tomlctl plan view --slug <slug> --for human
 tomlctl plan view --slug <slug> --for worker --task <id>
-tomlctl tasks show <id> --slug <slug> --with summary,body,spec
+tomlctl tasks show <id-or-ref> --slug <slug> --with summary,body,spec
 ```
 
-`tasks show` takes numeric ids only. A target written `task:<ref>` gives its id with `tomlctl tasks list --slug <slug> --where ref=<ref> --get id`.
+`tasks show` takes a task's id or its ref, and a `task:<ref>` target as it is written.
 
 Read `docs/flows/<slug>/brief.md` and every `docs/flows/<slug>/design/*.md` in full. `plan view` leaves out stored accept fields, so copy an `expect` from `tasks show`, never from `plan view`.
 

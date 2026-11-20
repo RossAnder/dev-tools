@@ -74,8 +74,10 @@ A milestone that adds a surface or reshapes an arrangement then runs the rest of
 Each choice the revised rows rest on is a `plan decide` row, in the shape of [write-and-prove.md, section 1](write-and-prove.md#1-design), `provenance = "agent-assumed"` unless the user said or confirmed it:
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <scratch>/elaborate-decide.toml
+tomlctl plan decide --slug <slug> --ndjson <scratch>/elaborate-decide.toml --new
 ```
+
+`--new` keeps a misnumbered row from overwriting an existing decision; a stale decision's re-issue above names its `id` and goes without it.
 
 Write `docs/flows/<slug>/design/<name>.md` only where a row needs prose no record holds, cited as `design/<name>.md#<anchor>`, by the "Design files" paragraph of the same section. A gate the elaboration changes goes through `plan milestone update` with `--gate`, `--clear-gate` or `--gate-probe` and a `--reason`, since the store is audited.
 
@@ -223,6 +225,12 @@ tomlctl plan probes --slug <slug> --record <scratch>/elaborate-gates.out --gates
 
 Read each script before running it. Act on every verdict by write-and-prove's verdict table until every entry is `healthy` and no gate reads `fails` or `broken`.
 
+Then prove this milestone's baseline gates, by the **Baseline proofs** paragraph of [write-and-prove.md, section 4d](write-and-prove.md#4d-probes), for this milestone alone: a null-control proof for a gate whose tool a row of the milestone creates, otherwise one `verification` run on the tree as it stands, with a `fail` taken to the user before the flip. Approval's proofs never covered it, since `plan/baseline-gate-unproved` skips a deferred milestone, so nothing proves these gates if this step does not.
+
+```bash
+tomlctl items list .claude/flows/<slug>/tasks.toml --array milestones --where id=<id> --select baseline_gates,baseline_proofs --lines
+```
+
 ## 5. Flip
 
 Only now, with the cold read closed and applied and every probe healthy, mark the milestone elaborated. It is the last write to `tasks.toml` in this procedure:
@@ -232,7 +240,7 @@ tomlctl plan milestone update --slug <slug> --id <id> --elaborated --reason '<wh
 tomlctl plan check --slug <slug> --milestone <id>
 ```
 
-`--reason` names what landed: the decisions, the rows added and revised, and the cold read's outcome. The check runs once more because `plan/accept-no-check` now applies to these rows. An error here, `plan/brief-changed` from section 2's brief edit aside, is fixed with `tasks update --ndjson`, and the entries that fix touches are probed again by 4d before the commit; the milestone is already runnable, so do this before ending the turn.
+`--reason` names what landed: the decisions, the rows added and revised, and the cold read's outcome. The check runs once more because `plan/accept-no-check` now applies to these rows. An error here, `plan/brief-changed` from section 2's brief edit aside, is fixed with `tasks update --ndjson`, and the entries that fix touches are probed again by 4d before the commit; the milestone is already runnable, so do this before ending the turn. A `plan/baseline-gate-unproved` warning naming this milestone is acted on the same way, though it does not fail the check: one of its baseline gates went unproved in 4d, so prove it there before the commit.
 
 **Before the flip**, since no approval follows an elaboration, list the decisions that are agent-assumed, one-way and never surfaced:
 

@@ -189,6 +189,8 @@ A defect is minted with `tasks add-many` in this milestone, in the row shape of 
 - `spec.outcome` states the defect gone from the state, and states the defect as the inspector located it: the state, the defect's class, its location and the inspector note's path. The `reason` holds the same facts, but a worker is never shown it. `spec.executor` is `lite` when the defect's location and detail name the fix, and `deep` when finding why the state looks wrong is part of the work.
 - `spec.design` is copied from the task the `files` came from, the look entry's task for a `look` defect, so the worker reads the chosen design. It is an array of design-relative anchors, such as `["design/ui-<id>.md#<section>"]`: a bare string is refused, and a file with no anchor fails `plan/design-anchor-dead`.
 
+Before the relaunch, check each new fix row against the decisions binding it, by "Check each fix row against the decisions" in [gate.md](gate.md): a visual fix can depart from a `look` decision as readily as a gate fix from any other, and one that does goes to the user before it runs.
+
 **The worker's own capture.** Every fix task minted for a defect, a `look` defect or any other, also carries one `spec.means` entry that lets its worker capture its own states before it returns, so a fix that regresses a neighbouring look is caught inside the round. The entry needs the task's id `<n>`, which `add-many` prints in `rows[].id`, so mint the row first and then set the means with a `tasks update` naming that id:
 
 ```toml

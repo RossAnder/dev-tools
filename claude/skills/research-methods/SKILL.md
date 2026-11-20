@@ -41,6 +41,8 @@ Triangulate anything below official docs with a second independent source. Fetch
 
 ## Searching
 
+**Searching the repository.** Search with the Grep tool narrowed by `path` or `glob` to the directories the question names. To cover the whole tree, run `tomlctl sweep -e '<regex>'` from the repo root, which walks only tracked files. In a session with no Grep tool, use `rg` through Bash, which honours `.gitignore`. Never run `grep -r`, `grep -R` or `find … | xargs grep` from the repo root: they read no ignore file, walk `node_modules/`, `target/`, build output and `.git/`, and can run out the tool's time limit, losing both the turn and the search.
+
 A lookup with one authoritative answer, such as a signature at a pinned version, needs only that source. For an open question with no single authoritative source, plan the search: before the first query, split the question into the sub-questions that would each settle part of it. Search each in two or three phrasings, including the field's term of art rather than only the symptom you saw, since the literature and the issue tracker name a problem by its cause. From any strong hit, follow its references backward and its citations or linked issues forward. Stop when two consecutive searches return nothing new; that saturation point, not a query count, is what makes a negative result credible, and the `Searched:` line records it.
 
 For an idiom or usage claim, how the wider ecosystem writes it is evidence alongside this repo's history: `gh search code '<pattern>' --language <lang> --limit 20` shows prevalence, and `gh search issues --repo <owner>/<repo> '<symptom>'` searches a library's tracker. Code search is rate-limited, so keep to a few targeted queries.
