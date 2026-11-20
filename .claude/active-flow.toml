@@ -1074,3 +1074,10 @@ last_used = "2026-11-20T14:01:16.4484833Z"
 
 [active.binding]
 branch = "main"
+
+[[active]]
+slug = "v2-usage-audit-gaps"
+last_used = "2026-11-20T17:01:57.8546792Z"
+
+[active.binding]
+branch = "main"

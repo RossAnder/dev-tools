@@ -546,6 +546,14 @@ check = ""
 surfaced = false
 vetoed = false
 
+[[approval]]
+commit = "fc95f50c0ac56b2443d8dc6a25787e7383bf9641"
+at = 2026-11-20T17:01:57Z
+brief_sha256 = "7b2a1d21cf48835dce91aeb128173af19a3830be3ebdf5b186521544b3d38722"
+by = "user"
+review = "ran"
+reason = ""
+
 [[run]]
 step = "investigate"
 workflow = "plan-v2-investigate"

@@ -1,9 +1,10 @@
 slug = "v2-usage-audit-gaps"
 plan_path = "docs/flows/v2-usage-audit-gaps/brief.md"
-status = "draft"
+status = "in-progress"
 created = 2026-11-20
 updated = 2026-11-20
 scope = []
+branch = "main"
 
 [tasks]
 total = 0
