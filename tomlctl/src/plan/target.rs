@@ -5,15 +5,22 @@
 //! The fields a target may name are each store's own review fields, so a
 //! target parses exactly when the store's review edit would accept its field.
 
+use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
+use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 
-use super::schema::RecordKind;
-use super::{milestone, open, records, store};
+use super::schema::{PlanStore, RecordKind};
+use super::{check, milestone, open, records, store};
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::integrity::sha256_hex_crlf_folded;
+use crate::tasks::markdown::FenceState;
+use crate::tasks::schema::Store;
+use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{
     REVIEW_ROW_FIELDS, REVIEW_SPEC_FIELDS, REVIEW_SPEC_LISTS, Slot, load_store, resolve_store_path,
     review_current,
@@ -287,6 +294,177 @@ fn kind_name(kind: RecordKind) -> &'static str {
     }
 }
 
+/// Each field-level plan target, keyed as [`digest_key`] spells it, to the
+/// SHA-256 of its current value.
+pub(crate) type PlanDigest = BTreeMap<String, String>;
+
+/// The digest of every target flow `slug` holds now. A brief or design file
+/// that is absent, or resolves outside the flow's authored directory, adds none.
+pub(crate) fn plan_digest(slug: &str) -> Result<PlanDigest> {
+    let integrity = ReadIntegrityArgs {
+        verify_integrity: false,
+        strict_read: false,
+    };
+    let tasks = load_store(&resolve_store_path(Some(slug), None)?, &integrity)?;
+    let plan = store::load(&store::resolve(slug)?, &integrity)?;
+    digest_of(&plan, &tasks, &store::authored_dir(slug)?)
+}
+
+fn digest_of(plan: &PlanStore, tasks: &Store, authored: &Path) -> Result<PlanDigest> {
+    let mut digest = PlanDigest::new();
+    let mut put = |target: RecordTarget, value: &JsonValue| {
+        digest.insert(target.to_string(), hash_json(value));
+    };
+    for row in &tasks.items {
+        for field in REVIEW_ROW_FIELDS {
+            let value = review_current(tasks, &row.r#ref, field)?;
+            let r#ref = row.r#ref.clone();
+            put(RecordTarget::TaskField { r#ref, field }, &value);
+        }
+        for field in REVIEW_SPEC_FIELDS {
+            let value = review_current(tasks, &row.r#ref, &format!("spec.{field}"))?;
+            let r#ref = row.r#ref.clone();
+            put(RecordTarget::SpecField { r#ref, field }, &value);
+        }
+    }
+    for checkpoint in &tasks.checkpoints {
+        for field in milestone::REVIEW_FIELDS {
+            if let Some(value) = milestone::milestone_value(tasks, &checkpoint.id, field) {
+                let id = checkpoint.id.clone();
+                put(RecordTarget::Milestone { id, field }, &value);
+            }
+        }
+    }
+    let ids = |kind: RecordKind| -> Vec<String> {
+        match kind {
+            RecordKind::Decision => plan.decisions.iter().map(|d| d.id.clone()).collect(),
+            RecordKind::Contract => plan.contracts.iter().map(|c| c.id.clone()).collect(),
+            RecordKind::Handover => plan.handovers.iter().map(|h| h.id.clone()).collect(),
+        }
+    };
+    for kind in [
+        RecordKind::Decision,
+        RecordKind::Contract,
+        RecordKind::Handover,
+    ] {
+        for id in ids(kind) {
+            for &key in records::review_keys(kind) {
+                let Some(value) = records::record_value(plan, kind, &id, key) else {
+                    continue;
+                };
+                let id = id.clone();
+                let target = match kind {
+                    RecordKind::Decision => RecordTarget::Decision { id, key },
+                    RecordKind::Contract => RecordTarget::Contract { id, key },
+                    RecordKind::Handover => RecordTarget::Handover { id, field: key },
+                };
+                put(target, &value);
+            }
+        }
+    }
+    if let Some(bytes) = store::read_brief(authored)? {
+        let text = String::from_utf8_lossy(&bytes).replace("\r\n", "\n");
+        for section in open::BRIEF_SECTIONS {
+            if let Some((_, body)) = check::design_section_in(&text, &derive_ref(section)) {
+                digest.insert(
+                    RecordTarget::Brief { section }.to_string(),
+                    sha256_hex_crlf_folded(body.as_bytes()),
+                );
+            }
+        }
+    }
+    for file in design_files(authored)? {
+        let Some(path) = check::design_path(authored, &file) else {
+            continue;
+        };
+        let source = String::from_utf8_lossy(
+            &fs::read(&path).with_context(|| format!("reading {}", path.display()))?,
+        )
+        .replace("\r\n", "\n");
+        for anchor in heading_anchors(&source) {
+            if let Some((_, body)) = check::design_section_in(&source, &anchor) {
+                digest.insert(
+                    format!("{file}#{anchor}"),
+                    sha256_hex_crlf_folded(body.as_bytes()),
+                );
+            }
+        }
+    }
+    Ok(digest)
+}
+
+/// `preserve_order` keeps a store reader's key order, which is fixed per field.
+fn hash_json(value: &JsonValue) -> String {
+    sha256_hex_crlf_folded(value.to_string().as_bytes())
+}
+
+/// Every `design/**/*.md` path under `authored`, `/`-separated. A symlinked
+/// directory is not entered; `check::design_path` holds each file inside.
+fn design_files(authored: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    let mut pending = vec![DESIGN_DIR.trim_end_matches('/').to_string()];
+    while let Some(relative) = pending.pop() {
+        let dir = authored.join(&relative);
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err).with_context(|| format!("listing {}", dir.display())),
+        };
+        for entry in entries {
+            let entry = entry.with_context(|| format!("listing {}", dir.display()))?;
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            let path = format!("{relative}/{name}");
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                pending.push(path);
+            } else if name.ends_with(".md") {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// The heading anchors of `source` as `check::design_section_in` resolves them.
+fn heading_anchors(source: &str) -> Vec<String> {
+    let mut fence = FenceState::default();
+    let mut anchors: Vec<String> = source
+        .lines()
+        .filter(|line| !fence.consume(line))
+        .filter_map(|line| check::atx_heading(line).map(|(_, title)| derive_ref(title)))
+        .collect();
+    dedupe_refs(&mut anchors);
+    anchors
+}
+
+/// The digest key a target falls under: an entry target is its whole list, and
+/// a string that is no target stands for itself.
+pub(crate) fn digest_key(raw: &str) -> String {
+    match parse(raw) {
+        Ok(RecordTarget::SpecEntry { r#ref, list, .. }) => {
+            RecordTarget::SpecField { r#ref, field: list }.to_string()
+        }
+        Ok(target) => target.to_string(),
+        Err(_) => raw.to_string(),
+    }
+}
+
+/// The keys of `current` whose digest differs from, or is absent in, the
+/// latest of `finished` holding that key. `finished` runs oldest first; with
+/// none, nothing was ever digested and the delta is empty.
+pub(crate) fn review_delta(current: &PlanDigest, finished: &[&PlanDigest]) -> Vec<String> {
+    if finished.is_empty() {
+        return Vec::new();
+    }
+    current
+        .iter()
+        .filter(|(key, value)| finished.iter().rev().find_map(|d| d.get(*key)) != Some(*value))
+        .map(|(key, _)| key.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,5 +676,96 @@ done = false
         assert_eq!(value("contract:C2.tasks"), Some(json!([1])));
         assert_eq!(value("handover:H1.done"), Some(json!(false)));
         assert_eq!(value("decision:D9.why"), None);
+    }
+
+    fn plan() -> PlanStore {
+        let doc: toml::Value = toml::from_str(PLAN).expect("fixture parses");
+        super::super::schema::from_toml(&doc).expect("fixture is a plan store")
+    }
+
+    #[test]
+    fn the_digest_holds_one_key_per_field_level_target() {
+        let authored = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            authored.path().join("brief.md"),
+            "## Intent\nStop it.\n\n## Non-goals\nNone.\n",
+        )
+        .expect("brief");
+        fs::create_dir_all(authored.path().join("design/flow")).expect("design dir");
+        fs::write(
+            authored.path().join("design/flow/api.md"),
+            "# API\n\n## Record targets\nOne.\n\n```\n## not a heading\n```\n",
+        )
+        .expect("design file");
+        let digest = digest_of(&plan(), &tasks(), authored.path()).expect("the digest");
+        for key in [
+            "task:parse-it.files",
+            "task:parse-it.spec.accept",
+            "task:bare.spec.outcome",
+            "milestone:A.gates",
+            "decision:D1.why",
+            "contract:C2.tasks",
+            "handover:H1.done",
+            "brief#Intent",
+            "brief#Non-goals",
+            "design/flow/api.md#api",
+            "design/flow/api.md#record-targets",
+        ] {
+            assert!(digest.contains_key(key), "{key} missing from {digest:?}");
+        }
+        assert!(!digest.keys().any(|key| key.contains('[')), "{digest:?}");
+        assert!(!digest.contains_key("brief#Unknowns"), "an absent section");
+        assert!(!digest.contains_key("design/flow/api.md#not-a-heading"));
+        assert!(!digest.contains_key("task:parse-it.title"));
+    }
+
+    #[test]
+    fn an_edited_value_changes_only_its_own_digest() {
+        let authored = tempfile::tempdir().expect("tempdir");
+        let before = digest_of(&plan(), &tasks(), authored.path()).expect("the digest");
+        let mut edited = plan();
+        edited.decisions[0].why = "a sharper reason".to_string();
+        let after = digest_of(&edited, &tasks(), authored.path()).expect("the digest");
+        let changed: Vec<&String> = after
+            .iter()
+            .filter(|(key, value)| before.get(*key) != Some(*value))
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(changed, ["decision:D1.why"]);
+    }
+
+    #[test]
+    fn an_entry_target_digests_under_its_whole_list() {
+        assert_eq!(
+            digest_key("task:x.spec.accept[2]"),
+            "task:x.spec.accept".to_string()
+        );
+        assert_eq!(
+            digest_key("task:x.spec.premises[+]"),
+            "task:x.spec.premises"
+        );
+        assert_eq!(digest_key("decision:D1.why"), "decision:D1.why");
+        assert_eq!(digest_key("not a target"), "not a target");
+    }
+
+    #[test]
+    fn the_delta_compares_each_target_with_the_latest_run_holding_it() {
+        let digest = |pairs: &[(&str, &str)]| -> PlanDigest {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect()
+        };
+        let current = digest(&[("a", "1"), ("b", "2"), ("c", "3")]);
+        assert!(review_delta(&current, &[]).is_empty(), "no digested run");
+
+        let full = digest(&[("a", "1"), ("b", "0")]);
+        assert_eq!(review_delta(&current, &[&full]), ["b", "c"]);
+
+        let recheck = digest(&[("b", "2")]);
+        assert_eq!(review_delta(&current, &[&full, &recheck]), ["c"]);
+
+        let stale = digest(&[("a", "0")]);
+        assert_eq!(review_delta(&current, &[&full, &stale]), ["a", "b", "c"]);
     }
 }

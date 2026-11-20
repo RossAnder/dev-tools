@@ -1624,6 +1624,230 @@ fn gate_list_omits_an_untouched_generators_check() {
     );
 }
 
+fn plan_path(root: &Path) -> std::path::PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(TASKS_SLUG)
+        .join("plan.toml")
+}
+
+/// Writes each `(path, bytes)` under the root.
+fn write_files(root: &Path, files: &[(&str, &[u8])]) {
+    for (path, bytes) in files {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+}
+
+/// Seeds row 1 of the milestone holding `paths`, and a plan store whose round 1
+/// failed `SUITE`, passed `LINT`, and recorded `tree` as each path's bytes then.
+fn seed_round(root: &Path, paths: &[&str], tree: &[(&str, &[u8])]) {
+    let items = vec![row(1, "pending", MILESTONE, &[], paths)];
+    let specs = vec![accept_spec(1, vec![accept(LINT, true, None)])];
+    seed_tasks(root, &gate_store(items, specs));
+    let mut plan = format!(
+        "schema_version = 7\n\n[[gate_round]]\nmilestone = \"{MILESTONE}\"\nround = 1\nseq = 1\n\
+         at = 2026-11-20T10:00:00Z\noutcome = \"fail\"\n\n\
+         [[gate_round.commands]]\ncommand = \"{SUITE}\"\noutcome = \"fail\"\n\n\
+         [[gate_round.commands]]\ncommand = \"{LINT}\"\noutcome = \"pass\"\n"
+    );
+    for (path, bytes) in tree {
+        let stripped: Vec<u8> = bytes
+            .iter()
+            .copied()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .collect();
+        plan.push_str(&format!(
+            "\n[[gate_round.tree]]\npath = \"{path}\"\nraw = \"{}\"\nstripped = \"{}\"\n",
+            common::hex_digest(bytes),
+            common::hex_digest(&stripped)
+        ));
+    }
+    fs::write(plan_path(root), plan).unwrap();
+}
+
+fn gate_list_after_round(root: &Path) -> Value {
+    stdout_json(
+        &cli(root)
+            .args(["--error-format", "json"])
+            .args(["plan", "emit", "gate-list", "--slug", TASKS_SLUG])
+            .args(["--milestone", MILESTONE, "--after-round", "1"])
+            .assert()
+            .success(),
+    )
+}
+
+fn full_list() -> Value {
+    json!([
+        { "command": SUITE, "source": "gate" },
+        { "command": LINT, "source": "gate" },
+    ])
+}
+
+const BEFORE_RS: &[u8] = b"fn a() {\n    b();\n}\n";
+
+#[test]
+fn gate_list_after_a_whitespace_only_round_runs_only_what_failed() {
+    let (_dir, root) = sandbox();
+    let path = "src/a.rs";
+    write_files(&root, &[(path, BEFORE_RS)]);
+    seed_round(&root, &[path], &[(path, BEFORE_RS)]);
+    write_files(&root, &[(path, b"fn a() {\n        b();\n}\n\n")]);
+
+    let out = gate_list_after_round(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([{ "command": SUITE, "source": "gate" }]),
+        "{out}"
+    );
+    assert_eq!(
+        out["carried"],
+        json!([{ "command": LINT, "source": "gate" }]),
+        "{out}"
+    );
+    assert_eq!(out["narrowed"], true, "{out}");
+}
+
+#[test]
+fn gate_list_after_round_keeps_the_full_list_on_any_other_change() {
+    let md = "docs/a.md";
+    let cases: [(&str, &[&str], &[u8], bool); 4] = [
+        (
+            "a whitespace change to a markdown file",
+            &[md],
+            b"# A\n\n  b\n",
+            true,
+        ),
+        (
+            "a token change",
+            &["src/a.rs"],
+            b"fn a() {\n    c();\n}\n",
+            true,
+        ),
+        (
+            "a path with no tree entry",
+            &["src/a.rs", "src/b.rs"],
+            BEFORE_RS,
+            true,
+        ),
+        ("a round with no tree", &["src/a.rs"], BEFORE_RS, false),
+    ];
+    for (case, paths, after, with_tree) in cases {
+        let (_dir, root) = sandbox();
+        let first = paths[0];
+        let before: &[u8] = if first == md {
+            b"# A\n\nb\n"
+        } else {
+            BEFORE_RS
+        };
+        write_files(&root, &[(first, before)]);
+        let tree: Vec<(&str, &[u8])> = if with_tree {
+            vec![(first, before)]
+        } else {
+            Vec::new()
+        };
+        seed_round(&root, paths, &tree);
+        write_files(&root, &[(first, after)]);
+
+        let out = gate_list_after_round(&root);
+
+        assert_eq!(out["commands"], full_list(), "{case}: {out}");
+        assert!(out.get("carried").is_none(), "{case}: {out}");
+        assert_eq!(out["narrowed"], false, "{case}: {out}");
+    }
+}
+
+#[test]
+fn launch_args_mark_a_task_whose_worker_runs_a_building_check() {
+    let (_dir, root) = sandbox();
+    if committed(&root).is_none() {
+        return;
+    }
+    let items = vec![
+        row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
+        row(2, "pending", MILESTONE, &[], &["src/two.rs"]),
+    ];
+    let specs = vec![
+        accept_spec(
+            1,
+            vec![accept(
+                "cargo nextest run -E 'test(/^one::/)'",
+                true,
+                Some(("worker", "")),
+            )],
+        ),
+        accept_spec(
+            2,
+            vec![
+                accept("grep -q two src/two.rs", false, Some(("worker", ""))),
+                accept("cargo test --test two", true, None),
+            ],
+        ),
+    ];
+    seed_tasks(&root, &store(items, specs, json!({})));
+
+    let out = stdout_json(&launch_args(&root, &[]).success());
+
+    let tasks = out["args"]["tasks"].as_array().unwrap();
+    assert_eq!(tasks[0]["builds"], true, "{out}");
+    assert!(
+        tasks[1].get("builds").is_none(),
+        "a worker check that builds nothing and a gate check that builds leave the key out: {out}"
+    );
+    let compact = serde_json::to_string(&out["args"]).unwrap();
+    assert_eq!(out["args_sha256"], hex_digest(compact.as_bytes()));
+}
+
+#[test]
+fn launch_args_withhold_a_task_an_undone_handover_blocks() {
+    let (_dir, root) = sandbox();
+    if committed(&root).is_none() {
+        return;
+    }
+    let items = vec![
+        row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
+        row(2, "pending", MILESTONE, &[], &["src/two.rs"]),
+        row(3, "pending", MILESTONE, &[2], &["src/three.rs"]),
+    ];
+    let specs = vec![
+        spec(1, "lite", json!([])),
+        spec(2, "lite", json!([])),
+        spec(3, "lite", json!([])),
+    ];
+    seed_tasks(&root, &store(items, specs, json!({})));
+    fs::write(
+        plan_path(&root),
+        "schema_version = 7\n\n\
+         [[handover]]\nid = \"H1\"\nreason = \"credentials\"\naction = \"Add the token.\"\n\
+         when = \"Before task 2.\"\ndone_when = \"The token is set.\"\nsource_task = 2\n\
+         done = true\nblocks = [1]\n\n\
+         [[handover]]\nid = \"H2\"\nreason = \"credentials\"\naction = \"Add the key.\"\n\
+         when = \"Before task 2.\"\ndone_when = \"The key is set.\"\nsource_task = 2\n\
+         done = false\nblocks = [2]\n",
+    )
+    .unwrap();
+
+    let out = stdout_json(&launch_args(&root, &[]).success());
+
+    let ids: Vec<u64> = out["args"]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ids, [1], "a done handover holds nothing: {out}");
+    assert_eq!(
+        dropped(&out),
+        [
+            (2, "handover:H2".to_string()),
+            (3, "needs-withheld:2".to_string()),
+        ],
+        "{out}"
+    );
+}
+
 #[test]
 fn gate_list_does_not_repeat_a_generator_check_equal_to_a_gate() {
     let (_dir, root) = sandbox();

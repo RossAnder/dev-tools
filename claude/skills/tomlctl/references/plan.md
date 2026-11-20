@@ -2,8 +2,8 @@
 
 The `tomlctl plan` verbs over a v2 flow's `.claude/flows/<slug>/plan.toml`,
 `docs/flows/<slug>/brief.md` and task store: each verb's flags and output, and the check classes.
-`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), `plan stage`
-and `plan emit` are [plan-engine.md](plan-engine.md), and the run-record leaves `plan run notes`,
+`plan probes`, with its scripts and verdicts, is [plan-probes.md](plan-probes.md), `plan stage`,
+`plan drift` and `plan emit` are [plan-engine.md](plan-engine.md), and the run-record leaves `plan run notes`,
 `gate` and `report` are [plan-run.md](plan-run.md), and the `plan request` leaves are
 [plan-request.md](plan-request.md). The shape of
 `plan.toml` and what its fields mean are [plan-store.md](plan-store.md). The side tables a plan adds to `tasks.toml` (`[[specs]]`,
@@ -34,7 +34,7 @@ of planning is owned by the [`plan-v2-engine` skill](../../plan-v2-engine/SKILL.
 - [`plan stage`](#plan-stage)
 - [`plan gate`](#plan-gate)
 - [`plan approve`](#plan-approve)
-- [`plan drift`](#plan-drift)
+- [`plan drift`](plan-engine.md#plan-drift)
 - [`plan emit`](#plan-emit)
 - [Check classes](#check-classes)
 
@@ -174,8 +174,12 @@ handover: it is a task, a gate or an accept check.
 Adds or updates handovers on the same terms as `plan decide`. A row without `id` mints one and needs
 a non-empty `action` and a `source_task`; `reason`, `when` and `done_when` may follow, and
 `plan check` reports a handover still missing one. A row with `id` updates that record, changing only
-the keys it names. The accepted keys are `id`, `reason`, `action`, `when`, `done_when` and
-`source_task`. A `done` key, an unknown key, an unknown id, an unknown `reason` or a blank `action`
+the keys it names. The accepted keys are `id`, `reason`, `action`, `when`, `done_when`, `source_task`,
+`blocks`, `ready_check` and `note`. `blocks` is a list of task ids that may not launch until the
+handover is done, each naming a row of the task store; `ready_check` is a read-only command the
+orchestrator runs that exits 0 once the input is in place; `note` is free text. The key meanings are
+in [plan-store.md](plan-store.md). `done` is still not a key: it is set only by `plan handover done`.
+A `done` key, an unknown key, an unknown id, an unknown `reason` or a blank `action`
 refuses the batch, which persists nothing; mark a step performed with `plan handover done`.
 
 ```bash
@@ -294,7 +298,7 @@ table is refused. On an audited store `--reason` is required, blank is refused, 
 `[[changes]]` row with `field = "*"` carrying that reason.
 
 ```bash
-tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--external-gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--ui-state <name>]... [--ui-control <name>]... [--defer --reason '<text>']
+tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--external-gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--baseline-gate '<command>']... [--ui yes|no] [--after <id>]... [--ui-state <name>]... [--ui-control <name>]... [--defer --reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -304,6 +308,8 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 | `--gate` | command, repeatable | Command that must pass at the milestone's drain. | none |
 | `--external-gate` | command, repeatable | A gate whose effect reaches outside the working tree, such as a deploy or an install. Appended to `gates` after the `--gate` commands, in the order given, and recorded in `external_gates`; a command given both as `--gate` and `--external-gate` is stored once, marked. [`plan emit gate-list`](plan-engine.md#plan-emit-gate-list) prints marked commands under `held`. | none |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Stores a [gate probe](plan-probes.md#gate-probes), split at the first ` :: `. `<gate>` must equal one of the milestone's gates; no separator, an empty side, or a probe equal to its gate is refused. | none |
+| `--baseline-gate` | command, repeatable | A gate proved by running it on the unchanged tree before approval, stored in `baseline_gates`. It must equal one of the milestone's gates, or the call is refused. `plan check` reports `plan/baseline-gate-unproved` until a proof stands for it. | none |
+| `--ui` | `yes` \| `no` | The milestone's UI call, `yes` when it adds or reshapes a UI surface. A `yes` milestone with no `--ui-state` is reported as `plan/ui-capture-missing`. | unset |
 | `--after` | id, repeatable | An earlier milestone this one must run after, stored as `after`. It must name a checkpoint stored before this one, or `plan check` reports `plan/milestone-after-unknown` or `plan/milestone-after-forward`. | none |
 | `--ui-state` | name, repeatable | A capture state the milestone's visual pass judges, stored in `ui_states`. A name is lowercase letters, digits and `-`, starting with a letter or digit, at most 64 characters; a malformed or repeated name is refused. | none |
 | `--ui-control` | name, repeatable | A planted-defect state the inspector must fail, stored in `ui_controls`, under the same name rule. A name that is also a `--ui-state` is refused. | none |
@@ -327,7 +333,7 @@ appends one `[[changes]]` row per changed field with `ref = "milestone:<id>"`: `
 are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--external-gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--external-gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--baseline-gate '<command>']... [--baseline-proof '<gate> :: <verdict>']... [--ui yes|no] [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -338,6 +344,9 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | `--external-gate` | command, repeatable | A gate marked external, stored as on `plan milestone add`. With or without `--gate`, replaces the whole gate list and the whole `external_gates` list. | keeps it |
 | `--clear-gate` | — | Empties the gate list and `external_gates`; `plan check` then reports `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate` or `--external-gate`. | keeps it |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Replaces the whole probe list, checked against the gates this call leaves; a pair already stored keeps its verdict. | keeps it |
+| `--baseline-gate` | command, repeatable | Replaces the whole `baseline_gates` list, each entry checked against the gates this call leaves. | keeps it |
+| `--baseline-proof` | `<gate> :: <verdict>`, repeatable | Records the verdict of a baseline gate's proof run on the unchanged tree, split at the first ` :: `, upserted by gate. The verdict is `pass`, `fail`, or `null-control :: <task id>` (the whole value `<gate> :: null-control :: <task id>`), which names a task of the milestone holding an accept entry. A gate that is no baseline gate of the milestone is refused. A `fail` proof stands for `plan check` only once a user-stated or confirmed decision names the gate's command. | keeps them |
+| `--ui` | `yes` \| `no` | Sets the milestone's UI call, as on `plan milestone add`. | keeps it |
 | `--after` | id, repeatable | Replaces the whole `after` list with the ids given, each a checkpoint stored before this one. | keeps it |
 | `--clear-after` | — | Empties the `after` list. Refused with `kind=validation` alongside `--after`. | keeps it |
 | `--ui-state` | name, repeatable | Replaces the whole `ui_states` list, under the name rule of `plan milestone add`. | keeps it |
@@ -417,7 +426,9 @@ Emits and records the acceptance and premise probes; its flags, scripts and verd
 ## `plan stage`
 
 Where the plan stands, computed from the stores and never stored: its stages, `next` hints, blockers
-and open-run rule are [plan-engine.md](plan-engine.md#plan-stage).
+and open-run rule are [plan-engine.md](plan-engine.md#plan-stage). Its output carries `review_delta`,
+the plan records changed since the latest finished review run that covered them, an empty list when
+there are none.
 
 ## `plan gate`
 
@@ -434,7 +445,7 @@ tomlctl plan gate --slug <slug>
 |---|---|---|
 | `assumptions` | `id`, `decision`, `class`, `why`, `binds`, `door`, `surfaced`, `evidence`, `if_false`, `revisit_if` | `agent-assumed` decisions, grouped by `class` in vocabulary order with unclassed ones last, and within a class ranked by how many entries they bind. `class` is `null` when unset. |
 | `one_way_doors` | `id`, `decision`, `provenance`, `revisit_if` | Every one-way decision, whatever its provenance. |
-| `risks` | `kind`, then `detail`, or `id`, `severity`, `target`, `summary` | `kind = "skip-reason"` for each `[[run]]` of step `review` with a skip reason, then `kind = "review-finding"` for each open critical or major defect and each open re-check finding. A missing `severity` or `target` reads `""`. |
+| `risks` | `kind`, then `detail`, or `id`, `severity`, `target`, `summary` | `kind = "skip-reason"` for each `[[run]]` of step `review` with a skip reason, then `kind = "review-finding"` for each open critical or major defect and each open re-check finding, then one `kind = "review-delta"` row with `targets`, the records changed since the last finished review run that covered them, when there are any. A missing `severity` or `target` reads `""`. |
 | `task_mix` | `files`, `executor`, `tasks` | Row counts by file-count bucket (`1`, `2-3`, `4+`) and spec `executor`. A row with no files counts as `1`, and one with no spec under an empty executor. |
 | `review_edits` | `id`, `target`, `tier`, `by`, `summary` | Each plan finding review applied: decisions first, then user, cited and mechanical. |
 | `deferred_milestones` | `id`, `reason` | Milestones with `elaboration = "deferred"`. |
@@ -456,6 +467,7 @@ tomlctl plan approve --slug <slug> --review skipped-low-risk --reason '<text>'
 | `--review` | `ran` \| `skipped-low-risk` \| `skipped-flag` | How plan review was settled. | required |
 | `--reason` | text | Why review was skipped; both skips need it. | `""` |
 | `--amend` | — | Append a new approval after a user-agreed change to intent. Needs a prior approval; without it, an approved plan is refused. | off |
+| `--waive-review-delta` | text | With `--review ran` on a first approval, approves despite plan records changed since the last finished review run that covered them, and records the reason as the approval's `delta_waiver`. A blank reason is refused. Without it, that delta refuses the approval; `--amend` reports the delta and never refuses it. | none |
 
 Each precondition is a `kind=validation` refusal, and nothing is written until all pass:
 
@@ -500,39 +512,8 @@ execution-record entry.
 
 ## `plan drift`
 
-Files changed since the newest approval by commits the plan does not own, against the tasks still to
-run. It warns and exits 0; a plan with no approval, or one whose newest approved commit no longer
-resolves (rebase plus gc, shallow clone), is refused with `kind=validation`.
-`plan approve --amend --review <outcome>` stamps a new approval at HEAD and moves the baseline there;
-in a shallow clone, deepening the history keeps the original baseline.
-
-```bash
-tomlctl plan drift --slug <slug> [--uncommitted]
-```
-
-| Flag | Value | Meaning | Default |
-|---|---|---|---|
-| `--uncommitted` | — | Also report the working tree's modified and untracked paths. | off |
-
-```json
-{"ok":true,"approved_commit":"<sha>","changed_files":["src/a.rs"],"affected":[{"id":1,"ref":"<ref>","files":["src/a.rs"],"premises":[{"claim":"…","check":"…","at":"base"}]}]}
-```
-
-With `--uncommitted` the object gains `uncommitted_files`, the modified, staged, deleted and untracked
-paths from `git status`, a rename read as its source and its new path. Paths under
-`.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. An uncommitted path affects a
-`pending` row naming it, unless a `done`, `in-progress`, `failed` or `parked` row with an empty
-`commit` also names it, since that edit is the run's own work. Such an entry lists the path in `files`
-and again in its own `uncommitted` array, which is absent when no uncommitted path hits the row.
-Without the flag the output is unchanged.
-
-A commit is owned when a row's `commit` holds it, either side being allowed to be an abbreviation of
-the other. A commit that no row records counts as drift even when it only touched flow files.
-`affected` lists `pending` and `in-progress` rows whose `files` intersect `changed_files`, with `files`
-narrowed to the intersection and `premises` carrying the spec's premises to re-check. Renames count
-as a delete plus an add. `changed_files` holds git's paths verbatim, read with `-z`, so they are never
-C-quoted. Paths are matched after folding backslashes and dropping a leading `./`, with `files`
-reported as written.
+The files changed since the newest approval by commits the plan does not own, against the tasks still
+to run, are [plan-engine.md](plan-engine.md#plan-drift).
 
 ## `plan emit`
 
@@ -555,6 +536,10 @@ output are [plan-engine.md](plan-engine.md#plan-emit).
 | `plan/premise-task-unknown` | error | A premise's `at = after:<id>` names no row, including a non-canonical or non-numeric id. |
 | `plan/handover-task-unknown` | error | A handover's `source_task` names an id no row carries. A done handover is not checked. |
 | `plan/handover-incomplete` | error | An undone handover has no `reason`, `action`, `when` or `done_when`; one finding per handover naming the empty keys. |
+| `plan/handover-blocks-unknown` | error | A handover's `blocks` names a task id no row carries. |
+| `plan/handover-blocks-done` | warning | An undone handover's `blocks` names a task already done, so it held nothing back. |
+| `plan/baseline-gate-unproved` | warning | A baseline gate of a milestone that is not deferred has no standing proof: no proof, a `fail` proof no user-stated or confirmed decision accepts, or a `null-control` proof whose task is no row of the milestone or holds no accept entry. |
+| `plan/ui-capture-missing` | warning | A milestone that is not deferred, recorded with `--ui yes`, declares no `ui_states`, so its visual pass captures nothing. |
 | `plan/decision-bind-unknown` | error | A `binds` entry is empty, a task id no row carries, or a path neither on a row's `files` nor under the repo root. |
 | `plan/task-no-spec` | error | A row has no `[[specs]]` entry. |
 | `plan/spec-orphan` | error | A spec is keyed on a `ref` no row carries. |

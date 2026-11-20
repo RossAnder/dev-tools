@@ -516,3 +516,50 @@ fn no_change_since_approval_reports_nothing() {
     let report = flow.drift();
     assert_eq!(affected_ids(&report), Vec::<u64>::new());
 }
+
+fn add_decisions(flow: &Flow) {
+    let plan = fs::read_to_string(flow.flow_path("plan.toml")).expect("readable");
+    flow.write_flow(
+        "plan.toml",
+        &format!(
+            "{plan}\n[[decision]]\nid = \"D1\"\ndecision = \"Use the helper.\"\n\
+             provenance = \"agent-assumed\"\ndoor = \"two-way\"\nbinds = [\"1\", \"src/a.rs\"]\n\n\
+             [[decision]]\nid = \"D2\"\ndecision = \"Keep c.\"\n\
+             provenance = \"agent-assumed\"\ndoor = \"two-way\"\nbinds = [\"src/c.rs\"]\n"
+        ),
+    );
+}
+
+#[test]
+fn a_hand_commit_on_a_bound_file_lists_its_decision_with_the_commit() {
+    let flow = Flow::new();
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    add_decisions(&flow);
+    flow.commit("stamp");
+
+    flow.write_src("a", "fn parse() { /* changed */ }\n");
+    let hand = flow.commit("hand work");
+
+    let report = flow.drift();
+    let decisions = report["affected_decisions"].as_array().expect("an array");
+    assert_eq!(decisions.len(), 1, "{report}");
+    assert_eq!(decisions[0]["id"], "D1");
+    assert_eq!(decisions[0]["binds_hit"], json!(["src/a.rs"]));
+    assert_eq!(decisions[0]["commits"], json!([hand]));
+}
+
+#[test]
+fn an_untouched_bind_lists_no_decision() {
+    let flow = Flow::new();
+    let approved = flow.commit("approved");
+    flow.approve_at(&approved);
+    add_decisions(&flow);
+    flow.commit("stamp");
+
+    flow.write_src("b", "fn parse() { /* changed */ }\n");
+    flow.commit("hand work");
+
+    let report = flow.drift();
+    assert_eq!(report["affected_decisions"], json!([]), "{report}");
+}

@@ -5,15 +5,19 @@
 //! such fence reads as `absent` and keeps its prose `TANGENTIAL:` lines; a
 //! fence that is not valid TOML, holds an unknown key or follows prose reads
 //! as `malformed` and yields the Status line alone. A check whose `result` is
-//! outside the vocabulary is dropped and named in `reason`, and the rest of
-//! the block still reads as `present`.
+//! outside the vocabulary, or a `[[sources]]` entry missing `claim`, both of
+//! `url` and `query`, or a dated `fetched_at`, is dropped and named in
+//! `reason`, and the rest of the block still reads as `present`.
 
 use std::fmt;
 
 use toml::Table;
 use toml::Value as TomlValue;
+use toml::value::Datetime;
 
-use super::schema::{CheckResult, CheckRun, Deviation, NoteBlock, ProposedHandover, Tangential};
+use super::schema::{
+    CheckResult, CheckRun, Deviation, NoteBlock, ProposedHandover, Source, Tangential,
+};
 
 const INFO_STRING: &str = "toml run-note";
 
@@ -31,6 +35,7 @@ pub(crate) struct RunNote {
     pub(crate) deviations: Vec<Deviation>,
     pub(crate) tangential: Vec<Tangential>,
     pub(crate) checks: Vec<CheckRun>,
+    pub(crate) sources: Vec<Source>,
     pub(crate) handover: Option<ProposedHandover>,
 }
 
@@ -59,6 +64,7 @@ struct BlockFields {
     deviations: Vec<Deviation>,
     tangential: Vec<Tangential>,
     checks: Vec<CheckRun>,
+    sources: Vec<Source>,
     handover: Option<ProposedHandover>,
     dropped: Vec<String>,
 }
@@ -81,6 +87,7 @@ pub(crate) fn parse(text: &str) -> Result<RunNote, NoStatusLine> {
         deviations: Vec::new(),
         tangential: Vec::new(),
         checks: Vec::new(),
+        sources: Vec::new(),
         handover: None,
     };
 
@@ -97,6 +104,7 @@ pub(crate) fn parse(text: &str) -> Result<RunNote, NoStatusLine> {
                 note.deviations = fields.deviations;
                 note.tangential = fields.tangential;
                 note.checks = fields.checks;
+                note.sources = fields.sources;
                 note.handover = fields.handover;
                 note.reason = fields.dropped.join("; ");
             }
@@ -284,6 +292,19 @@ fn read_block(body: &str) -> Result<BlockFields, String> {
                     }
                 }
             }
+            "sources" => {
+                let items = value
+                    .as_array()
+                    .ok_or("`sources` is not an array of tables")?;
+                for (index, item) in items.iter().enumerate() {
+                    match source(item) {
+                        Ok(source) => fields.sources.push(source),
+                        Err(why) => fields
+                            .dropped
+                            .push(format!("the source #{} was dropped: {why}", index + 1)),
+                    }
+                }
+            }
             "handover" => {
                 let entry = value.as_table().ok_or("`handover` is not a table")?;
                 let [reason, action, when, done_when] =
@@ -299,6 +320,46 @@ fn read_block(body: &str) -> Result<BlockFields, String> {
         }
     }
     Ok(fields)
+}
+
+/// One `[[sources]]` entry. `Err` names what is wrong with it, so the caller
+/// drops that entry alone rather than the whole block.
+fn source(item: &TomlValue) -> Result<Source, String> {
+    let mut entry = item.as_table().ok_or("it is not a table")?.clone();
+    let fetched_at = entry.remove("fetched_at");
+    let [url, query, claim, how_verified, version] = strings(
+        &entry,
+        "sources",
+        ["url", "query", "claim", "how_verified", "version"],
+    )?;
+    if claim.trim().is_empty() {
+        return Err("it has no `claim`".to_string());
+    }
+    if url.trim().is_empty() && query.trim().is_empty() {
+        return Err(format!("`{claim}` has neither a `url` nor a `query`"));
+    }
+    let fetched_at = match fetched_at {
+        None => return Err(format!("`{claim}` has no `fetched_at`")),
+        Some(TomlValue::Datetime(date)) if date.date.is_some() => date,
+        Some(TomlValue::String(raw)) => raw
+            .parse::<Datetime>()
+            .ok()
+            .filter(|date| date.date.is_some())
+            .ok_or_else(|| format!("`{claim}` has a `fetched_at` that is not a date: `{raw}`"))?,
+        Some(other) => {
+            return Err(format!(
+                "`{claim}` has a `fetched_at` that is not a date: `{other}`"
+            ));
+        }
+    };
+    Ok(Source {
+        url,
+        query,
+        claim,
+        how_verified,
+        fetched_at,
+        version,
+    })
 }
 
 /// Each table of an array of tables, read by `read`.
@@ -518,6 +579,77 @@ TANGENTIAL: bug | ignored.rs | prose is not read | the block wins
         );
         assert!(note.reason.contains("`c1`"), "{}", note.reason);
         assert!(note.reason.contains("`pass (9 tests)`"), "{}", note.reason);
+    }
+
+    const SOURCES: &str = r#"Status: done — x
+```toml run-note
+[[sources]]
+url = "https://example.com/graphql-api/"
+query = ""
+claim = "the dataset carries cpuTimeUs"
+how_verified = "queried live; 3 rows returned"
+fetched_at = 2026-11-20
+version = "v4"
+
+[[sources]]
+url = "https://example.com/a"
+how_verified = "read the page"
+fetched_at = 2026-11-20
+
+[[sources]]
+query = "context7: library docs"
+claim = "no fetch date"
+
+[[sources]]
+claim = "neither url nor query"
+fetched_at = 2026-11-20
+
+[[sources]]
+query = "a search"
+claim = "a string date is read"
+fetched_at = "2026-11-19"
+```
+"#;
+
+    #[test]
+    fn sources_parse_and_a_bad_entry_is_dropped_alone() {
+        let note = parse(SOURCES).expect("parses");
+        assert_eq!(note.block, NoteBlock::Present);
+        assert_eq!(note.sources.len(), 2, "{:?}", note.sources);
+        let first = &note.sources[0];
+        assert_eq!(first.url, "https://example.com/graphql-api/");
+        assert_eq!(first.claim, "the dataset carries cpuTimeUs");
+        assert_eq!(first.how_verified, "queried live; 3 rows returned");
+        assert_eq!(first.fetched_at.to_string(), "2026-11-20");
+        assert_eq!(first.version, "v4");
+        assert_eq!(note.sources[1].query, "a search");
+        assert_eq!(note.sources[1].fetched_at.to_string(), "2026-11-19");
+        assert_eq!(note.sources[1].version, "");
+        assert!(note.reason.contains("#2") && note.reason.contains("no `claim`"));
+        assert!(note.reason.contains("#3") && note.reason.contains("`fetched_at`"));
+        assert!(note.reason.contains("#4") && note.reason.contains("neither a `url`"));
+    }
+
+    #[test]
+    fn a_source_with_an_unknown_key_or_a_non_date_is_dropped_alone() {
+        let note = parse(
+            "Status: done — x\n```toml run-note\nfiles_touched = [\"a.rs\"]\n\n\
+             [[sources]]\nurl = \"u\"\nclaim = \"c\"\nfetched_at = 2026-11-20\nnote = \"n\"\n\n\
+             [[sources]]\nurl = \"u\"\nclaim = \"c\"\nfetched_at = 10:00:00\n```\n",
+        )
+        .expect("parses");
+        assert_eq!(note.block, NoteBlock::Present);
+        assert_eq!(note.files_touched, ["a.rs"]);
+        assert!(note.sources.is_empty());
+        assert!(note.reason.contains("`sources.note`"), "{}", note.reason);
+        assert!(note.reason.contains("not a date"), "{}", note.reason);
+    }
+
+    #[test]
+    fn sources_that_are_not_an_array_are_malformed() {
+        let note =
+            parse("Status: done — x\n```toml run-note\nsources = \"x\"\n```\n").expect("parses");
+        assert_eq!(note.block, NoteBlock::Malformed);
     }
 
     #[test]

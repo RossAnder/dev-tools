@@ -1454,3 +1454,220 @@ fn gate_on_a_plan_with_no_records_reports_empty_arrays() {
         assert_eq!(report[key], serde_json::json!([]), "{key}");
     }
 }
+
+const EDITED_TARGET: &str = "task:add-guard.files";
+
+/// A flow whose plan-family review runs start through `review run start`, so
+/// each records the plan digest a real run would.
+struct Reviewed {
+    flow: Flow,
+    _catalogue: tempfile::TempDir,
+    builtin: String,
+}
+
+impl Reviewed {
+    fn new() -> Self {
+        let catalogue = tempfile::tempdir().expect("tempdir");
+        let lenses = catalogue.path().join("review-v2-lenses");
+        fs::create_dir_all(&lenses).expect("lens dir");
+        fs::write(
+            lenses.join("vocabulary.toml"),
+            "[routing]\nexecutable = [\"**/*.rs\"]\n",
+        )
+        .expect("vocabulary");
+        Self {
+            flow: Flow::clean(),
+            builtin: lenses.to_string_lossy().replace('\\', "/"),
+            _catalogue: catalogue,
+        }
+    }
+
+    /// Starts a plan-family run with `set` as `--set` pairs and returns its id.
+    fn start(&self, set: &[&str]) -> String {
+        let mut args = vec![
+            "review",
+            "run",
+            "start",
+            "--slug",
+            SLUG,
+            "--command",
+            "review-plan-v2",
+            "--family",
+            "plan",
+            "--depth",
+            "quick",
+            "--base",
+            "HEAD",
+            "--builtin",
+            self.builtin.as_str(),
+        ];
+        for pair in set {
+            args.extend(["--set", *pair]);
+        }
+        ran(&self.flow, &args)["run"]
+            .as_str()
+            .expect("start names its run")
+            .to_string()
+    }
+
+    fn finish(&self, run: &str) {
+        ran(
+            &self.flow,
+            &[
+                "review",
+                "run",
+                "finish",
+                run,
+                "--slug",
+                SLUG,
+                "--incomplete",
+                "a fixture run with no cells",
+            ],
+        );
+    }
+
+    fn reviewed(&self, set: &[&str]) -> String {
+        let run = self.start(set);
+        self.finish(&run);
+        run
+    }
+
+    /// Moves the row's file list, the edit no finding made, and commits it.
+    fn edit_by_hand(&self) {
+        let tasks = fs::read_to_string(self.flow.path("tasks.toml")).expect("the task store");
+        assert!(tasks.contains("files = [\"src/a.rs\"]"), "{tasks}");
+        self.flow.write(
+            "tasks.toml",
+            tasks
+                .replace("files = [\"src/a.rs\"]", "files = [\"src/b.rs\"]")
+                .as_bytes(),
+        );
+        self.flow.commit();
+    }
+
+    fn delta(&self) -> Value {
+        ran(&self.flow, &["plan", "stage", "--slug", SLUG])["review_delta"].clone()
+    }
+
+    fn delta_risks(&self) -> Vec<Value> {
+        self.flow.gate()["risks"]
+            .as_array()
+            .expect("risks")
+            .iter()
+            .filter(|risk| risk["kind"] == "review-delta")
+            .cloned()
+            .collect()
+    }
+}
+
+#[test]
+fn an_unchanged_plan_approves_after_a_digested_run() {
+    let review = Reviewed::new();
+    review.reviewed(&[]);
+    let store = review.flow.toml(&review.flow.path("review-v2.toml"));
+    let digest = store["runs"][0]["plan_digest"]
+        .as_table()
+        .expect("a plan-family run records its digest");
+    assert!(digest.contains_key(EDITED_TARGET), "{digest:?}");
+    assert_eq!(review.delta(), serde_json::json!([]));
+    assert!(review.delta_risks().is_empty());
+
+    review.flow.approve(&["--review", "ran"]);
+    let plan = review.flow.toml(&review.flow.path("plan.toml"));
+    assert!(plan["approval"][0].get("delta_waiver").is_none(), "{plan}");
+}
+
+#[test]
+fn an_edit_after_the_review_run_refuses_approval_until_waived() {
+    let review = Reviewed::new();
+    review.reviewed(&[]);
+    review.edit_by_hand();
+
+    assert_eq!(review.delta(), serde_json::json!([EDITED_TARGET]));
+    assert_eq!(
+        review.delta_risks(),
+        [serde_json::json!({ "kind": "review-delta", "targets": [EDITED_TARGET] })]
+    );
+    let (message, kind) = review.flow.refused(&["--review", "ran"]);
+    assert_eq!(kind, "validation");
+    assert!(message.contains(EDITED_TARGET), "{message}");
+    assert!(message.contains("--waive-review-delta"), "{message}");
+    review
+        .flow
+        .refused(&["--review", "ran", "--waive-review-delta", "  "]);
+
+    let why = "Only the file list moved, which the gate rereads.";
+    review
+        .flow
+        .approve(&["--review", "ran", "--waive-review-delta", why]);
+    let plan = review.flow.toml(&review.flow.path("plan.toml"));
+    assert_eq!(plan["approval"][0]["delta_waiver"].as_str(), Some(why));
+}
+
+#[test]
+fn a_full_run_finished_after_the_edit_clears_the_delta() {
+    let review = Reviewed::new();
+    review.reviewed(&[]);
+    review.edit_by_hand();
+
+    let open = review.start(&[]);
+    assert_eq!(
+        review.delta(),
+        serde_json::json!([EDITED_TARGET]),
+        "a started run covers nothing until it finishes"
+    );
+    review.finish(&open);
+    assert_eq!(review.delta(), serde_json::json!([]));
+    assert!(review.delta_risks().is_empty());
+    review.flow.approve(&["--review", "ran"]);
+}
+
+#[test]
+fn only_a_delta_scoped_recheck_clears_a_hand_edit() {
+    let review = Reviewed::new();
+    let full = review.reviewed(&[]);
+    review.edit_by_hand();
+
+    let rechecks = format!("rechecks={full}");
+    let plain = review.reviewed(&[&rechecks]);
+    let store = review.flow.toml(&review.flow.path("review-v2.toml"));
+    let digest = store["runs"][1]["plan_digest"]
+        .as_table()
+        .expect("a re-check records the digest of what it re-checks");
+    assert!(
+        digest.is_empty(),
+        "{plain} re-checks no applied edit: {digest:?}"
+    );
+    assert_eq!(review.delta(), serde_json::json!([EDITED_TARGET]));
+    review.flow.refused(&["--review", "ran"]);
+
+    review.reviewed(&[&rechecks, "recheck_scope=delta"]);
+    let store = review.flow.toml(&review.flow.path("review-v2.toml"));
+    let digest = store["runs"][2]["plan_digest"]
+        .as_table()
+        .expect("a digest");
+    assert_eq!(
+        digest.keys().collect::<Vec<_>>(),
+        [EDITED_TARGET],
+        "a delta-scoped re-check digests the delta at its start"
+    );
+    assert_eq!(review.delta(), serde_json::json!([]));
+    review.flow.approve(&["--review", "ran"]);
+}
+
+#[test]
+fn an_amendment_reports_the_delta_and_never_refuses_it() {
+    let review = Reviewed::new();
+    review.reviewed(&[]);
+    review.flow.approve(&["--review", "ran"]);
+    review.flow.commit();
+    review.edit_by_hand();
+
+    assert_eq!(review.delta(), serde_json::json!([EDITED_TARGET]));
+    assert_eq!(review.delta_risks().len(), 1);
+    review.flow.approve(&["--review", "ran", "--amend"]);
+    let plan = review.flow.toml(&review.flow.path("plan.toml"));
+    let approvals = plan["approval"].as_array().expect("the approvals");
+    assert_eq!(approvals.len(), 2);
+    assert!(approvals[1].get("delta_waiver").is_none(), "{plan}");
+}

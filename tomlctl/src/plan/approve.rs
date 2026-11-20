@@ -97,7 +97,9 @@ fn gate_report(plan: &PlanStore, tasks: &Store, review: &PlanReviewState) -> Jso
             "summary": f.summary,
         })
     });
-    let risks: Vec<JsonValue> = skip_reasons.chain(open_findings).collect();
+    let delta = (!review.delta.is_empty())
+        .then(|| json!({ "kind": "review-delta", "targets": review.delta }));
+    let risks: Vec<JsonValue> = skip_reasons.chain(open_findings).chain(delta).collect();
 
     let deferred: Vec<JsonValue> = tasks
         .milestones
@@ -210,11 +212,21 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         review,
         reason,
         amend,
+        waive_review_delta,
         integrity,
     } = args;
     let slug = target.slug;
     let reason = reason.unwrap_or_default().trim().to_string();
     let review = parse_review(&review, &reason)?;
+    let waiver = match waive_review_delta.map(|why| why.trim().to_string()) {
+        Some(why) if why.is_empty() => {
+            return Err(refuse(
+                "`--waive-review-delta` needs the reason the changed records need no review"
+                    .to_string(),
+            ));
+        }
+        waiver => waiver,
+    };
 
     let read_integrity = ReadIntegrityArgs {
         verify_integrity: integrity.verify_integrity,
@@ -240,6 +252,7 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         return Err(refuse(silent));
     }
     refuse_check_errors(&slug, &read_integrity, amend)?;
+    let mut delta_waiver = String::new();
     if review == ReviewOutcome::Ran {
         let state = store::plan_review_state(flow_dir)?;
         let reasons = state.unsettled(&tasks);
@@ -249,6 +262,22 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
                 "`--review ran` refused: {}",
                 why.join("; ")
             )));
+        }
+        if !state.delta.is_empty() {
+            match &waiver {
+                Some(why) => delta_waiver.clone_from(why),
+                // Only a first approval: `--amend` reports the delta and never refuses it.
+                None if !amend => {
+                    return Err(refuse(format!(
+                        "`--review ran` refused: plan records changed since the last finished \
+                         review run that covered them: {}; re-check them with a run started \
+                         with `rechecks` and `recheck_scope=delta`, or pass \
+                         `--waive-review-delta <why>`",
+                        state.delta.join(", ")
+                    )));
+                }
+                None => {}
+            }
         }
     }
     let from = context_status(&context_path)?;
@@ -285,6 +314,7 @@ pub(super) fn approve(args: PlanApproveArgs) -> Result<()> {
         by: APPROVED_BY.to_string(),
         review,
         reason,
+        delta_waiver,
     };
     store::mutate(&plan_path, &integrity, |store| {
         refuse_approval_state(&store.approvals, amend)?;

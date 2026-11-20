@@ -119,6 +119,9 @@ pub(crate) struct Run {
     pub(crate) signals: Vec<Signal>,
     pub(crate) waivers: Vec<Waiver>,
     pub(crate) agents: Option<u32>,
+    /// Plan target to the SHA-256 of its value at the start of a flow-mode plan
+    /// run; `None` on every other run and on runs older than the field.
+    pub(crate) plan_digest: Option<BTreeMap<String, String>>,
     pub(crate) rest: Table,
 }
 
@@ -669,6 +672,7 @@ const RUN_CORE: &[&str] = &[
     // Derived from the cells by `run_waves`; a stored value is dropped on the next write.
     "waves",
     "agents",
+    "plan_digest",
 ];
 
 fn run_from_toml(t: &Table, at: &str) -> Result<Run> {
@@ -687,8 +691,28 @@ fn run_from_toml(t: &Table, at: &str) -> Result<Run> {
         signals: nested(t, "signals", at, signal_from_toml)?,
         waivers: nested(t, "waivers", at, waiver_from_toml)?,
         agents: count(t, "agents", at)?,
+        plan_digest: digest_table(t, "plan_digest", at)?,
         rest: rest(Record::Run, t, RUN_CORE),
     })
+}
+
+fn digest_table(t: &Table, key: &str, at: &str) -> Result<Option<BTreeMap<String, String>>> {
+    let Some(raw) = t.get(key) else {
+        return Ok(None);
+    };
+    let table = raw
+        .as_table()
+        .ok_or_else(|| anyhow!("{at}: `{key}` is not a table"))?;
+    table
+        .iter()
+        .map(|(target, digest)| {
+            digest
+                .as_str()
+                .map(|digest| (target.clone(), digest.to_string()))
+                .ok_or_else(|| anyhow!("{at}: `{key}.{target}` is not a string"))
+        })
+        .collect::<Result<_>>()
+        .map(Some)
 }
 
 fn run_to_toml(run: &Run) -> TomlValue {
@@ -711,6 +735,13 @@ fn run_to_toml(run: &Run) -> TomlValue {
     put_tables(&mut t, "signals", run.signals.iter().map(signal_to_toml));
     put_tables(&mut t, "waivers", run.waivers.iter().map(waiver_to_toml));
     put_count(&mut t, "agents", run.agents);
+    if let Some(digest) = &run.plan_digest {
+        let table = digest
+            .iter()
+            .map(|(target, sha)| (target.clone(), TomlValue::String(sha.clone())))
+            .collect();
+        t.insert("plan_digest".to_string(), TomlValue::Table(table));
+    }
     ordered(Record::Run, t, &run.rest)
 }
 
@@ -1460,6 +1491,7 @@ pub(crate) struct PlanFamily {
 pub(crate) struct PlanRun {
     pub(crate) id: String,
     pub(crate) finished: bool,
+    pub(crate) plan_digest: Option<BTreeMap<String, String>>,
 }
 
 /// Empty strings stand for absent fields.
@@ -1511,6 +1543,7 @@ pub(crate) fn plan_family(path: &Path) -> Result<PlanFamily> {
         .map(|run| PlanRun {
             id: run.id.clone(),
             finished: !run.finished.is_empty(),
+            plan_digest: run.plan_digest.clone(),
         })
         .collect();
     let findings = stored
@@ -2101,11 +2134,13 @@ verdict = "confirmed"
             [
                 PlanRun {
                     id: "U1".to_string(),
-                    finished: true
+                    finished: true,
+                    plan_digest: None,
                 },
                 PlanRun {
                     id: "U2".to_string(),
-                    finished: false
+                    finished: false,
+                    plan_digest: None,
                 },
             ]
         );

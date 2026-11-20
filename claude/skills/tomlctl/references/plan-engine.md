@@ -1,6 +1,7 @@
 # tomlctl — plan stage and emit reference
 
-The two read-only `plan` verbs the engines steer by: `plan stage`, where a plan stands, and the
+The read-only `plan` verbs the engines steer by: `plan stage`, where a plan stands, `plan drift`,
+what changed under an approved plan, and the
 `plan emit` leaves, what the execution engine passes on to its Workflow, its gate and its reproduce
 check, whether a run stayed in its lane, and the paths each of a milestone's commits stages. Both take the required `--slug` and the read bundle (`--verify-integrity`, `--strict-read`)
 described in [plan.md](plan.md), which also holds every other `plan` verb and the
@@ -11,6 +12,7 @@ for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
 ## Contents
 
 - [`plan stage`](#plan-stage)
+- [`plan drift`](#plan-drift)
 - [`plan emit`](#plan-emit)
 - [`plan emit schedule`](#plan-emit-schedule)
 - [`plan emit launch-args`](#plan-emit-launch-args)
@@ -92,7 +94,7 @@ prints one JSON object, writes nothing and runs no stored command.
 
 ```bash
 tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>] [--max-compile-parallel <n>]
-tomlctl plan emit gate-list --slug <slug> --milestone <id>
+tomlctl plan emit gate-list --slug <slug> --milestone <id> [--after-round <n>]
 tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
 tomlctl plan emit lane-check --slug <slug> --milestone <id>
 tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for <commit>
@@ -153,12 +155,16 @@ Prints `{args, args_sha256, store_digest, digest_at, after_checks, dropped}`.
 
 | Key | Holds |
 |---|---|
-| `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, `max_compile_parallel` when given, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`. |
+| `args` | The Workflow's input: `slug`, `milestone`, `root`, `max_parallel`, `max_compile_parallel` when given, and `tasks[]` of `id`, `executor`, `needs`, `after`, `files`, plus `builds = true` on a task holding an accept entry with `run_by = "worker"` and `writes_build = true`. The key is absent on every other task. |
 | `args_sha256` | The SHA-256 of `args` as compact JSON, `max_compile_parallel` included, for `plan run start --args-hash`. |
 | `store_digest` | The task store's digest for the tasks in `args`, as one token, `<section>:<hex>` per section joined by commas, for `plan run start --store-digest`. |
 | `digest_at` | When the digest was taken, an RFC 3339 timestamp to the second, for `plan run start --digest-at`. It is the second after the newest `[[changes]]` row when that row carries the current second, so a replan written just before the emit stays outside the window. |
 | `after_checks` | One row per `after:<m>` premise whose task `m` is dispatched in this launch: `task`, `premise`, `after`, `check`. The task stays in `args` with `m` in its `after`. |
-| `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `needs-withheld:<task>`, `executor:<value>`, `no-files`, `need-not-done:<task>:<status>` or `need-not-committed:<task>`. |
+| `dropped` | Each row left out, with `reason`: `not-pending`, `withheld:<task>:<premise>:<verdict>`, `handover:<id>`, `needs-withheld:<task>`, `executor:<value>`, `no-files`, `need-not-done:<task>:<status>` or `need-not-committed:<task>`. |
+
+A task named in the `blocks` of a `[[handover]]` in `plan.toml` whose `done` is `false` is withheld as
+`handover:<id>`, naming the first such handover in store order, and its dependents drop as
+`needs-withheld:<task>`, as for a withheld premise. A flow with no `plan.toml` withholds nothing this way.
 
 A `base` premise, or an `after:<m>` one whose task `m` is `done`, needs a probe at `HEAD`, or the call
 fails naming `plan probes --emit --premises --milestone <id>`.
@@ -170,8 +176,9 @@ The commands the milestone gate runs, in order.
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--milestone` | id | The milestone whose gate is listed. | required |
+| `--after-round` | n | Narrow the list to what round `n` did not pass when the milestone's files changed only in whitespace since it ran. | absent: the full list, with no `carried` or `narrowed` |
 
-Prints `{commands, skipped}`, plus `held` when any command is marked external and `visual` when the milestone has `ui_states`.
+Prints `{commands, skipped}`, plus `held` when any command is marked external, `visual` when the milestone has `ui_states`, and `narrowed`, with `carried` when it is `true`, under `--after-round`.
 
 | Key | Holds |
 |---|---|
@@ -179,6 +186,18 @@ Prints `{commands, skipped}`, plus `held` when any command is marked external an
 | `held` | Present only when not empty. `{command, source}` rows, in the order they would have had in `commands`, for each gate listed in the milestone's `external_gates` and each gate-owned accept check whose `effect` is `external`. A command marked anywhere is held and never also listed under `commands`. |
 | `skipped` | Rows of `task`, `accept` and `reason`: `duplicate` for a command already listed, `covered_by <command>` for a `covered` entry. |
 | `visual` | Present only when the milestone has `ui_states`. `states` holds the milestone's `ui_states`, `controls` its `ui_controls` (`[]` when none), and `looks` each `run_by = "look"` entry of its rows as `{task, accept, behaviour, states}`, in row then entry order, `accept` being the entry's index. A look entry never enters `commands` or `skipped`. |
+
+With `--after-round <n>`, the verb compares every path in the `files` of the milestone's rows now with
+the `tree` of round `n`'s latest run in `plan.toml`, by the digests `plan run gate` records. A path whose
+bytes digest as stored is unchanged; one whose bytes differ but whose bytes less every ASCII whitespace
+byte digest as stored is whitespace-only, unless it is whitespace-significant (`.py`, `.yaml`, `.yml`,
+`.md`, `.sh`, `.toml`, `.json`, or a file named `Makefile`). When every path is unchanged or
+whitespace-only and has a tree entry, `commands` keeps only the entries round `n` did not record as `pass`
+or `flaky`, `carried` holds those it did, and `narrowed` is `true`. Otherwise, a path with no tree entry,
+a round with no tree, a missing round or a flow with no `plan.toml` included, `commands` is the full list
+and `narrowed` is `false`. `held` and `skipped` are as without the flag. A spacing change inside a string
+literal, or one that merges two tokens, reads as whitespace-only, and a formatter edit that adds a token,
+such as a trailing comma, reads as a change.
 
 The `held` rows are always held. An unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's to add.
 
@@ -266,3 +285,42 @@ is an array, so `--get paths` prints one unquoted path per line.
 | `paths` | `work`: every changed path, deletions included and spelled as git prints it, that the `files` of a row of the milestone name, matched with `./` and `\` folded. `flow`: every changed path under `.claude/flows/<slug>/` or `docs/flows/<slug>/notes/run/`, `.claude/backlog.toml`, `.claude/inputs.toml`, and each review store a `[[finding_links]]` entry of a row of the milestone names outside `.claude/flows/<slug>/`, each of those three with its `.sha256`, less any path `--for work` prints. |
 | `ignored` | `{path, rule}` per path the ignore rules hide, which no plain status read shows and so no list above holds; `rule` is `<source>:<line>:<pattern>` as `git check-ignore -v` prints it. `work`: the row files of the milestone an ignore rule hides. `flow`: the paths a second status read with `--ignored=matching` over the same directories and stores reports ignored, such as a gate log under the flow's store directory. A tracked path is never hidden. |
 | `unmatched` | `work` only: the row files, normalised, that match no changed path and no ignore rule. |
+
+## `plan drift`
+
+Files changed since the newest approval by commits the plan does not own, against the tasks still to
+run. It warns and exits 0; a plan with no approval, or one whose newest approved commit no longer
+resolves (rebase plus gc, shallow clone), is refused with `kind=validation`.
+`plan approve --amend --review <outcome>` stamps a new approval at HEAD and moves the baseline there;
+in a shallow clone, deepening the history keeps the original baseline.
+
+```bash
+tomlctl plan drift --slug <slug> [--uncommitted]
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--uncommitted` | — | Also report the working tree's modified and untracked paths. | off |
+
+```json
+{"ok":true,"approved_commit":"<sha>","changed_files":["src/a.rs"],"affected":[{"id":1,"ref":"<ref>","files":["src/a.rs"],"premises":[{"claim":"…","check":"…","at":"base"}]}],"affected_decisions":[{"id":"D1","binds_hit":["src/a.rs"],"commits":["<sha>"]}]}
+```
+
+`affected_decisions` lists each decision whose path `binds` meet `changed_files`: its `id`, the
+`binds_hit` entries that changed, and the unowned `commits` that touched them, newest first.
+
+With `--uncommitted` the object gains `uncommitted_files`, the modified, staged, deleted and untracked
+paths from `git status`, a rename read as its source and its new path. Paths under
+`.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. An uncommitted path affects a
+`pending` row naming it, unless a `done`, `in-progress`, `failed` or `parked` row with an empty
+`commit` also names it, since that edit is the run's own work. Such an entry lists the path in `files`
+and again in its own `uncommitted` array, which is absent when no uncommitted path hits the row.
+Without the flag the output is unchanged.
+
+A commit is owned when a row's `commit` holds it, either side being allowed to be an abbreviation of
+the other. A commit that no row records counts as drift even when it only touched flow files.
+`affected` lists `pending` and `in-progress` rows whose `files` intersect `changed_files`, with `files`
+narrowed to the intersection and `premises` carrying the spec's premises to re-check. Renames count
+as a delete plus an add. `changed_files` holds git's paths verbatim, read with `-z`, so they are never
+C-quoted. Paths are matched after folding backslashes and dropping a leading `./`, with `files`
+reported as written.

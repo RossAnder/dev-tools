@@ -57,7 +57,17 @@ const HANDOVER_KEYS: &[&str] = &[
 
 /// The keys a `plan handover set` row may carry: `done` is written only by
 /// `plan handover done`, so a set row cannot record a step as performed.
-const HANDOVER_SET_KEYS: &[&str] = &["id", "reason", "action", "when", "done_when", "source_task"];
+const HANDOVER_SET_KEYS: &[&str] = &[
+    "id",
+    "reason",
+    "action",
+    "when",
+    "done_when",
+    "source_task",
+    "blocks",
+    "ready_check",
+    "note",
+];
 
 /// The keys of a `kind` record a review finding may target: every key but `id`.
 pub(super) fn review_keys(kind: RecordKind) -> &'static [&'static str] {
@@ -508,6 +518,9 @@ pub(super) fn record_value(
                 "when" => json!(h.when),
                 "done_when" => json!(h.done_when),
                 "source_task" => json!(h.source_task),
+                "blocks" => json!(h.blocks),
+                "ready_check" => json!(h.ready_check),
+                "note" => json!(h.note),
                 "done" => json!(h.done),
                 _ => return None,
             })
@@ -526,10 +539,23 @@ fn mutate_plan<T>(
 pub(super) fn handover_set(args: PlanHandoverSetArgs) -> Result<()> {
     let rows = load_rows(&args.ndjson)?;
     let path = store::resolve(&args.target.slug)?;
+    let task_ids: Option<Vec<u32>> = if rows.iter().any(|(_, row)| row.contains_key("blocks")) {
+        let tasks_path = crate::tasks::resolve_store_path(Some(&args.target.slug), None)?;
+        let tasks = crate::tasks::load_store(
+            &tasks_path,
+            &ReadIntegrityArgs {
+                verify_integrity: args.integrity.verify_integrity,
+                strict_read: true,
+            },
+        )?;
+        Some(tasks.items.iter().map(|t| t.id).collect())
+    } else {
+        None
+    };
     let ids = store::mutate(&path, &args.integrity, |plan| {
         let mut ids = Vec::with_capacity(rows.len());
         for (line, row) in &rows {
-            ids.push(upsert_handover(plan, *line, row)?);
+            ids.push(upsert_handover(plan, *line, row, task_ids.as_deref())?);
         }
         Ok(ids)
     })?;
@@ -547,7 +573,12 @@ fn row_task(line: usize, key: &str, row: &Row) -> Result<Option<u32>> {
         .ok_or_else(|| row_err(line, format!("`{key}` must be a task id, got `{raw}`")))
 }
 
-fn upsert_handover(plan: &mut PlanStore, line: usize, row: &Row) -> Result<String> {
+fn upsert_handover(
+    plan: &mut PlanStore,
+    line: usize,
+    row: &Row,
+    task_ids: Option<&[u32]>,
+) -> Result<String> {
     if row.contains_key("done") {
         return Err(row_err(
             line,
@@ -569,6 +600,17 @@ fn upsert_handover(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
     let text = |key: &str| row_string(line, key, row.get(key));
     let reason = vocab_value::<HandoverReason>(line, "reason", row)?;
     let source_task = row_task(line, "source_task", row)?;
+    let blocks = row_ids(line, "blocks", row.get("blocks"))?;
+    if let (Some(blocks), Some(known)) = (&blocks, task_ids)
+        && let Some(missing) = blocks.iter().find(|id| !known.contains(id))
+    {
+        return Err(row_err(
+            line,
+            format!("`blocks` names task {missing}, which is not in the task store"),
+        ));
+    }
+    let ready_check = text("ready_check")?;
+    let note = text("note")?;
 
     match existing {
         Some(index) => {
@@ -588,6 +630,15 @@ fn upsert_handover(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
             if let Some(v) = source_task {
                 h.source_task = v;
             }
+            if let Some(v) = blocks {
+                h.blocks = v;
+            }
+            if let Some(v) = ready_check {
+                h.ready_check = v;
+            }
+            if let Some(v) = note {
+                h.note = v;
+            }
             Ok(h.id.clone())
         }
         None => {
@@ -602,6 +653,9 @@ fn upsert_handover(plan: &mut PlanStore, line: usize, row: &Row) -> Result<Strin
                 done_when: text("done_when")?.unwrap_or_default(),
                 source_task,
                 done: false,
+                blocks: blocks.unwrap_or_default(),
+                ready_check: ready_check.unwrap_or_default(),
+                note: note.unwrap_or_default(),
             });
             Ok(id)
         }
@@ -880,7 +934,7 @@ mod tests {
     }
 
     fn set(plan: &mut PlanStore, row: JsonValue) -> Result<String> {
-        upsert_handover(plan, 1, row.as_object().expect("an object"))
+        upsert_handover(plan, 1, row.as_object().expect("an object"), None)
     }
 
     #[test]

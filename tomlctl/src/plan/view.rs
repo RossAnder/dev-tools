@@ -512,7 +512,7 @@ fn worker(view: &Plan<'_>, id: u32, integrity: &ReadIntegrityArgs) -> Result<Str
     let bound: Vec<&Decision> = plan
         .decisions
         .iter()
-        .filter(|d| d.binds.iter().any(|entry| bind_names(entry, row)))
+        .filter(|d| d.binds.iter().any(|entry| bind_names(entry, row, tasks)))
         .collect();
     if !bound.is_empty() {
         out.push_str("## Decisions binding this task\n\n");
@@ -641,10 +641,19 @@ fn findings_block(out: &mut String, tasks: &Store, row: &TaskRow, integrity: &Re
 
 /// A path naming a directory reaches every file under it, since `plan check`
 /// accepts any path under the repo root.
-fn bind_names(entry: &str, row: &TaskRow) -> bool {
+/// A task-id bind also reaches every row holding a file of the bound task.
+fn bind_names(entry: &str, row: &TaskRow, tasks: &Store) -> bool {
     match Bind::parse(entry) {
         None => false,
-        Some(Bind::Task(id)) => id == row.id,
+        Some(Bind::Task(id)) => {
+            id == row.id
+                || tasks.find(id).is_some_and(|bound| {
+                    bound
+                        .files
+                        .iter()
+                        .any(|f| row.files.iter().any(|g| normal_path(f) == normal_path(g)))
+                })
+        }
         Some(Bind::Path(bound)) => {
             let bound = bound.trim_end_matches('/');
             row.files.iter().any(|file| {

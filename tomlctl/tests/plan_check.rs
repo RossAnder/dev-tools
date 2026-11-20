@@ -736,11 +736,18 @@ fn check_reports_unknown_cover() {
 }
 
 #[test]
-fn check_reports_a_worker_owner_on_a_building_check() {
-    let tasks = swap(
+fn check_reports_an_unknown_owner_and_accepts_a_worker_building_check() {
+    let worker = swap(
         TASKS,
         "writes_build = false",
         "writes_build = true, run_by = \"worker\"",
+    );
+    assert_clean(&Flow::with_tasks(&worker));
+
+    let tasks = swap(
+        TASKS,
+        "writes_build = false",
+        "writes_build = true, run_by = \"nobody\"",
     );
     assert_reports_error(&Flow::with_tasks(&tasks), "plan/accept-owner-invalid");
 
@@ -1746,4 +1753,144 @@ fn an_external_gate_naming_no_gate_is_an_error() {
         "gates = [\"cargo test\"]\nexternal_gates = [\"cargo install --path .\"]",
     );
     assert_reports_error(&Flow::with_tasks(&stray), "plan/external-gate-unknown");
+}
+
+const BASELINE_UNPROVED: &str = "plan/baseline-gate-unproved";
+
+/// The base fixture with `cargo test` marked a baseline gate and `proofs` as
+/// its inline `baseline_proofs` array, or none when empty.
+fn baseline_tasks(proofs: &str) -> String {
+    let proofs = if proofs.is_empty() {
+        String::new()
+    } else {
+        format!("\nbaseline_proofs = [{proofs}]")
+    };
+    swap(
+        TASKS,
+        "gates = [\"cargo test\"]",
+        &format!("gates = [\"cargo test\"]\nbaseline_gates = [\"cargo test\"]{proofs}"),
+    )
+}
+
+const BASELINE_ACCEPT: &str = "\n[[decision]]\nid = \"D2\"\n\
+    decision = \"Accept `cargo test` failing on the unchanged tree.\"\n\
+    provenance = \"user-confirmed\"\ndoor = \"two-way\"\nbinds = [\"1\"]\n";
+
+#[test]
+fn a_baseline_gate_with_no_proof_or_a_failed_one_warns() {
+    let flow = Flow::with_tasks(&baseline_tasks(""));
+    assert_reports_warning(&flow, BASELINE_UNPROVED);
+    assert_eq!(finding_ids(&flow, BASELINE_UNPROVED), vec![1]);
+
+    assert_clean(&Flow::with_tasks(&baseline_tasks(
+        "{ gate = \"cargo test\", verdict = \"pass\", at = 2026-11-21T10:00:00Z }",
+    )));
+
+    let failed = baseline_tasks("{ gate = \"cargo test\", verdict = \"fail\" }");
+    assert_reports_warning(&Flow::with_tasks(&failed), BASELINE_UNPROVED);
+
+    let deferred = swap(
+        &swap(
+            &baseline_tasks(""),
+            "elaboration = \"upfront\"",
+            "elaboration = \"deferred\"",
+        ),
+        "defer_reason = \"\"",
+        "defer_reason = \"depends on the store\"",
+    );
+    assert_clean(&Flow::with_tasks(&deferred));
+}
+
+#[test]
+fn a_failed_baseline_proof_stands_once_a_user_decision_accepts_it() {
+    let failed = baseline_tasks("{ gate = \"cargo test\", verdict = \"fail\" }");
+    let accepted = format!("{PLAN}{BASELINE_ACCEPT}");
+    assert_clean(&Flow::seeded(&failed, &accepted, BRIEF.as_bytes()));
+
+    let assumed = swap(&accepted, "\"user-confirmed\"", "\"agent-assumed\"");
+    let flow = Flow::seeded(&failed, &assumed, BRIEF.as_bytes());
+    assert_reports_warning(&flow, BASELINE_UNPROVED);
+
+    let other_gate = swap(&accepted, "`cargo test`", "`cargo bench`");
+    let flow = Flow::seeded(&failed, &other_gate, BRIEF.as_bytes());
+    assert_reports_warning(&flow, BASELINE_UNPROVED);
+}
+
+#[test]
+fn a_null_control_proof_needs_a_milestone_task_with_an_accept() {
+    let proof = |task: u32| {
+        baseline_tasks(&format!(
+            "{{ gate = \"cargo test\", verdict = \"null-control\", task = {task} }}"
+        ))
+    };
+    assert_clean(&Flow::with_tasks(&proof(1)));
+
+    assert_reports_warning(&Flow::with_tasks(&proof(7)), BASELINE_UNPROVED);
+
+    let elsewhere = format!("{}{MILESTONE_B}{}", proof(2), needing_row("B"));
+    let flow = Flow::with_tasks(&elsewhere);
+    assert!(
+        flow.class_names().contains(&BASELINE_UNPROVED.to_string()),
+        "a task of another milestone is no null control"
+    );
+
+    let held = proof(1);
+    let start = held.find("accept = [").expect("the fixture has an accept");
+    let end = start + held[start..].find('\n').expect("a line end");
+    let no_accept = format!("{}accept = []{}", &held[..start], &held[end..]);
+    let flow = Flow::with_tasks(&no_accept);
+    assert!(
+        flow.class_names().contains(&BASELINE_UNPROVED.to_string()),
+        "a task with no accept entry runs no null control"
+    );
+}
+
+/// The base plan with one undone handover blocking `blocks`.
+fn blocking_plan(blocks: &str) -> String {
+    format!("{PLAN}\n{HANDOVER_HEAD}source_task = 1\ndone = false\nblocks = [{blocks}]\n")
+}
+
+#[test]
+fn a_handover_blocking_an_absent_task_is_an_error() {
+    assert_clean(&Flow::with_plan(&blocking_plan("1")));
+
+    let flow = Flow::with_plan(&blocking_plan("1, 7"));
+    assert_reports_error(&flow, "plan/handover-blocks-unknown");
+    assert_eq!(finding_ids(&flow, "plan/handover-blocks-unknown"), vec![7]);
+}
+
+#[test]
+fn an_undone_handover_blocking_a_done_task_warns() {
+    let done = swap(TASKS, "status = \"pending\"", "status = \"done\"");
+    let flow = Flow::seeded(&done, &blocking_plan("1"), BRIEF.as_bytes());
+    assert_reports_warning(&flow, "plan/handover-blocks-done");
+    assert_eq!(finding_ids(&flow, "plan/handover-blocks-done"), vec![1]);
+
+    let finished = swap(&blocking_plan("1"), "done = false", "done = true");
+    assert_clean(&Flow::seeded(&done, &finished, BRIEF.as_bytes()));
+}
+
+#[test]
+fn a_ui_milestone_with_no_capture_states_warns_with_or_without_a_config() {
+    let ui = |value: &str| {
+        swap(
+            TASKS,
+            "defer_reason = \"\"",
+            &format!("defer_reason = \"\"\nui = {value}"),
+        )
+    };
+    let flow = Flow::with_tasks(&ui("true"));
+    assert_reports_warning(&flow, "plan/ui-capture-missing");
+    assert_eq!(finding_ids(&flow, "plan/ui-capture-missing"), vec![1]);
+
+    let flow = Flow::with_tasks(&ui("true"));
+    write_capture_config(&flow, "command = \"bun run visual-audit\"\n");
+    assert_reports_warning(&flow, "plan/ui-capture-missing");
+
+    assert_clean(&Flow::with_tasks(&ui("false")));
+    assert_clean(&Flow::with_tasks(&swap(
+        &ui_tasks(UI_LISTS, true),
+        "ui_states",
+        "ui = true\nui_states",
+    )));
 }

@@ -11,7 +11,8 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use sha2::{Digest, Sha256};
 
-use super::schema::RunState;
+use super::run_gate::whitespace_digest;
+use super::schema::{CommandOutcome, GateRound, PlanStore, RunState};
 use super::store;
 use crate::cli::{
     PlanEmitGateListArgs, PlanEmitLaunchArgs, PlanEmitOp, PlanEmitReproduceUnitsArgs,
@@ -23,8 +24,8 @@ use crate::io::repo_or_cwd_root;
 use crate::output::print_json_line;
 use crate::review::reproduce_state;
 use crate::tasks::schema::{
-    Premise, RUN_BY_COVERED, RUN_BY_GATE, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec,
-    premise_target,
+    Premise, RUN_BY_COVERED, RUN_BY_GATE, RUN_BY_LOOK, RUN_BY_WORKER, Status, Store, TaskRow,
+    TaskSpec, normal_path, premise_target,
 };
 use crate::tasks::{load_store, resolve_store_path};
 
@@ -37,6 +38,10 @@ const VERDICT_HOLDS: &str = "holds";
 const VERDICT_FAILS: &str = "fails";
 const VERDICT_UNCHECKED: &str = "unchecked";
 const MAX_PARALLEL: u32 = 8;
+/// Extensions whose whitespace can change what the file means, so a change
+/// to it never narrows the gate.
+const WHITESPACE_SIGNIFICANT: [&str; 7] = ["py", "yaml", "yml", "md", "sh", "toml", "json"];
+const MAKEFILE: &str = "makefile";
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
@@ -109,7 +114,9 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
     let process_root = repo_or_cwd_root()?;
     let root = git(&process_root, &["rev-parse", "--show-toplevel"])?;
     let head = git(&process_root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
-    let launch = Launch::build(&tasks, &milestone, &head)?;
+    let plan = optional_plan(&target.slug, integrity.verify_integrity)?;
+    let held = handover_holds(plan.as_ref());
+    let launch = Launch::build(&tasks, &milestone, &head, &held)?;
     let ids: Vec<u32> = launch.tasks.iter().map(|task| task.id).collect();
     let store_digest =
         super::lane::encode_digest(&super::lane::store_digest(&tasks, &ids, &digest_at));
@@ -118,13 +125,17 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
         .tasks
         .iter()
         .map(|task| {
-            json!({
+            let mut entry = json!({
                 "id": task.id,
                 "executor": task.executor,
                 "needs": task.needs,
                 "after": task.after,
                 "files": task.files,
-            })
+            });
+            if task.builds {
+                entry["builds"] = json!(true);
+            }
+            entry
         })
         .collect();
     let mut args = json!({
@@ -165,6 +176,85 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
     }))
 }
 
+/// The flow's plan store, `None` when the flow has no `plan.toml`.
+fn optional_plan(slug: &str, verify_integrity: bool) -> Result<Option<PlanStore>> {
+    let path = store::resolve(slug)?;
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let read = ReadIntegrityArgs {
+        verify_integrity,
+        strict_read: false,
+    };
+    store::load(&path, &read).map(Some)
+}
+
+/// Each task a handover not yet `done` blocks, keyed to the first such
+/// handover in store order.
+fn handover_holds(plan: Option<&PlanStore>) -> BTreeMap<u32, String> {
+    let mut held = BTreeMap::new();
+    for handover in plan
+        .into_iter()
+        .flat_map(|plan| &plan.handovers)
+        .filter(|handover| !handover.done)
+    {
+        for &task in &handover.blocks {
+            held.entry(task).or_insert_with(|| handover.id.clone());
+        }
+    }
+    held
+}
+
+/// Round `round`'s latest run of the milestone gate, when every path the
+/// milestone's rows name has a digest in its tree and is unchanged since, or
+/// changed only in whitespace in a file whose whitespace carries no meaning.
+fn whitespace_round<'a>(
+    plan: &'a PlanStore,
+    tasks: &Store,
+    milestone: &str,
+    round: u32,
+    root: &Path,
+) -> Option<&'a GateRound> {
+    let run = plan
+        .gate_rounds
+        .iter()
+        .filter(|gate| gate.milestone == milestone && gate.round == round)
+        .max_by_key(|gate| gate.seq)?;
+    if run.tree.is_empty() {
+        return None;
+    }
+    let files: BTreeSet<String> = tasks
+        .items
+        .iter()
+        .filter(|row| row.checkpoint == milestone)
+        .flat_map(|row| row.files.iter().map(|file| normal_path(file)))
+        .filter(|file| !file.is_empty())
+        .collect();
+    files
+        .iter()
+        .all(|path| {
+            let Some(entry) = run.tree.iter().find(|entry| entry.path == *path) else {
+                return false;
+            };
+            let (raw, stripped) = whitespace_digest(&root.join(path));
+            raw == entry.raw || (stripped == entry.stripped && !whitespace_significant(path))
+        })
+        .then_some(run)
+}
+
+fn whitespace_significant(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.eq_ignore_ascii_case(MAKEFILE)
+        || Path::new(name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                WHITESPACE_SIGNIFICANT
+                    .iter()
+                    .any(|known| ext.eq_ignore_ascii_case(known))
+            })
+}
+
 /// The milestone's gates in stored order, then each gate-owned accept check of
 /// its rows by row id and entry. A gate named in the milestone's
 /// `external_gates`, or a gate-owned accept check whose `effect` is
@@ -173,10 +263,13 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
 /// options are the orchestrator's to add. A milestone with
 /// `ui_states` also gets a `visual` object holding its look entries, which
 /// are judged rather than run and so never enter `commands` or `skipped`.
+/// With `--after-round`, a whitespace-only change since that round moves the
+/// commands it passed to `carried`.
 fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
     let PlanEmitGateListArgs {
         target,
         milestone,
+        after_round,
         integrity,
     } = args;
     let tasks = load_milestone_store(&target.slug, &milestone, integrity.verify_integrity)?;
@@ -275,7 +368,32 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
             }));
         }
     }
+    let mut carried: Option<Vec<JsonValue>> = None;
+    if let Some(round) = after_round {
+        let plan = optional_plan(&target.slug, integrity.verify_integrity)?;
+        if let Some(run) = plan
+            .as_ref()
+            .and_then(|plan| whitespace_round(plan, &tasks, &milestone, round, &root))
+        {
+            let passed = |entry: &JsonValue| {
+                run.commands.iter().any(|ran| {
+                    entry["command"].as_str() == Some(ran.command.as_str())
+                        && matches!(ran.outcome, CommandOutcome::Pass | CommandOutcome::Flaky)
+                })
+            };
+            let (pass, owed): (Vec<JsonValue>, Vec<JsonValue>) =
+                commands.into_iter().partition(passed);
+            commands = owed;
+            carried = Some(pass);
+        }
+    }
     let mut out = json!({ "commands": commands, "skipped": skipped });
+    if after_round.is_some() {
+        if let Some(carried) = &carried {
+            out["carried"] = json!(carried);
+        }
+        out["narrowed"] = json!(carried.is_some());
+    }
     if !held.is_empty() {
         out["held"] = json!(held);
     }
@@ -560,6 +678,8 @@ struct Dispatched {
     needs: Vec<u32>,
     after: Vec<u32>,
     files: Vec<String>,
+    /// The task holds a check its worker runs that writes the build.
+    builds: bool,
 }
 
 struct AfterCheck {
@@ -594,7 +714,13 @@ struct Launch {
 }
 
 impl Launch {
-    fn build(store: &Store, milestone: &str, head: &str) -> Result<Self> {
+    /// `held` maps each task an undone handover blocks to that handover's id.
+    fn build(
+        store: &Store,
+        milestone: &str,
+        head: &str,
+        held: &BTreeMap<u32, String>,
+    ) -> Result<Self> {
         let mut members: Vec<&TaskRow> = store
             .items
             .iter()
@@ -638,6 +764,9 @@ impl Launch {
             let reason = if let Some(reason) = withheld {
                 cascades.push(row.id);
                 reason
+            } else if let Some(handover) = held.get(&row.id) {
+                cascades.push(row.id);
+                format!("handover:{handover}")
             } else if !EXECUTORS.contains(&executor) {
                 cascades.push(row.id);
                 let value = if executor.is_empty() {
@@ -703,6 +832,11 @@ impl Launch {
                     .collect(),
                 after,
                 files: row.files.clone(),
+                builds: spec_of(store, row).is_some_and(|spec| {
+                    spec.accept
+                        .iter()
+                        .any(|accept| accept.owner() == RUN_BY_WORKER && accept.writes_build)
+                }),
             });
         }
         Ok(Self {

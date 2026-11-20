@@ -18,6 +18,7 @@ use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 
 use super::schema::{self, Door, PlanStore, Provenance, Run, RunState};
+use super::target::{PlanDigest, plan_digest, review_delta};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
@@ -120,6 +121,9 @@ pub(super) struct PlanReviewState {
     pub(super) unfinished_runs: Vec<String>,
     pub(super) applied: Vec<AppliedEdit>,
     pub(super) open: Vec<OpenReviewRow>,
+    /// The review delta: targets changed since the latest finished run that
+    /// digested them, by `target::review_delta`.
+    pub(super) delta: Vec<String>,
 }
 
 /// A plan finding whose edit `review apply` wrote, with `old` and `new` decoded.
@@ -318,12 +322,22 @@ pub(super) fn plan_review_state(flow_dir: &Path) -> Result<PlanReviewState> {
     }
     let family = plan_family(&path)?;
     let mut state = PlanReviewState::default();
+    let mut digests = Vec::new();
     for run in family.runs {
         if run.finished {
             state.finished_runs.push(run.id);
+            digests.extend(run.plan_digest);
         } else {
             state.unfinished_runs.push(run.id);
         }
+    }
+    if !digests.is_empty() {
+        let slug = flow_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("the flow directory has no UTF-8 name")?;
+        let finished: Vec<&PlanDigest> = digests.iter().collect();
+        state.delta = review_delta(&plan_digest(slug)?, &finished);
     }
     for finding in family.findings {
         if let Some(applied) = finding.applied {

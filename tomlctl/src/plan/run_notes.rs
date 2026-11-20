@@ -116,6 +116,7 @@ fn read_attempt(
         deviations: Vec::new(),
         tangential: Vec::new(),
         checks: Vec::new(),
+        sources: Vec::new(),
         handover: None,
         problem: String::new(),
     };
@@ -165,6 +166,7 @@ fn read_attempt(
     attempt.deviations = note.deviations;
     attempt.tangential = note.tangential;
     attempt.checks = note.checks;
+    attempt.sources = note.sources;
     attempt.handover = note.handover;
     Ok(attempt)
 }

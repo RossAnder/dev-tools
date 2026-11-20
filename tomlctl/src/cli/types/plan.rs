@@ -434,7 +434,7 @@ pub(crate) struct PlanRunNotesArgs {
 }
 
 #[derive(Args)]
-#[command(group(clap::ArgGroup::new("gate_rows").required(true).multiple(false).args(["ndjson", "blocks"])))]
+#[command(group(clap::ArgGroup::new("gate_rows").required(true).multiple(false).args(["ndjson", "blocks", "accept"])))]
 pub(crate) struct PlanRunGateArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
@@ -467,6 +467,25 @@ pub(crate) struct PlanRunGateArgs {
         help = "Merge into the round's latest recorded run, replacing the commands named, rather than record a new run"
     )]
     pub(crate) rerun: bool,
+    #[arg(
+        long = "base",
+        conflicts_with = "rerun",
+        help = "The rows or blocks are the milestone base's rerun results, mapped to the round's failing commands by order"
+    )]
+    pub(crate) base: bool,
+    #[arg(
+        long = "accept",
+        conflicts_with_all = ["rerun", "base"],
+        help = "Record the user's acceptance of a gate still failing after the last round; takes --json"
+    )]
+    pub(crate) accept: bool,
+    #[arg(
+        long = "json",
+        value_name = "SRC",
+        requires = "accept",
+        help = "The acceptance payload; `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
+    )]
+    pub(crate) json: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -563,6 +582,18 @@ pub(crate) struct PlanMilestoneAddArgs {
     )]
     pub(crate) gate_probe: Vec<String>,
     #[arg(
+        long = "baseline-gate",
+        value_name = "CMD",
+        help = "A gate command proved by running it on the unchanged tree before approval (repeatable)"
+    )]
+    pub(crate) baseline_gate: Vec<String>,
+    #[arg(
+        long = "ui",
+        value_name = "yes|no",
+        help = "The milestone's UI call: yes if it adds or reshapes a UI surface, no if not"
+    )]
+    pub(crate) ui: Option<String>,
+    #[arg(
         long = "ui-state",
         value_name = "NAME",
         help = "A capture state the milestone's visual pass judges (repeatable)"
@@ -635,6 +666,24 @@ pub(crate) struct PlanMilestoneUpdateArgs {
                 probe list, keeping the verdict of a probe given unchanged)"
     )]
     pub(crate) gate_probe: Vec<String>,
+    #[arg(
+        long = "baseline-gate",
+        value_name = "CMD",
+        help = "A gate command proved by running it on the unchanged tree before approval (repeatable; the flags given replace the whole list)"
+    )]
+    pub(crate) baseline_gate: Vec<String>,
+    #[arg(
+        long = "baseline-proof",
+        value_name = "GATE :: VERDICT",
+        help = "The recorded verdict of a baseline gate's proof run on the unchanged tree; split at the first ` :: `, upserted by gate (repeatable; other gates' proofs are kept)"
+    )]
+    pub(crate) baseline_proof: Vec<String>,
+    #[arg(
+        long = "ui",
+        value_name = "yes|no",
+        help = "The milestone's UI call: yes if it adds or reshapes a UI surface, no if not"
+    )]
+    pub(crate) ui: Option<String>,
     #[arg(
         long = "ui-state",
         value_name = "NAME",
@@ -797,6 +846,12 @@ pub(crate) struct PlanApproveArgs {
         help = "Append a new approval after a user-agreed change to intent"
     )]
     pub(crate) amend: bool,
+    #[arg(
+        long = "waive-review-delta",
+        value_name = "WHY",
+        help = "Approve despite plan edits made after the review's re-check, recording why they need no review"
+    )]
+    pub(crate) waive_review_delta: Option<String>,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
@@ -881,6 +936,12 @@ pub(crate) struct PlanEmitGateListArgs {
         help = "The checkpoint whose gate commands are listed"
     )]
     pub(crate) milestone: String,
+    #[arg(
+        long = "after-round",
+        value_name = "N",
+        help = "Narrow the list to the failing commands of round N when the milestone's files changed only in whitespace since it ran"
+    )]
+    pub(crate) after_round: Option<u32>,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

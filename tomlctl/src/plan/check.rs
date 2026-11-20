@@ -2,11 +2,12 @@
 //! can raise, which read `plan.toml`, the task store's side tables, `brief.md`
 //! and the `design/` documents.
 //!
-//! Warnings are `plan/file-case-collision`, `plan/generated-output-unheld`,
-//! `plan/milestone-no-gate`,
+//! Warnings are `plan/baseline-gate-unproved`, `plan/file-case-collision`,
+//! `plan/generated-output-unheld`, `plan/handover-blocks-done`, `plan/milestone-no-gate`,
 //! `plan/milestone-order-unqualified`, `plan/needs-gate-effect`, `plan/probe-absent`,
-//! `plan/ui-accept-structural` and `plan/ui-milestone-no-states`, and `plan/file-only-chain` and `plan/milestone-width`
-//! are info; every other class raised here is an error.
+//! `plan/ui-accept-structural`, `plan/ui-capture-missing` and `plan/ui-milestone-no-states`,
+//! and `plan/file-only-chain` and `plan/milestone-width` are info; every other class
+//! raised here, `plan/handover-blocks-unknown` among them, is an error.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -15,7 +16,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::Result;
 use serde_json::json;
 
-use super::schema::{Bind, Contract, Decision, Handover, PlanStore};
+use super::schema::{Bind, Contract, Decision, Handover, PlanStore, Provenance};
 use super::store::{self, BRIEF_FILE, brief_digest};
 use crate::cli::{PlanCheckArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -29,8 +30,9 @@ use crate::tasks::finding::{
 use crate::tasks::markdown::FenceState;
 use crate::tasks::milestones;
 use crate::tasks::schema::{
-    BINDING_REQUIRED, EFFECT_EXTERNAL, MilestoneSpec, Premise, RUN_BY_GATE, RUN_BY_LOOK, Status,
-    Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
+    BASELINE_FAIL, BASELINE_NULL_CONTROL, BASELINE_PASS, BINDING_REQUIRED, EFFECT_EXTERNAL,
+    MilestoneSpec, Premise, RUN_BY_GATE, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec,
+    VERDICT_HEALTHY, normal_path,
 };
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
@@ -187,12 +189,14 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     );
     found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
+    found.extend(baseline_findings(&tasks, &plan));
     found.extend(needs_gate_effect_findings(&tasks));
     found.extend(ui_findings(
         &tasks,
         ui_capture::load_paths(&root).ok().as_ref(),
     ));
     found.extend(ui_scope_findings(&tasks, &root));
+    found.extend(ui_capture_findings(&tasks));
     found.extend(generated_outputs::generated_output_findings(&tasks, &root));
     found.extend(case_collision::case_collision_findings(&tasks, &root));
     if plan.approvals.is_empty() {
@@ -451,6 +455,40 @@ fn handover_findings(handover: &Handover, tasks: &Store) -> Vec<Finding> {
                 handover.id, handover.source_task
             ),
         ));
+    }
+    let blocked = |keep: fn(Option<&TaskRow>) -> bool| -> Vec<u32> {
+        let ids: BTreeSet<u32> = handover
+            .blocks
+            .iter()
+            .copied()
+            .filter(|id| keep(tasks.find(*id)))
+            .collect();
+        ids.into_iter().collect()
+    };
+    let unknown = blocked(|row| row.is_none());
+    let done = blocked(|row| row.is_some_and(|row| row.status == Status::Done));
+    if !unknown.is_empty() {
+        findings.push(error(
+            "plan/handover-blocks-unknown",
+            unknown.clone(),
+            format!(
+                "handover {} blocks {}, which no row carries",
+                handover.id,
+                task_list(&unknown, NO_TASK)
+            ),
+        ));
+    }
+    if !done.is_empty() {
+        findings.push(Finding {
+            class: "plan/handover-blocks-done",
+            severity: WARNING,
+            ids: done.clone(),
+            detail: format!(
+                "handover {} is not done and blocks {}, already done, so it held nothing back",
+                handover.id,
+                task_list(&done, NO_TASK)
+            ),
+        });
     }
     findings
 }
@@ -796,6 +834,99 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
         }
     }
     findings
+}
+
+/// Per milestone that is not deferred, the baseline gates with no standing proof.
+/// A `fail` proof stands only once a decision records the user accepting it, and
+/// a `null-control` proof only while its task is a row of the milestone with an
+/// accept entry, since that accept is what runs the base against itself.
+fn baseline_findings(tasks: &Store, plan: &PlanStore) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for milestone in &tasks.milestones {
+        if milestone.is_deferred() {
+            continue;
+        }
+        for gate in &milestone.baseline_gates {
+            let proof = milestone
+                .baseline_proofs
+                .iter()
+                .rev()
+                .find(|proof| proof.gate == *gate);
+            let why = match proof {
+                None => "has no baseline proof".to_string(),
+                Some(proof) if proof.verdict == BASELINE_PASS => continue,
+                Some(proof) if proof.verdict == BASELINE_FAIL => {
+                    if baseline_failure_accepted(plan, gate) {
+                        continue;
+                    }
+                    "failed on the unchanged tree and no user decision accepts it".to_string()
+                }
+                Some(proof) if proof.verdict == BASELINE_NULL_CONTROL => {
+                    match null_control_gap(tasks, &milestone.id, proof.task) {
+                        None => continue,
+                        Some(gap) => format!("has a null-control proof whose {gap}"),
+                    }
+                }
+                Some(proof) => format!("has a proof of unknown verdict `{}`", proof.verdict),
+            };
+            findings.push(Finding {
+                class: "plan/baseline-gate-unproved",
+                severity: WARNING,
+                ids: milestone_members(tasks, &milestone.id),
+                detail: format!(
+                    "milestone `{}`'s baseline gate `{gate}` {why}",
+                    milestone.id
+                ),
+            });
+        }
+    }
+    findings
+}
+
+/// A decision the user stated or confirmed, not vetoed, whose text names the
+/// gate's exact command.
+fn baseline_failure_accepted(plan: &PlanStore, gate: &str) -> bool {
+    plan.decisions.iter().any(|decision| {
+        decision.provenance != Provenance::AgentAssumed
+            && !decision.vetoed
+            && decision.decision.contains(gate)
+    })
+}
+
+fn null_control_gap(tasks: &Store, milestone: &str, task: Option<u32>) -> Option<String> {
+    let Some(id) = task else {
+        return Some("names no task".to_string());
+    };
+    let Some(row) = tasks.find(id).filter(|row| row.checkpoint == milestone) else {
+        return Some(format!("task {id} is no task of the milestone"));
+    };
+    if tasks
+        .spec_for(&row.r#ref)
+        .is_none_or(|spec| spec.accept.is_empty())
+    {
+        return Some(format!("task {id} holds no accept entry"));
+    }
+    None
+}
+
+/// Per milestone that is not deferred, recorded as adding or reshaping a UI
+/// surface and declaring no `ui_states`: its visual pass has nothing to judge.
+fn ui_capture_findings(tasks: &Store) -> Vec<Finding> {
+    tasks
+        .milestones
+        .iter()
+        .filter(|m| m.ui == Some(true) && m.ui_states.is_empty() && !m.is_deferred())
+        .map(|milestone| Finding {
+            class: "plan/ui-capture-missing",
+            severity: WARNING,
+            ids: milestone_members(tasks, &milestone.id),
+            detail: format!(
+                "milestone `{}` is recorded as UI work and declares no `ui_states`, so its \
+                 visual pass captures nothing",
+                milestone.id
+            ),
+        })
+        .collect()
 }
 
 /// Per pending row, the first row its `needs` reach in its own milestone that

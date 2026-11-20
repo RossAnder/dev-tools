@@ -752,6 +752,9 @@ mod tests {
             ui_states: Vec::new(),
             ui_controls: Vec::new(),
             external_gates: Vec::new(),
+            baseline_gates: Vec::new(),
+            baseline_proofs: Vec::new(),
+            ui: None,
         }
     }
 

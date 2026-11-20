@@ -11,7 +11,7 @@ that write it and the check classes are [plan.md](plan.md); the probe verdicts a
 ## `plan.toml` store shape
 
 ```toml
-schema_version = 6
+schema_version = 7
 last_updated = 2026-11-05
 
 [binding]
@@ -56,6 +56,7 @@ brief_sha256 = "<hex>"
 by = "user"
 review = "ran"
 reason = ""
+delta_waiver = ""
 
 [[run]]
 step = "investigate"
@@ -76,6 +77,9 @@ when = "Once the run reports done."
 done_when = "The new command appears in a fresh session's command list."
 source_task = 3
 done = false
+blocks = [6]
+ready_check = "grep -q '^API_TOKEN=' .env"
+note = "token is in .env, checked 2026-11-21"
 
 [[attempt]]
 task = 7
@@ -101,6 +105,14 @@ why = "why it matters"
 command = "cargo clippy --manifest-path glimpse/Cargo.toml"
 result = "pass"
 
+[[attempt.sources]]
+url = "https://developers.cloudflare.com/analytics/graphql-api/"
+query = ""
+claim = "workersInvocationsAdaptive carries cpuTimeUs per scriptVersion"
+how_verified = "queried live with the account token; 3 rows returned"
+fetched_at = 2026-11-20
+version = ""
+
 [attempt.handover]
 reason = "restart"
 action = "Restart glimpse."
@@ -122,6 +134,13 @@ duration_s = 84
 summary = "412 passed; 2 failed"
 failed_ids = ["view::plan::tests::sections"]
 log = ".claude/flows/<slug>/gates/B-r0-s1-c1.log"
+base_checked = true
+base_failed_ids = ["view::plan::tests::sections"]
+
+[[gate_round.tree]]
+path = "glimpse/src/view/plan.rs"
+raw = "<sha256 of the file's bytes>"
+stripped = "<sha256 of the bytes with every ASCII whitespace byte removed>"
 
 [[report]]
 at = 2026-11-12T10:30:00Z
@@ -178,13 +197,25 @@ class = "clipping"
 location = "the badge"
 detail = ""
 note = ""
+
+[[gate_accept]]
+milestone = "B"
+round = 2
+at = 2026-11-21T10:00:00Z
+kind = "accept"
+why = "two browser cases flake under load; solo reruns pass"
+backlog = "B-1234abcd"
+
+[[gate_accept.commands]]
+command = "bun run test:ui"
+failed_ids = ["|browser| src/a.test.ts > renders"]
 ```
 
 Keys are written in that order, each root key but `schema_version` omitted while empty. Every write
 restamps `last_updated`, re-emits the store from this shape, so an unknown key is dropped, and
 LF-normalises free text. A `schema_version` newer than the binary's is refused rather than read.
 
-The stamp is `6` while the store holds a `[[visual_accept]]`, otherwise `5` while it holds a `[[request]]`, otherwise `4` while any decision carries a `class`, otherwise `3` while the store holds an
+The stamp is `7` while the store holds any of: a `[[gate_accept]]`, a gate command with `base_checked`, `base_failed_ids` or `base_whole_failed` set, a gate round with a `tree`, a handover with `blocks`, `ready_check` or `note`, an attempt with `sources`, or an approval with a `delta_waiver`. Each of those keys is written only when set, so a store using none of them keeps its stamp. Otherwise the stamp is `6` while the store holds a `[[visual_accept]]`, otherwise `5` while it holds a `[[request]]`, otherwise `4` while any decision carries a `class`, otherwise `3` while the store holds an
 `[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `2` while it holds none of those. A binary that
 predates those keys or arrays therefore refuses such a store rather than rewriting it without them,
 and a store that holds none reads and writes as it did before they existed. Removing what raised the
@@ -232,6 +263,7 @@ id is then never minted again.
 | `by` | `user`. |
 | `review` | How plan review was settled: `ran`, `skipped-low-risk` or `skipped-flag`. |
 | `reason` | Why review was skipped. |
+| `delta_waiver` | The user's reason for approving with plan records changed since the last finished review run left unreviewed. Absent while empty. |
 
 | `[[run]]` key | Meaning |
 |---|---|
@@ -257,6 +289,11 @@ id is then never minted again.
 | `done_when` | What the user can observe to know it is done. |
 | `source_task` | The task id that makes it necessary. `plan check` reports an id no row carries. |
 | `done` | Set by `plan handover done`. |
+| `blocks` | Task ids that may not launch until this handover is done. Absent while empty. |
+| `ready_check` | A read-only command the orchestrator runs, never tomlctl, that exits 0 once the input is in place. It tests presence (`grep -q '^NAME=' .env`, `test -n "$NAME"`) and never prints or holds a secret's value, since `plan.toml` is committed. Absent while empty. |
+| `note` | What was observed when the handover was marked done: where an input lives and its kind, never its value. Absent while empty. |
+
+`blocks`, `ready_check` and `note` are written through `plan handover set`.
 
 The three run-record arrays are written by the orchestrator through `plan run` leaves only; workers
 never write `plan.toml`, so a worker's `tasks update` cannot drop them.
@@ -276,6 +313,7 @@ never write `plan.toml`, so a worker's `tasks update` cannot drop them.
 | `deviations` | Each `{what, why, means}`; `means` names the suggested means departed from, `""` when none. |
 | `tangential` | Each `{kind, area, summary, why}`, the note's `TANGENTIAL:` lines. `kind` is kept as written. |
 | `checks` | Each `{command, result}`, `result` one of `pass`, `fail` or `not-run`. A note's check with any other `result` is left out and named in `problem`. |
+| `sources` | Each `{url, query, claim, how_verified, fetched_at, version}`, from the note block's `[[sources]]` table: an outside fact the worker verified. `claim` and one of `url` or `query` are required, `fetched_at` is a date and required, and `version` names the library, API or platform version the claim holds for, `""` when none. Absent while empty. |
 | `problem` | The one line `plan run notes` reported as the row's `problem`: a missing or malformed note with the reason, a Status that disagrees with the task row, or the checks left out. Absent when there was none. |
 | `handover` | The handover the worker proposed, `{reason, action, when, done_when}`; absent when it proposed none. `reason` is kept as written. |
 
@@ -291,7 +329,18 @@ commands it names.
 | `seq` | `1` for the round's first gate run, one more for each later run of it. Required. |
 | `at` | When the run was recorded. Required. |
 | `outcome` | `pass` when every command is `pass` or `flaky`, `timeout` when a timeout is the only non-pass, otherwise `fail`. |
-| `commands` | Each command's `{command, outcome, exit, duration_s, summary, failed_ids, log}`. `outcome` is `pass`, `flaky`, `fail` or `timeout`; `exit` is absent when the agent reported none; `log` names the kept log, `<milestone>-r<round>-s<seq>-c<n>.log`, or `""` when none was kept. |
+| `commands` | Each command's `{command, outcome, exit, duration_s, summary, failed_ids, log}`, plus the base-rerun keys below. `outcome` is `pass`, `flaky`, `fail` or `timeout`; `exit` is absent when the agent reported none; `log` names the kept log, `<milestone>-r<round>-s<seq>-c<n>.log`, or `""` when none was kept. |
+| `tree` | Written when the run's outcome is `fail`: each `{path, raw, stripped}`, one per path in the `files` of every row of the milestone at record time, changed or not, read from disk with no git call. `raw` is the SHA-256 of the file's bytes and `stripped` the SHA-256 of its bytes with every ASCII whitespace byte removed; a path that does not exist reads `"deleted"` in both. Absent while empty. |
+
+A gate command's base-rerun keys, each absent while unset:
+
+| `[[gate_round.commands]]` key | Meaning |
+|---|---|
+| `base_checked` | `true` once the command's failed tests were rerun at the milestone's base. |
+| `base_failed_ids` | The subset of `failed_ids` that also failed at base. |
+| `base_whole_failed` | `true` when a whole-command base rerun failed. |
+
+A command is a base failure when `base_checked` is true and either `failed_ids` is non-empty and `base_failed_ids` equals it as sets, or `base_whole_failed` is true and the command is one of the milestone's `gates`. It is a partial base failure when `base_failed_ids` is a non-empty proper subset of `failed_ids`.
 
 `[[report]]` is what one invocation left for a person, appended by `plan run report`, one per
 invocation.
@@ -331,3 +380,15 @@ invocation.
 | `looks` | Each `{task, accept}`: a waived `run_by = "look"` accept entry, by its 0-based index in the task's `accept`. |
 | `defects` | Each `{state, class, location, detail, note}`: a reported defect accepted, `state` being one of `states`. |
 | `backlog` | The id of the backlog item that follows the waiver up. |
+
+`[[gate_accept]]` is the user's settling of a milestone gate still red after a round, keyed on (`milestone`, `round`), and a `base` record on (`milestone`, `round`, `kind`) beside the others: a second record for the same key replaces the first. A record is refused while the round's latest gate run holds a `timeout` command.
+
+| `[[gate_accept]]` key | Meaning |
+|---|---|
+| `milestone` | The milestone whose gate failed. Required. |
+| `round` | The gate round settled. Required. |
+| `at` | When the record was written. Required. |
+| `kind` | Required: `accept` commits past the named failures; `extra-round` raises the milestone's round cap by one for each such record; `base` waives only failures that predate the milestone, and in later rounds the drain treats its waived ids as passing when they fail again. An unknown value is refused. |
+| `why` | Why the user settled it this way. |
+| `backlog` | The follow-up backlog item; required for `accept` and `base`, `""` for `extra-round`. |
+| `commands` | Each `{command, failed_ids}`. Each names a command whose outcome is `fail` in the round's latest gate run, with `failed_ids` a subset of that run's. An `accept` names every failing command of that run. A `base` names only base or partial base failures, with `failed_ids` a subset of the command's `base_failed_ids`, or the command alone when `base_whole_failed` is true, and does not by itself satisfy the commit condition. |

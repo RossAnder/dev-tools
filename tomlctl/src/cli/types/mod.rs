@@ -235,6 +235,17 @@ pub(crate) const FEATURES: &[&str] = &[
     "review_plan_ceiling",
     "review_escalations",
     "review_stats_yield",
+    // Milestone A harness gates, handovers, run-note sources and plan digests.
+    "gate_base_rerun",
+    "gate_accept",
+    "gate_list_after_round",
+    "worker_build_check",
+    "baseline_gates",
+    "launch_args_builds",
+    "handover_blocks",
+    "drift_affected_decisions",
+    "run_note_sources",
+    "review_plan_digest",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

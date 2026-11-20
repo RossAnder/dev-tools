@@ -24,11 +24,14 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-/// The newest version this binary reads, stamped on a store whose accept
-/// entries carry `effect` or whose milestones carry `external_gates`. A binary
-/// that only knows an older version refuses that stamp rather than dropping
-/// those keys.
-pub(crate) const SCHEMA_VERSION: i64 = 4;
+/// The newest version this binary reads, stamped on a store whose milestones
+/// carry `baseline_gates`, `baseline_proofs` or `ui`. A binary that only knows
+/// an older version refuses that stamp rather than dropping those keys.
+pub(crate) const SCHEMA_VERSION: i64 = 5;
+
+/// The stamp on a store whose accept entries carry `effect` or whose
+/// milestones carry `external_gates`, and none of the newer keys.
+pub(crate) const V4_SCHEMA_VERSION: i64 = 4;
 
 /// The stamp on a store whose milestones carry `ui_states` or `ui_controls` or
 /// whose accept entries carry `run_by = "look"` or `states`, and none of the
@@ -374,13 +377,6 @@ impl Accept {
         } else if !self.states.is_empty() {
             return Some("`states` is allowed only with `run_by = \"look\"`".to_string());
         }
-        if self.run_by == RUN_BY_WORKER && self.writes_build {
-            return Some(
-                "`run_by = \"worker\"` needs `writes_build = false`: a worker never runs a \
-                 check that builds"
-                    .to_string(),
-            );
-        }
         match (self.run_by == RUN_BY_COVERED, self.covered_by.is_empty()) {
             (true, true) => Some("`run_by = \"covered\"` needs a `covered_by` gate".to_string()),
             (false, false) => {
@@ -441,6 +437,29 @@ pub(crate) struct MilestoneSpec {
     /// Gates, each the exact command of one of `gates`, whose effect reaches
     /// outside the working tree.
     pub(crate) external_gates: Vec<String>,
+    /// Comparison or snapshot gates, each the exact command of one of `gates`,
+    /// whose verdict is proved on the unchanged tree.
+    pub(crate) baseline_gates: Vec<String>,
+    /// At most one proof per baseline gate.
+    pub(crate) baseline_proofs: Vec<BaselineProof>,
+    /// Whether the milestone adds or reshapes a UI surface; `None` until the
+    /// call is recorded.
+    pub(crate) ui: Option<bool>,
+}
+
+pub(crate) const BASELINE_PASS: &str = "pass";
+pub(crate) const BASELINE_FAIL: &str = "fail";
+pub(crate) const BASELINE_NULL_CONTROL: &str = "null-control";
+
+/// The verdict of a baseline gate run on the unchanged tree. A `null-control`
+/// proof names in `task` the milestone row whose accept runs the gate's tool on
+/// the base against itself; `pass` and `fail` carry no task.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BaselineProof {
+    pub(crate) gate: String,
+    pub(crate) verdict: String,
+    pub(crate) at: Option<Datetime>,
+    pub(crate) task: Option<u32>,
 }
 
 /// A cheap command that fails where `gate`, one of its milestone's gates, cannot
@@ -568,6 +587,17 @@ impl Store {
     }
 
     /// Whether the store holds any key that stamps it [`SCHEMA_VERSION`].
+    pub(crate) fn holds_v5_keys(&self) -> bool {
+        self.milestones.iter().any(|entry| {
+            !entry.id.is_empty()
+                && (!entry.baseline_gates.is_empty()
+                    || !entry.baseline_proofs.is_empty()
+                    || entry.ui.is_some())
+        })
+    }
+
+    /// Whether the store holds any key that stamps it at least
+    /// [`V4_SCHEMA_VERSION`].
     pub(crate) fn holds_v4_keys(&self) -> bool {
         self.milestones
             .iter()
@@ -914,8 +944,10 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .filter(|entry| !entry.r#ref.is_empty())
         .map(change_to_toml)
         .collect();
-    let stamp = if store.holds_v4_keys() {
+    let stamp = if store.holds_v5_keys() {
         SCHEMA_VERSION
+    } else if store.holds_v4_keys() {
+        V4_SCHEMA_VERSION
     } else if store.holds_v3_keys() {
         V3_SCHEMA_VERSION
     } else if store.holds_v2_keys() {
@@ -1442,6 +1474,24 @@ fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec>
             .collect::<Result<Vec<_>>>()?,
         None => Vec::new(),
     };
+    let baseline_proofs = match table.get("baseline_proofs") {
+        Some(raw) => raw
+            .as_array()
+            .ok_or_else(|| anyhow!("milestones[{index}].baseline_proofs is not an array"))?
+            .iter()
+            .enumerate()
+            .map(|(at, entry)| baseline_proof_from_toml(entry, index, at))
+            .collect::<Result<Vec<_>>>()?,
+        None => Vec::new(),
+    };
+    // Strict: reading a damaged call as absent would erase it at the next write.
+    let ui = match table.get("ui") {
+        Some(raw) => Some(
+            raw.as_bool()
+                .ok_or_else(|| anyhow!("milestones[{index}].ui is not a boolean"))?,
+        ),
+        None => None,
+    };
     Ok(MilestoneSpec {
         id: str_or(table, "id", ""),
         gates: lf_array(table, "gates"),
@@ -1452,12 +1502,59 @@ fn milestone_from_toml(value: &TomlValue, index: usize) -> Result<MilestoneSpec>
         ui_states: str_array(table, "ui_states"),
         ui_controls: str_array(table, "ui_controls"),
         external_gates: lf_array(table, "external_gates"),
+        baseline_gates: lf_array(table, "baseline_gates"),
+        baseline_proofs,
+        ui,
     })
 }
 
-/// `gate_probes`, `after`, `ui_states`, `ui_controls` and `external_gates` are
-/// written only when they hold an entry, so a milestone with none keeps the
-/// bytes it was stored with.
+fn baseline_proof_from_toml(value: &TomlValue, index: usize, at: usize) -> Result<BaselineProof> {
+    let entry = value
+        .as_table()
+        .ok_or_else(|| anyhow!("milestones[{index}].baseline_proofs[{at}] is not a table"))?;
+    let task = match entry.get("task") {
+        Some(raw) => Some(
+            raw.as_integer()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| {
+                    anyhow!(
+                        "milestones[{index}].baseline_proofs[{at}].task is not a non-negative \
+                         integer"
+                    )
+                })?,
+        ),
+        None => None,
+    };
+    Ok(BaselineProof {
+        gate: lf(&str_or(entry, "gate", "")),
+        verdict: str_or(entry, "verdict", ""),
+        at: entry.get("at").and_then(as_date),
+        task,
+    })
+}
+
+fn baseline_proof_to_toml(entry: &BaselineProof) -> TomlValue {
+    let BaselineProof {
+        gate,
+        verdict,
+        at,
+        task,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("gate".to_string(), TomlValue::String(lf(gate)));
+    table.insert("verdict".to_string(), TomlValue::String(verdict.clone()));
+    if let Some(at) = at {
+        table.insert("at".to_string(), TomlValue::Datetime(*at));
+    }
+    if let Some(task) = task {
+        table.insert("task".to_string(), TomlValue::Integer(i64::from(*task)));
+    }
+    TomlValue::Table(table)
+}
+
+/// `gate_probes`, `after`, `ui_states`, `ui_controls`, `external_gates`,
+/// `baseline_gates`, `baseline_proofs` and `ui` are written only when they hold
+/// a value, so a milestone with none keeps the bytes it was stored with.
 fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
     let MilestoneSpec {
         id,
@@ -1469,6 +1566,9 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
         ui_states,
         ui_controls,
         external_gates,
+        baseline_gates,
+        baseline_proofs,
+        ui,
     } = entry;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
@@ -1512,6 +1612,16 @@ fn milestone_to_toml(entry: &MilestoneSpec) -> TomlValue {
     }
     if !external_gates.is_empty() {
         table.insert("external_gates".to_string(), lf_arr_value(external_gates));
+    }
+    if !baseline_gates.is_empty() {
+        table.insert("baseline_gates".to_string(), lf_arr_value(baseline_gates));
+    }
+    if let Some(ui) = ui {
+        table.insert("ui".to_string(), TomlValue::Boolean(*ui));
+    }
+    if !baseline_proofs.is_empty() {
+        let entries = baseline_proofs.iter().map(baseline_proof_to_toml).collect();
+        table.insert("baseline_proofs".to_string(), TomlValue::Array(entries));
     }
     TomlValue::Table(table)
 }
@@ -2229,6 +2339,9 @@ mod tests {
                 ui_states: Vec::new(),
                 ui_controls: Vec::new(),
                 external_gates: Vec::new(),
+                baseline_gates: Vec::new(),
+                baseline_proofs: Vec::new(),
+                ui: None,
             }],
             changes: vec![Change {
                 at: Some("2026-11-05".parse().expect("bare date parses")),
@@ -2528,7 +2641,11 @@ commit = ""
             run_by: RUN_BY_WORKER.to_string(),
             ..entry(true)
         };
-        assert!(building_worker.owner_problem().is_some());
+        assert_eq!(
+            building_worker.owner_problem(),
+            None,
+            "a worker may run its own building reproducer"
+        );
         let stray_cover = Accept {
             covered_by: "cargo test".to_string(),
             ..entry(true)
@@ -2624,7 +2741,7 @@ commit = ""
             assert_eq!(entry.owner_problem(), None, "{run_by}");
             let mut store = v2_fixture();
             store.specs[0].accept.push(entry);
-            store.schema_version = SCHEMA_VERSION;
+            store.schema_version = V4_SCHEMA_VERSION;
             let text = toml::to_string(&to_toml(&store)).expect("serialises");
             assert!(text.starts_with("schema_version = 4\n"), "{text}");
             assert!(text.contains("effect = \"external\""), "{text}");
@@ -2672,7 +2789,7 @@ commit = ""
     fn a_milestone_external_gate_alone_raises_the_stamp_to_version_4() {
         let mut store = v2_fixture();
         store.milestones[0].external_gates = store.milestones[0].gates.clone();
-        store.schema_version = SCHEMA_VERSION;
+        store.schema_version = V4_SCHEMA_VERSION;
         assert!(
             store
                 .specs
@@ -2699,6 +2816,68 @@ commit = ""
         let again =
             toml::to_string(&to_toml(&from_toml(&reparsed).expect("parses"))).expect("serialises");
         assert_eq!(again, text);
+    }
+
+    /// Baseline gates, their proofs and the ui call each stamp version 5 and
+    /// round-trip; a null-control proof keeps its task.
+    #[test]
+    fn milestone_baseline_fields_and_ui_raise_the_stamp_to_version_5() {
+        let gate = "cargo nextest run --manifest-path x/Cargo.toml".to_string();
+        let proofs = vec![
+            BaselineProof {
+                gate: gate.clone(),
+                verdict: BASELINE_PASS.to_string(),
+                at: Some("2026-11-21T10:00:00Z".parse().expect("a datetime")),
+                task: None,
+            },
+            BaselineProof {
+                gate: gate.clone(),
+                verdict: BASELINE_NULL_CONTROL.to_string(),
+                at: Some("2026-11-21T11:00:00Z".parse().expect("a datetime")),
+                task: Some(7),
+            },
+        ];
+        let cases: [fn(&mut MilestoneSpec, &[BaselineProof]); 3] = [
+            |spec, _| spec.baseline_gates = spec.gates.clone(),
+            |spec, proofs| {
+                spec.baseline_gates = spec.gates.clone();
+                spec.baseline_proofs = proofs.to_vec();
+            },
+            |spec, _| spec.ui = Some(false),
+        ];
+        for set in cases {
+            let mut store = v2_fixture();
+            set(&mut store.milestones[0], &proofs);
+            store.schema_version = SCHEMA_VERSION;
+            let text = toml::to_string(&to_toml(&store)).expect("serialises");
+            assert!(text.starts_with("schema_version = 5\n"), "{text}");
+            let reparsed: TomlValue = toml::from_str(&text).expect("the output parses");
+            assert_eq!(from_toml(&reparsed).expect("parses"), store, "{text}");
+        }
+        let plain = toml::to_string(&to_toml(&v2_fixture())).expect("serialises");
+        assert!(
+            !plain.contains("baseline") && !plain.contains("ui ="),
+            "{plain}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_ui_call_or_proof_task_is_refused() {
+        for (key, value) in [
+            ("ui", TomlValue::String("yes".to_string())),
+            (
+                "baseline_proofs",
+                TomlValue::Array(vec![TomlValue::String("pass".to_string())]),
+            ),
+        ] {
+            let mut doc = to_toml(&v2_fixture());
+            let milestone = doc["milestones"].as_array_mut().expect("milestones")[0]
+                .as_table_mut()
+                .expect("a table");
+            milestone.insert(key.to_string(), value);
+            let err = from_toml(&doc).expect_err("refused");
+            assert!(err.to_string().contains(key), "{err}");
+        }
     }
 
     /// A spec holding a bare string where a table belongs is a damaged store,

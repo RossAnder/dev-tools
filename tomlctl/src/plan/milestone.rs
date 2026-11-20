@@ -15,8 +15,9 @@ use crate::cli::{
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
 use crate::tasks::schema::{
-    Change, Checkpoint, DEFAULT_ACTOR, ELABORATION_DEFERRED, ELABORATION_ELABORATED,
-    ELABORATION_UPFRONT, GateProbe, MILESTONE_REF_PREFIX, MilestoneSpec, Store,
+    BASELINE_FAIL, BASELINE_NULL_CONTROL, BASELINE_PASS, BaselineProof, Change, Checkpoint,
+    DEFAULT_ACTOR, ELABORATION_DEFERRED, ELABORATION_ELABORATED, ELABORATION_UPFRONT, GateProbe,
+    MILESTONE_REF_PREFIX, MilestoneSpec, Store,
 };
 use crate::tasks::{
     ReviewEditOutcome, load_store, mutate_store, resolve_store_path, unwritten_outcome,
@@ -127,6 +128,146 @@ fn gates_and_marks(gates: &[String], external: &[String]) -> (Vec<String>, Vec<S
     (all, marks)
 }
 
+/// `--ui yes|no` as the stored call.
+fn parse_ui(raw: Option<&str>) -> Result<Option<bool>> {
+    match raw.map(str::trim) {
+        None => Ok(None),
+        Some("yes") => Ok(Some(true)),
+        Some("no") => Ok(Some(false)),
+        Some(other) => Err(refuse(format!(
+            "`--ui {other}` is not a UI call: pass `yes` or `no`"
+        ))),
+    }
+}
+
+/// The baseline gates for `--baseline-gate`, each stored once and each one of
+/// `gates`, which holds the external gates too.
+fn baseline_gates_for(id: &str, named: &[String], gates: &[String]) -> Result<Vec<String>> {
+    let mut kept: Vec<String> = Vec::new();
+    for gate in named {
+        if !gates.contains(gate) {
+            return Err(refuse(format!(
+                "`--baseline-gate {gate}` names no gate of milestone `{id}`: a baseline gate must \
+                 also be a `--gate` or `--external-gate`"
+            )));
+        }
+        if !kept.contains(gate) {
+            kept.push(gate.clone());
+        }
+    }
+    Ok(kept)
+}
+
+/// One `--baseline-proof`, parsed but not yet checked against the store.
+#[derive(Debug, Clone)]
+struct ProofArg {
+    raw: String,
+    gate: String,
+    verdict: String,
+    task: Option<u32>,
+}
+
+/// Splits each `--baseline-proof` value at its first ` :: ` into the gate and
+/// the verdict; a `null-control` verdict takes a third part, the task id.
+fn parse_baseline_proofs(raw: &[String]) -> Result<Vec<ProofArg>> {
+    raw.iter()
+        .map(|value| {
+            let Some((gate, rest)) = value.split_once(GATE_PROBE_SEPARATOR) else {
+                return Err(refuse(format!(
+                    "`--baseline-proof {value}` has no ` :: `: pass `<gate> :: <verdict>`"
+                )));
+            };
+            if gate.trim().is_empty() {
+                return Err(refuse(format!(
+                    "`--baseline-proof {value}` needs a gate before ` :: `"
+                )));
+            }
+            let (verdict, task) = match rest.split_once(GATE_PROBE_SEPARATOR) {
+                Some((verdict, task)) => (verdict.trim(), Some(task.trim())),
+                None => (rest.trim(), None),
+            };
+            let task = match (verdict, task) {
+                (BASELINE_NULL_CONTROL, Some(task)) => Some(task.parse::<u32>().map_err(|_| {
+                    refuse(format!(
+                        "`--baseline-proof {value}` names task `{task}`, which is not a task id"
+                    ))
+                })?),
+                (BASELINE_NULL_CONTROL, None) => {
+                    return Err(refuse(format!(
+                        "`--baseline-proof {value}` is a null-control proof and needs the task \
+                         whose accept runs it: pass `<gate> :: null-control :: <task id>`"
+                    )));
+                }
+                (BASELINE_PASS | BASELINE_FAIL, None) => None,
+                (BASELINE_PASS | BASELINE_FAIL, Some(_)) => {
+                    return Err(refuse(format!(
+                        "`--baseline-proof {value}`: a `{verdict}` verdict takes no third part"
+                    )));
+                }
+                _ => {
+                    return Err(refuse(format!(
+                        "`--baseline-proof {value}` has verdict `{verdict}`: expected one of \
+                         {BASELINE_PASS}, {BASELINE_FAIL}, {BASELINE_NULL_CONTROL}"
+                    )));
+                }
+            };
+            Ok(ProofArg {
+                raw: value.clone(),
+                gate: gate.to_string(),
+                verdict: verdict.to_string(),
+                task,
+            })
+        })
+        .collect()
+}
+
+/// Refuses a null-control proof whose task is no row of milestone `id`, or a
+/// row whose spec holds no accept entry to run the gate's tool.
+fn check_proof_tasks(store: &Store, id: &str, proofs: &[ProofArg]) -> Result<()> {
+    for proof in proofs {
+        let Some(task) = proof.task else {
+            continue;
+        };
+        let Some(row) = store
+            .items
+            .iter()
+            .find(|row| row.id == task && row.checkpoint == id)
+        else {
+            return Err(refuse(format!(
+                "`--baseline-proof {}` names task {task}, which is no task of milestone `{id}`",
+                proof.raw
+            )));
+        };
+        let has_accept = store
+            .specs
+            .iter()
+            .any(|spec| spec.r#ref == row.r#ref && !spec.accept.is_empty());
+        if !has_accept {
+            return Err(refuse(format!(
+                "`--baseline-proof {}` names task {task}, which holds no accept entry to run the \
+                 gate's tool on the base against itself",
+                proof.raw
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn baseline_proofs_json(proofs: &[BaselineProof]) -> String {
+    let entries: Vec<JsonValue> = proofs
+        .iter()
+        .map(|entry| match entry.task {
+            Some(task) => json!({ "gate": entry.gate, "verdict": entry.verdict, "task": task }),
+            None => json!({ "gate": entry.gate, "verdict": entry.verdict }),
+        })
+        .collect();
+    JsonValue::Array(entries).to_string()
+}
+
+fn ui_text(ui: Option<bool>) -> String {
+    ui.map(|call| call.to_string()).unwrap_or_default()
+}
+
 fn gate_probes_json(probes: &[GateProbe]) -> String {
     let pairs: Vec<JsonValue> = probes
         .iter()
@@ -199,6 +340,8 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
     }
     let (gates, external_gates) = gates_and_marks(&args.gate, &args.external_gate);
     let gate_probes = gate_probes_for(&id, &parse_gate_probes(&args.gate_probe)?, &gates, &[])?;
+    let baseline_gates = baseline_gates_for(&id, &args.baseline_gate, &gates)?;
+    let ui = parse_ui(args.ui.as_deref())?;
     check_ui_names("--ui-state", &args.ui_state)?;
     check_ui_names("--ui-control", &args.ui_control)?;
     check_ui_disjoint(&id, &args.ui_state, &args.ui_control)?;
@@ -240,6 +383,9 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
             ui_states: args.ui_state.clone(),
             ui_controls: args.ui_control.clone(),
             external_gates: external_gates.clone(),
+            baseline_gates: baseline_gates.clone(),
+            baseline_proofs: Vec::new(),
+            ui,
         });
         if store.audit {
             store.changes.push(change(
@@ -263,6 +409,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         && args.external_gate.is_empty()
         && !args.clear_gate
         && args.gate_probe.is_empty()
+        && args.baseline_gate.is_empty()
+        && args.baseline_proof.is_empty()
+        && args.ui.is_none()
         && args.ui_state.is_empty()
         && args.ui_control.is_empty()
         && !args.clear_ui
@@ -273,12 +422,14 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     {
         return Err(refuse(
             "nothing to update: pass `--goal`, `--gate`, `--external-gate`, `--clear-gate`, \
-             `--gate-probe`, \
+             `--gate-probe`, `--baseline-gate`, `--baseline-proof`, `--ui`, \
              `--ui-state`, `--ui-control`, `--clear-ui`, `--after`, `--clear-after`, \
              `--defer` or `--elaborated`"
                 .to_string(),
         ));
     }
+    let ui = parse_ui(args.ui.as_deref())?;
+    let baseline_proofs = parse_baseline_proofs(&args.baseline_proof)?;
     if args.clear_ui && (!args.ui_state.is_empty() || !args.ui_control.is_empty()) {
         return Err(refuse(
             "`--clear-ui` and `--ui-state` or `--ui-control` set the ui lists two different ways"
@@ -324,6 +475,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         gates: gates_given.then_some(gates),
         external_gates: gates_given.then_some(external_gates),
         gate_probes: (!gate_probes.is_empty()).then_some(gate_probes),
+        baseline_gates: (!args.baseline_gate.is_empty()).then(|| args.baseline_gate.clone()),
+        baseline_proofs,
+        ui,
         ui_states: (!args.ui_state.is_empty() || args.clear_ui).then(|| args.ui_state.clone()),
         ui_controls: (!args.ui_control.is_empty() || args.clear_ui)
             .then(|| args.ui_control.clone()),
@@ -352,6 +506,13 @@ struct MilestonePatch {
     /// `(gate, probe)` pairs replacing the whole probe list, each checked
     /// against the gates the patch leaves.
     gate_probes: Option<Vec<(String, String)>>,
+    /// The baseline gates replacing the whole list, each checked against the
+    /// gates the patch leaves. `None` with `gates` set keeps only the baseline
+    /// gates still a gate.
+    baseline_gates: Option<Vec<String>>,
+    /// Proofs upserted by gate, each naming a baseline gate the patch leaves.
+    baseline_proofs: Vec<ProofArg>,
+    ui: Option<bool>,
     ui_states: Option<Vec<String>>,
     ui_controls: Option<Vec<String>>,
     after: Option<Vec<String>>,
@@ -385,6 +546,7 @@ fn patch_milestone(
     if let Some(after) = &patch.after {
         check_after(store, id, after)?;
     }
+    check_proof_tasks(store, id, &patch.baseline_proofs)?;
     let checkpoint = store
         .checkpoints
         .iter_mut()
@@ -408,6 +570,9 @@ fn patch_milestone(
                 ui_states: Vec::new(),
                 ui_controls: Vec::new(),
                 external_gates: Vec::new(),
+                baseline_gates: Vec::new(),
+                baseline_proofs: Vec::new(),
+                ui: None,
             });
             store.milestones.len() - 1
         }
@@ -444,6 +609,64 @@ fn patch_milestone(
             gate_probes_json(&old),
             gate_probes_json(&spec.gate_probes),
         ));
+    }
+    let baseline = match (&patch.baseline_gates, &patch.gates) {
+        (Some(named), _) => Some(baseline_gates_for(id, named, &spec.gates)?),
+        (None, Some(_)) => Some(
+            spec.baseline_gates
+                .iter()
+                .filter(|gate| spec.gates.contains(gate))
+                .cloned()
+                .collect(),
+        ),
+        (None, None) => None,
+    };
+    if let Some(baseline) = baseline {
+        let old = std::mem::replace(&mut spec.baseline_gates, baseline);
+        changes.push((
+            "baseline_gates",
+            json!(old).to_string(),
+            json!(spec.baseline_gates).to_string(),
+        ));
+    }
+    let old_proofs = baseline_proofs_json(&spec.baseline_proofs);
+    let gates_left = spec.baseline_gates.clone();
+    spec.baseline_proofs
+        .retain(|proof| gates_left.contains(&proof.gate));
+    if !patch.baseline_proofs.is_empty() {
+        let at = crate::time::now_toml_datetime()?;
+        for proof in &patch.baseline_proofs {
+            if !spec.baseline_gates.contains(&proof.gate) {
+                return Err(refuse(format!(
+                    "`--baseline-proof {}` names `{}`, which is no baseline gate of milestone \
+                     `{id}`",
+                    proof.raw, proof.gate
+                )));
+            }
+            let entry = BaselineProof {
+                gate: proof.gate.clone(),
+                verdict: proof.verdict.clone(),
+                at: Some(at),
+                task: proof.task,
+            };
+            match spec
+                .baseline_proofs
+                .iter()
+                .position(|stored| stored.gate == proof.gate)
+            {
+                Some(slot) => spec.baseline_proofs[slot] = entry,
+                None => spec.baseline_proofs.push(entry),
+            }
+        }
+    }
+    changes.push((
+        "baseline_proofs",
+        old_proofs,
+        baseline_proofs_json(&spec.baseline_proofs),
+    ));
+    if let Some(ui) = patch.ui {
+        let old = spec.ui.replace(ui);
+        changes.push(("ui", ui_text(old), ui_text(spec.ui)));
     }
     if patch.ui_states.is_some() || patch.ui_controls.is_some() {
         check_ui_disjoint(

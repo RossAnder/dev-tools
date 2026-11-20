@@ -875,6 +875,554 @@ fn the_gate_leaf_writes_only_the_gate_round_array() {
     assert!(after.get("gate_round").is_some());
 }
 
+/// A flow whose milestone's gates are `cargo test` and `cargo nextest`, with
+/// rows 1 and 2 naming `src/row1.rs` and `src/row2.rs`.
+fn base_flow() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = sandbox();
+    let doc = json!({
+        "schema_version": 3,
+        "checkpoints": [{ "id": MILESTONE, "rationale": "this one" }],
+        "milestones": [{ "id": MILESTONE, "gates": ["cargo test", "cargo nextest"] }],
+        "items": [row(1, "done"), row(2, "done")],
+    });
+    seed_tasks(&root, &toml::to_string(&doc).unwrap());
+    fs::write(flow_dir(&root).join("plan.toml"), "schema_version = 2\n").unwrap();
+    (dir, root)
+}
+
+fn failed(command: &str, ids: &[&str]) -> Value {
+    json!({"command": command, "outcome": "fail", "exit": 101, "failed_ids": ids})
+}
+
+fn base(root: &Path, round: u32, rows: &[Value]) -> assert_cmd::assert::Assert {
+    let stdin: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    let round = round.to_string();
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "gate", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", &round, "--ndjson", "-"])
+        .arg("--base")
+        .write_stdin(stdin)
+        .assert()
+}
+
+fn base_command(root: &Path, command: &str) -> toml::Value {
+    let rounds = gate_rounds(root);
+    let latest = rounds.last().expect("a recorded run");
+    latest["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["command"].as_str() == Some(command))
+        .unwrap_or_else(|| panic!("no command `{command}` in {latest:?}"))
+        .clone()
+}
+
+fn strings(value: Option<&toml::Value>) -> Vec<String> {
+    value
+        .and_then(toml::Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .map(|id| id.as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn validation_message(assert: &assert_cmd::assert::Assert) -> String {
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    err["message"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_base_rerun_marks_base_and_partial_base_failures_ignoring_foreign_ids() {
+    let (_dir, root) = base_flow();
+    gate(
+        &root,
+        0,
+        false,
+        &[
+            command_row("cargo clippy", "pass", ""),
+            failed("cargo test", &["a::b", "c::d"]),
+            failed("cargo nextest", &["e::f", "g::h"]),
+        ],
+    )
+    .success();
+
+    let out = stdout_json(
+        &base(
+            &root,
+            0,
+            &[
+                failed("cargo test a::b c::d", &["c::d", "z::z", "a::b"]),
+                failed("cargo nextest e::f g::h", &["g::h", "q::q"]),
+            ],
+        )
+        .success(),
+    );
+    assert_eq!(out["base"], json!(true));
+    assert_eq!(out["commands"][0]["base_failure"], json!(true), "{out}");
+    assert_eq!(out["commands"][1]["base_failure"], json!(false), "{out}");
+
+    let test = base_command(&root, "cargo test");
+    assert_eq!(test["base_checked"].as_bool(), Some(true));
+    assert_eq!(strings(test.get("base_failed_ids")), ["a::b", "c::d"]);
+    assert!(test.get("base_whole_failed").is_none());
+    let nextest = base_command(&root, "cargo nextest");
+    assert_eq!(nextest["base_checked"].as_bool(), Some(true));
+    assert_eq!(strings(nextest.get("base_failed_ids")), ["g::h"]);
+    let clippy = base_command(&root, "cargo clippy");
+    assert!(clippy.get("base_checked").is_none(), "{clippy:?}");
+    assert_eq!(gate_rounds(&root).len(), 1);
+}
+
+#[test]
+fn a_whole_gate_failing_at_base_is_a_base_failure() {
+    let (_dir, root) = base_flow();
+    gate(&root, 1, false, &[failed("cargo test", &[])]).success();
+
+    let out = stdout_json(&base(&root, 1, &[failed("cargo test", &[])]).success());
+    assert_eq!(out["commands"][0]["base_failure"], json!(true), "{out}");
+    let test = base_command(&root, "cargo test");
+    assert_eq!(test["base_checked"].as_bool(), Some(true));
+    assert_eq!(test["base_whole_failed"].as_bool(), Some(true));
+    assert!(test.get("base_failed_ids").is_none(), "{test:?}");
+}
+
+#[test]
+fn a_whole_command_passing_at_base_is_not_a_base_failure() {
+    let (_dir, root) = base_flow();
+    gate(&root, 0, false, &[failed("cargo test", &[])]).success();
+
+    let out = stdout_json(&base(&root, 0, &[command_row("cargo test", "pass", "")]).success());
+    assert_eq!(out["commands"][0]["base_failure"], json!(false), "{out}");
+    let test = base_command(&root, "cargo test");
+    assert_eq!(test["base_checked"].as_bool(), Some(true));
+    assert!(test.get("base_failed_ids").is_none(), "{test:?}");
+    assert!(
+        test.get("failed_ids")
+            .is_none_or(|ids| ids.as_array().unwrap().is_empty())
+    );
+    assert!(test.get("base_whole_failed").is_none(), "{test:?}");
+}
+
+#[test]
+fn an_id_less_command_outside_the_gates_failing_at_base_is_checked_but_not_whole() {
+    let (_dir, root) = base_flow();
+    gate(&root, 0, false, &[failed("cargo test --test one", &[])]).success();
+
+    let out = stdout_json(&base(&root, 0, &[failed("cargo test --test one", &[])]).success());
+    assert_eq!(out["commands"][0]["base_failure"], json!(false), "{out}");
+    let check = base_command(&root, "cargo test --test one");
+    assert_eq!(check["base_checked"].as_bool(), Some(true));
+    assert!(check.get("base_whole_failed").is_none(), "{check:?}");
+    assert!(check.get("base_failed_ids").is_none(), "{check:?}");
+}
+
+#[test]
+fn a_skip_holds_its_place_between_two_reruns() {
+    let (_dir, root) = base_flow();
+    gate(
+        &root,
+        0,
+        false,
+        &[
+            failed("cargo test", &["a::b"]),
+            failed("cargo deploy", &[]),
+            failed("cargo nextest", &["e::f"]),
+        ],
+    )
+    .success();
+
+    let text = "command: cargo test a::b\noutcome: fail\nexit: 101\nfailed_ids: a::b\ntail:\nboom\n\
+                skip: cargo deploy\n\
+                outcome: pass | command: cargo nextest e::f | duration: 3 | summary: none | log: C:/t/n.log\n";
+    cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "gate", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", "0", "--blocks", "-"])
+        .arg("--base")
+        .write_stdin(text.to_string())
+        .assert()
+        .success();
+
+    let test = base_command(&root, "cargo test");
+    assert_eq!(test["base_checked"].as_bool(), Some(true));
+    assert_eq!(strings(test.get("base_failed_ids")), ["a::b"]);
+    let deploy = base_command(&root, "cargo deploy");
+    assert!(deploy.get("base_checked").is_none(), "{deploy:?}");
+    let nextest = base_command(&root, "cargo nextest");
+    assert_eq!(nextest["base_checked"].as_bool(), Some(true));
+    assert!(nextest.get("base_failed_ids").is_none(), "{nextest:?}");
+}
+
+#[test]
+fn a_skip_row_without_base_is_refused() {
+    let (_dir, root) = base_flow();
+    let before = plan_text(&root);
+    let assert = gate(
+        &root,
+        0,
+        false,
+        &[json!({"command": "cargo deploy", "skip": true})],
+    )
+    .failure();
+    assert!(validation_message(&assert).contains("--base"));
+    assert_eq!(plan_text(&root), before);
+}
+
+#[test]
+fn a_base_call_on_a_round_with_no_run_is_refused() {
+    let (_dir, root) = base_flow();
+    let before = plan_text(&root);
+    let assert = base(&root, 2, &[failed("cargo test", &[])]).failure();
+    let message = validation_message(&assert);
+    assert!(message.contains("record it first"), "{message}");
+    assert!(message.contains("--round 2"), "{message}");
+    assert_eq!(plan_text(&root), before);
+}
+
+#[test]
+fn a_base_call_with_the_wrong_count_is_refused() {
+    let (_dir, root) = base_flow();
+    gate(
+        &root,
+        0,
+        false,
+        &[
+            failed("cargo test", &["a::b"]),
+            failed("cargo nextest", &["e::f"]),
+        ],
+    )
+    .success();
+    let before = plan_text(&root);
+    let assert = base(&root, 0, &[failed("cargo test a::b", &["a::b"])]).failure();
+    let message = validation_message(&assert);
+    assert!(message.contains("2 failing commands"), "{message}");
+    assert_eq!(plan_text(&root), before);
+}
+
+#[test]
+fn a_failing_run_records_its_tree_and_a_passing_run_none() {
+    let (_dir, root) = base_flow();
+    let body = b"fn a() {\r\n    b();\n}\n";
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src").join("row1.rs"), body).unwrap();
+
+    gate(&root, 0, false, &[failed("cargo test", &["a::b"])]).success();
+    let rounds = gate_rounds(&root);
+    let tree = rounds[0]["tree"].as_array().expect("a failing run's tree");
+    assert_eq!(tree.len(), 2, "{tree:?}");
+    assert_eq!(tree[0]["path"].as_str(), Some("src/row1.rs"));
+    assert_eq!(
+        tree[0]["raw"].as_str(),
+        Some(common::hex_digest(body).as_str())
+    );
+    assert_eq!(
+        tree[0]["stripped"].as_str(),
+        Some(common::hex_digest(b"fna(){b();}").as_str())
+    );
+    assert_eq!(tree[1]["path"].as_str(), Some("src/row2.rs"));
+    assert_eq!(tree[1]["raw"].as_str(), Some("deleted"));
+    assert_eq!(tree[1]["stripped"].as_str(), Some("deleted"));
+
+    gate(&root, 1, false, &[command_row("cargo test", "pass", "")]).success();
+    let rounds = gate_rounds(&root);
+    assert!(rounds[1].get("tree").is_none(), "{:?}", rounds[1]);
+}
+
+/// Round 1 of `base_flow`: clippy passes, `cargo test` fails on two ids and
+/// `cargo nextest` on one.
+fn red_round(root: &Path) {
+    gate(
+        root,
+        1,
+        false,
+        &[
+            command_row("cargo clippy", "pass", ""),
+            failed("cargo test", &["a::b", "c::d"]),
+            failed("cargo nextest", &["e::f"]),
+        ],
+    )
+    .success();
+}
+
+fn gate_accept(root: &Path, round: u32, payload: &Value) -> assert_cmd::assert::Assert {
+    let round = round.to_string();
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "gate", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", &round])
+        .args(["--accept", "--json", "-"])
+        .write_stdin(payload.to_string())
+        .assert()
+}
+
+fn gate_accepts(root: &Path) -> Vec<toml::Value> {
+    plan_doc(root)
+        .get("gate_accept")
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn waiver(kind: &str, backlog: &str, commands: Value) -> Value {
+    json!({
+        "kind": kind,
+        "why": "two cases flake under load",
+        "backlog": backlog,
+        "commands": commands,
+    })
+}
+
+fn every_failure() -> Value {
+    json!([
+        { "command": "cargo test", "failed_ids": ["a::b", "c::d"] },
+        { "command": "cargo nextest", "failed_ids": ["e::f"] },
+    ])
+}
+
+#[test]
+fn an_acceptance_naming_every_failing_command_is_recorded() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    let out = stdout_json(
+        &gate_accept(&root, 1, &waiver("accept", "B-1a2b3c4d", every_failure())).success(),
+    );
+    assert_eq!(
+        out,
+        json!({"ok": true, "milestone": MILESTONE, "round": 1, "kind": "accept"})
+    );
+
+    let doc = plan_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(7), "{doc}");
+    let records = gate_accepts(&root);
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record["milestone"].as_str(), Some(MILESTONE));
+    assert_eq!(record["round"].as_integer(), Some(1));
+    assert!(record["at"].as_datetime().is_some());
+    assert_eq!(record["kind"].as_str(), Some("accept"));
+    assert_eq!(record["why"].as_str(), Some("two cases flake under load"));
+    assert_eq!(record["backlog"].as_str(), Some("B-1a2b3c4d"));
+    assert_eq!(
+        record["commands"][0]["command"].as_str(),
+        Some("cargo test")
+    );
+    assert_eq!(
+        strings(record["commands"][0].get("failed_ids")),
+        ["a::b", "c::d"]
+    );
+    assert_eq!(
+        record["commands"][1]["command"].as_str(),
+        Some("cargo nextest")
+    );
+}
+
+#[test]
+fn an_acceptance_omitting_a_failing_command_is_refused() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    let before = plan_text(&root);
+    let payload = waiver(
+        "accept",
+        "B-1a2b3c4d",
+        json!([{ "command": "cargo test", "failed_ids": ["a::b"] }]),
+    );
+    let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+    assert!(
+        message.contains("every failing command") && message.contains("cargo nextest"),
+        "{message}"
+    );
+    assert_eq!(plan_text(&root), before);
+}
+
+#[test]
+fn an_extra_round_needs_no_backlog_and_refuses_one() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    let one = json!([{ "command": "cargo nextest", "failed_ids": ["e::f"] }]);
+    let before = plan_text(&root);
+    let message = validation_message(
+        &gate_accept(&root, 1, &waiver("extra-round", "B-1a2b3c4d", one.clone())).failure(),
+    );
+    assert!(message.contains("`backlog`"), "{message}");
+    assert_eq!(plan_text(&root), before);
+
+    let mut payload = waiver("extra-round", "", one);
+    payload.as_object_mut().unwrap().remove("backlog");
+    gate_accept(&root, 1, &payload).success();
+    let records = gate_accepts(&root);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"].as_str(), Some("extra-round"));
+    assert_eq!(records[0]["backlog"].as_str(), Some(""));
+}
+
+#[test]
+fn a_bad_acceptance_is_refused_naming_its_field() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    let before = plan_text(&root);
+    let mut stray_id = every_failure();
+    stray_id[0]["failed_ids"] = json!(["a::b", "z::z"]);
+    let mut passed = every_failure();
+    passed
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "command": "cargo clippy" }));
+    for (payload, needle) in [
+        (waiver("accept", "", every_failure()), "`backlog`"),
+        (waiver("accept", "  ", every_failure()), "`backlog`"),
+        (waiver("accept", "B-1", stray_id), "`z::z`"),
+        (waiver("accept", "B-1", passed), "not `fail`"),
+        (
+            waiver("accept", "B-1", json!([{ "command": "cargo bench" }])),
+            "not a command of",
+        ),
+        (waiver("waive", "B-1", every_failure()), "`kind`"),
+        (waiver("accept", "B-1", json!([])), "at least one"),
+        (
+            json!({ "kind": "accept", "backlog": "B-1", "commands": every_failure() }),
+            "`why`",
+        ),
+        (
+            json!({ "kind": "accept", "why": "w", "backlog": "B-1",
+                    "commands": every_failure(), "stray": 1 }),
+            "kind, why, backlog, commands",
+        ),
+    ] {
+        let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+        assert!(message.contains(needle), "{payload}: {message}");
+        assert_eq!(plan_text(&root), before);
+    }
+}
+
+#[test]
+fn an_acceptance_of_an_unrecorded_or_timed_out_round_is_refused() {
+    let (_dir, root) = base_flow();
+    let payload = waiver("accept", "B-1", every_failure());
+    let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+    assert!(message.contains("there is none"), "{message}");
+
+    gate(
+        &root,
+        1,
+        false,
+        &[
+            failed("cargo test", &["a::b", "c::d"]),
+            failed("cargo nextest", &["e::f"]),
+            command_row("cargo clippy", "timeout", ""),
+        ],
+    )
+    .success();
+    let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+    assert!(message.contains("`timeout`"), "{message}");
+    assert!(gate_accepts(&root).is_empty());
+}
+
+#[test]
+fn a_second_record_for_the_round_replaces_the_first_and_a_base_record_sits_beside() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    base(
+        &root,
+        1,
+        &[
+            failed("cargo test", &["a::b"]),
+            command_row("cargo nextest", "pass", ""),
+        ],
+    )
+    .success();
+    gate_accept(&root, 1, &waiver("accept", "B-1", every_failure())).success();
+    gate_accept(
+        &root,
+        1,
+        &waiver(
+            "extra-round",
+            "",
+            json!([{ "command": "cargo test", "failed_ids": ["c::d"] }]),
+        ),
+    )
+    .success();
+    gate_accept(
+        &root,
+        1,
+        &waiver(
+            "base",
+            "B-2",
+            json!([{ "command": "cargo test", "failed_ids": ["a::b"] }]),
+        ),
+    )
+    .success();
+
+    let records = gate_accepts(&root);
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert_eq!(records[0]["kind"].as_str(), Some("extra-round"));
+    assert_eq!(records[1]["kind"].as_str(), Some("base"));
+    assert_eq!(records[1]["backlog"].as_str(), Some("B-2"));
+    assert_eq!(
+        strings(records[1]["commands"][0].get("failed_ids")),
+        ["a::b"]
+    );
+}
+
+#[test]
+fn a_base_record_naming_a_non_base_failure_is_refused() {
+    let (_dir, root) = base_flow();
+    red_round(&root);
+    base(
+        &root,
+        1,
+        &[
+            failed("cargo test", &["a::b"]),
+            command_row("cargo nextest", "pass", ""),
+        ],
+    )
+    .success();
+    let before = plan_text(&root);
+    for (commands, needle) in [
+        (
+            json!([{ "command": "cargo test", "failed_ids": ["c::d"] }]),
+            "`c::d`",
+        ),
+        (
+            json!([{ "command": "cargo nextest", "failed_ids": ["e::f"] }]),
+            "not a base or partial base failure",
+        ),
+        (json!([{ "command": "cargo test" }]), "failed whole at base"),
+    ] {
+        let payload = waiver("base", "B-2", commands);
+        let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+        assert!(message.contains(needle), "{payload}: {message}");
+        assert_eq!(plan_text(&root), before);
+    }
+    let payload = waiver(
+        "base",
+        "",
+        json!([{ "command": "cargo test", "failed_ids": ["a::b"] }]),
+    );
+    let message = validation_message(&gate_accept(&root, 1, &payload).failure());
+    assert!(message.contains("`backlog`"), "{message}");
+}
+
+#[test]
+fn a_base_record_may_name_a_command_that_failed_whole_at_base_alone() {
+    let (_dir, root) = base_flow();
+    gate(&root, 0, false, &[failed("cargo test", &[])]).success();
+    base(&root, 0, &[failed("cargo test", &[])]).success();
+    gate_accept(
+        &root,
+        0,
+        &waiver("base", "B-2", json!([{ "command": "cargo test" }])),
+    )
+    .success();
+    let records = gate_accepts(&root);
+    assert_eq!(records[0]["kind"].as_str(), Some("base"));
+    assert!(strings(records[0]["commands"][0].get("failed_ids")).is_empty());
+}
+
 fn report(root: &Path, why: &str, rows: Option<&[Value]>) -> assert_cmd::assert::Assert {
     let mut cmd = cli(root);
     cmd.args(["--error-format", "json"])

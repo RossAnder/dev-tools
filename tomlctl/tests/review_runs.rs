@@ -922,3 +922,140 @@ fn schema_defect_requires_failure_scenario() {
         .assert()
         .failure();
 }
+
+const FLOW: &str = "digested";
+
+const FLOW_TASKS: &str = r#"schema_version = 2
+last_updated = 2026-11-05
+plan_path = "docs/flows/digested/brief.md"
+last_import_refs = []
+
+[[checkpoints]]
+id = "A"
+rationale = "the guard"
+
+[[items]]
+id = 1
+ref = "add-guard"
+title = "Add guard"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/a.rs"]
+action = "guard the retry"
+"#;
+
+impl Repo {
+    /// A v2 flow `plan open` created, with one task row.
+    fn open_flow(&self) {
+        self.tomlctl()
+            .args(["plan", "open", "--slug", FLOW])
+            .assert()
+            .success();
+        fs::write(
+            self.root
+                .join(".claude/flows")
+                .join(FLOW)
+                .join("tasks.toml"),
+            FLOW_TASKS,
+        )
+        .unwrap();
+    }
+
+    fn start_on_flow(&self, family: &str, set: &[&str]) -> assert_cmd::assert::Assert {
+        let base = format!("--base={}", self.first);
+        let mut cmd = self.tomlctl();
+        cmd.args([
+            "review",
+            "run",
+            "start",
+            "--slug",
+            FLOW,
+            "--command",
+            "review-plan-v2",
+            "--family",
+            family,
+            "--depth",
+            "quick",
+            base.as_str(),
+            "--builtin",
+        ])
+        .arg(&self.builtin);
+        for pair in set {
+            cmd.args(["--set", *pair]);
+        }
+        cmd.assert()
+    }
+
+    fn flow_run(&self, index: usize) -> toml::Value {
+        let path = self
+            .root
+            .join(".claude/flows")
+            .join(FLOW)
+            .join("review-v2.toml");
+        let store: toml::Value = toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        store["runs"][index].clone()
+    }
+}
+
+#[test]
+fn a_plan_family_start_on_a_v2_flow_records_its_plan_digest() {
+    let Some(repo) = repo() else { return };
+    repo.open_flow();
+    repo.start_on_flow("plan", &[]).success();
+    let run = repo.flow_run(0);
+    let digest = run["plan_digest"]
+        .as_table()
+        .unwrap_or_else(|| panic!("no plan_digest on {run}"));
+    for key in [
+        "task:add-guard.action",
+        "task:add-guard.files",
+        "task:add-guard.spec.accept",
+        "milestone:A.goal",
+    ] {
+        let sha = digest
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .unwrap_or_else(|| panic!("{key} missing from {digest:?}"));
+        assert_eq!(sha.len(), 64, "{key} holds a SHA-256: {sha}");
+    }
+    assert!(
+        !digest.keys().any(|key| key.contains('[')),
+        "no entry-level key: {digest:?}"
+    );
+}
+
+#[test]
+fn a_code_run_or_a_scope_store_records_no_plan_digest() {
+    let Some(repo) = repo() else { return };
+    repo.open_flow();
+    repo.start_on_flow("code", &[]).success();
+    assert!(repo.flow_run(0).get("plan_digest").is_none());
+
+    let mut args = repo.start_args(&repo.first);
+    let family = args.iter().position(|a| a == "code").expect("the family");
+    args[family] = "plan".to_string();
+    repo.tomlctl().args(args).assert().success();
+    assert!(repo.run(0).get("plan_digest").is_none());
+}
+
+#[test]
+fn recheck_scope_needs_rechecks_and_a_known_value() {
+    let Some(repo) = repo() else { return };
+    repo.open_flow();
+    let out = repo
+        .start_on_flow("plan", &["recheck_scope=delta"])
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("recheck_scope"), "{stderr}");
+
+    let out = repo
+        .start_on_flow("plan", &["rechecks=U1", "recheck_scope=all"])
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("recheck_scope"), "{stderr}");
+
+    let out = repo.start_on_flow("plan", &["plan_digest={}"]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("set by tomlctl"), "{stderr}");
+}

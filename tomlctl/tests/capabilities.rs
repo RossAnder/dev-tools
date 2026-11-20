@@ -1885,6 +1885,17 @@ fn capabilities_features_contains_every_plan_feature() {
         "review_plan_ceiling",
         "review_escalations",
         "review_stats_yield",
+        // Milestone A harness gates, handovers, run-note sources and plan digests.
+        "gate_base_rerun",
+        "gate_accept",
+        "gate_list_after_round",
+        "worker_build_check",
+        "baseline_gates",
+        "launch_args_builds",
+        "handover_blocks",
+        "drift_affected_decisions",
+        "run_note_sources",
+        "review_plan_digest",
     ];
     for name in expected {
         assert!(
@@ -1919,8 +1930,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.26.0",
-        "expected version `0.26.0` (the minor bump for `plan request` and the generator config); got `{version}`"
+        version, "0.27.0",
+        "expected version `0.27.0` (the minor bump for the milestone A harness features); got `{version}`"
     );
 }
 

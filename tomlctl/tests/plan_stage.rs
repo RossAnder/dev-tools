@@ -375,7 +375,7 @@ fn a_spec_shape_error_names_tasks_update_and_tasks_update_clears_it() {
         &swap(
             TASKS,
             "writes_build = true }]",
-            "writes_build = true, run_by = \"worker\" }]",
+            "writes_build = true, run_by = \"nobody\" }]",
         ),
         "plan/accept-owner-invalid",
         json!({ "accept": [accept()] }),

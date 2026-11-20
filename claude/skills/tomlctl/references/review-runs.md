@@ -41,9 +41,11 @@ tomlctl review run start --slug <slug> --command review-v2 --family code --depth
 | `--head` | rev | The commit the change is measured to, a descendant of `--base`; stored as its sha in `head`. | `HEAD`, unrecorded |
 | `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
 | `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer that differs from `base`. | `.claude/review-lenses` when present |
-| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table), `substrate` (`workflow` \| `agent-waves`) and `rechecks` (the run id a plan re-check run re-reads; `stats --plan-outcomes` counts its findings as re-check yield). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
+| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table), `substrate` (`workflow` \| `agent-waves`) and `rechecks` (the run id a plan re-check run re-reads; `stats --plan-outcomes` counts its findings as re-check yield). `recheck_scope` (value `delta`; requires `rechecks`) widens the re-check to the plan records changed since the latest finished plan run, besides the ones the rechecked run's findings target. `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
 
 The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.
+
+A plan-family run on a v2 flow store also carries a computed `plan_digest`, a table of the plan records the run covers, stamped by `run start`; it cannot be supplied with `--set`. Without `rechecks` it digests the whole plan; with `rechecks` only the rechecked targets, plus the records changed since the latest finished plan run when `recheck_scope` is `delta`. The `review_delta` that `plan stage`, `plan gate` and `plan approve` read from these digests is described in [plan.md](plan.md#plan-stage).
 
 ### `tomlctl review run update`
 

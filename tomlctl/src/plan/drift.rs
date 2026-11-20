@@ -9,6 +9,7 @@ use std::process::Command;
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
+use super::schema::{Bind, PlanStore};
 use super::store;
 use crate::cli::PlanDriftArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -35,7 +36,12 @@ pub(super) fn run(args: PlanDriftArgs) -> Result<()> {
 
     refuse_unresolved(&root, &approval.commit)?;
     let owned = recorded_commits(&tasks);
-    let changed = changed_files(&root, &approval.commit, &owned, slug)?;
+    let commits = unowned_commits(&root, &approval.commit, &owned, slug)?;
+    let changed: BTreeSet<String> = commits
+        .iter()
+        .flat_map(|(_, files)| files.iter().cloned())
+        .collect();
+    let decisions = affected_decisions(&plan, &commits, &changed);
     let uncommitted = if args.uncommitted {
         Some(uncommitted_files(&root, slug)?)
     } else {
@@ -48,6 +54,7 @@ pub(super) fn run(args: PlanDriftArgs) -> Result<()> {
         "approved_commit": approval.commit,
         "changed_files": changed,
         "affected": affected,
+        "affected_decisions": decisions,
     });
     if let Some(uncommitted) = uncommitted {
         report["uncommitted_files"] = json!(uncommitted);
@@ -97,12 +104,7 @@ fn is_owned(owned: &[String], sha: &str) -> bool {
 /// `--no-renames` lists a rename's source too, which is the path a row names, and
 /// `-z` hands over every path verbatim, where the line form C-quotes a tab, a
 /// newline, a quote or a backslash whatever `core.quotePath` says.
-fn changed_files(
-    root: &Path,
-    since: &str,
-    owned: &[String],
-    slug: &str,
-) -> Result<BTreeSet<String>> {
+fn unowned_commits(root: &Path, since: &str, owned: &[String], slug: &str) -> Result<Vec<Commit>> {
     let range = format!("{since}..HEAD");
     let format = format!("--format={COMMIT_MARK}%H");
     let out = Command::new("git")
@@ -130,11 +132,54 @@ fn changed_files(
         ));
     }
     let flow_dir = format!(".claude/flows/{slug}/");
-    Ok(parse_log(
+    Ok(parse_commits(
         &String::from_utf8_lossy(&out.stdout),
         owned,
         &flow_dir,
     ))
+}
+
+/// One unowned commit: its sha and the files it touched, in log order.
+type Commit = (String, Vec<String>);
+
+/// One entry per decision whose file `binds` meet `changed`; `commits` holds the
+/// unowned commits that touched those bound files, newest first as git logs them.
+fn affected_decisions(
+    plan: &PlanStore,
+    commits: &[Commit],
+    changed: &BTreeSet<String>,
+) -> Vec<JsonValue> {
+    plan.decisions
+        .iter()
+        .filter_map(|decision| {
+            let hit: Vec<&String> = decision
+                .binds
+                .iter()
+                .filter(|entry| matches!(Bind::parse(entry), Some(Bind::Path(_))))
+                .filter(|entry| names(changed, entry))
+                .collect();
+            if hit.is_empty() {
+                return None;
+            }
+            let touching: Vec<&String> = commits
+                .iter()
+                .filter(|(_, files)| {
+                    hit.iter().any(|entry| {
+                        let wanted = normal_path(entry);
+                        files
+                            .iter()
+                            .any(|f| f == *entry || normal_path(f) == wanted)
+                    })
+                })
+                .map(|(sha, _)| sha)
+                .collect();
+            Some(json!({
+                "id": decision.id,
+                "binds_hit": hit,
+                "commits": touching,
+            }))
+        })
+        .collect()
 }
 
 /// Each token is NUL-terminated: `<mark><sha>`, then a commit's paths, the first
@@ -142,8 +187,16 @@ fn changed_files(
 /// since any other edge byte belongs to the path. A mark must carry a hex sha, so
 /// a path that merely opens with the mark byte stays a path. Paths under
 /// `flow_dir` are the flow's own stores, which are never drift.
+#[cfg(test)]
 fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
-    let mut files = BTreeSet::new();
+    parse_commits(log, owned, flow_dir)
+        .into_iter()
+        .flat_map(|(_, files)| files)
+        .collect()
+}
+
+fn parse_commits(log: &str, owned: &[String], flow_dir: &str) -> Vec<Commit> {
+    let mut commits: Vec<Commit> = Vec::new();
     let mut counted = false;
     let mut first_path = false;
     for token in log.split('\0') {
@@ -152,6 +205,9 @@ fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
             .filter(|sha| !sha.is_empty() && sha.bytes().all(|byte| byte.is_ascii_hexdigit()));
         if let Some(sha) = sha {
             counted = !is_owned(owned, sha);
+            if counted {
+                commits.push((sha.to_string(), Vec::new()));
+            }
             first_path = true;
             continue;
         }
@@ -161,11 +217,15 @@ fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
             token
         };
         first_path = false;
-        if counted && !path.is_empty() && !path.starts_with(flow_dir) {
-            files.insert(path.to_string());
+        if counted
+            && !path.is_empty()
+            && !path.starts_with(flow_dir)
+            && let Some((_, files)) = commits.last_mut()
+        {
+            files.push(path.to_string());
         }
     }
-    files
+    commits
 }
 
 /// `-z` hands over every path verbatim, and `--no-renames` reports a rename as

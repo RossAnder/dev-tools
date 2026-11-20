@@ -120,7 +120,7 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 
 | Owner | Who runs the check |
 |---|---|
-| `worker` | The task's worker. Only this owner is probed, and only with `writes_build = false`: `run_by = "worker"` on a building check is refused at write. |
+| `worker` | The task's worker. A worker-owned check may build (`writes_build = true`): the worker runs it before returning `done`, `gate-list` does not list it, and probes skip a building one. |
 | `gate` | The milestone's gate, through [`plan emit gate-list`](plan-engine.md#plan-emit-gate-list). |
 | `covered` | Nobody separately: the gate `covered_by` names already runs it. `gate-list` skips it. |
 | `look` | The visual inspector, never a command: the entry carries `states`, the milestone's capture states it is judged on, its `behaviour` is the criterion and its `check` stays empty. Probes skip it, and it never counts as discriminating beside a guard. |
@@ -132,7 +132,7 @@ deploy or an install. It is allowed only on an entry whose effective owner is `g
 ever runs it; `external` is the one value, the key is written only when set, and a store holding
 one raises `schema_version` to `4`.
 
-`tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,
+`tasks add`, `add-many` and `update` refuse an unknown `run_by`,
 `covered` without `covered_by`, `covered_by` without `covered`, an unknown `effect` and `effect` on
 an entry the gate does not run; `plan check` reports the same as
 `plan/accept-owner-invalid`, and a `covered_by` matching no gate of the milestone as

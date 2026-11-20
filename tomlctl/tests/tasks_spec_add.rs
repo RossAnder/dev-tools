@@ -227,19 +227,24 @@ fn accept_run_by_round_trips() {
 }
 
 #[test]
-fn accept_worker_owner_refuses_a_building_check() {
-    assert_refused(
+fn accept_worker_owner_accepts_a_building_check() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, FIXTURE);
+    let envelope = add_many(
+        &root,
         &row_with_spec(&json!({"accept": [
             {"check": "cargo test", "kind": "guard", "writes_build": true, "run_by": "worker"}
         ]})),
-        "a worker never runs a check that builds",
     );
-    assert_refused(
-        &row_with_spec(&json!({"accept": [
-            {"check": "cargo test", "kind": "guard", "run_by": "worker"}
-        ]})),
-        "a worker never runs a check that builds",
-    );
+    let id = envelope["rows"][0]["id"].to_string();
+    let out = cli(&root)
+        .args(["tasks", "show", &id, "--slug", TASKS_SLUG, "--with", "spec"])
+        .assert()
+        .success();
+    let shown: Value = serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON");
+    let accept = &shown["spec"]["accept"];
+    assert_eq!(accept[0]["run_by"], json!("worker"), "{accept}");
+    assert_eq!(accept[0]["writes_build"], json!(true), "{accept}");
     assert_refused(
         &row_with_spec(&json!({"accept": [
             {"check": "true", "kind": "guard", "writes_build": false, "run_by": "covered"}

@@ -1230,3 +1230,339 @@ fn clear_gate_beside_external_gate_is_refused_and_writes_nothing() {
     assert_eq!(err["kind"], json!("validation"), "{err}");
     assert_eq!(fs::read(&store).unwrap(), before);
 }
+
+/// Milestone `A` holds two gates and three rows: row 1 with an accept entry,
+/// row 2 with none, and row 3, with an accept entry, outside the milestone.
+const BASELINE_FIXTURE: &str = r#"schema_version = 2
+last_updated = 2026-09-07
+plan_path = "docs/plans/fixture-tasks-flow.md"
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "g"
+
+[[milestones]]
+id = "A"
+gates = ["cargo test", "bun run parity"]
+elaboration = "upfront"
+defer_reason = ""
+
+[[specs]]
+ref = "build-the-parity-tool"
+outcome = "the tool compares two trees"
+
+[[specs.accept]]
+behaviour = "the base matches itself"
+check = "bun run parity --base HEAD --against HEAD"
+kind = "forward"
+writes_build = false
+run_by = "worker"
+
+[[specs]]
+ref = "outside-row"
+outcome = "elsewhere"
+
+[[specs.accept]]
+behaviour = "runs"
+check = "true"
+kind = "forward"
+writes_build = false
+run_by = "worker"
+
+[[items]]
+id = 1
+ref = "build-the-parity-tool"
+title = "Build the parity tool"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/parity.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "plain-row"
+title = "Plain row"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/plain.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "outside-row"
+title = "Outside row"
+effort = "S"
+status = "pending"
+checkpoint = ""
+files = ["src/outside.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+"#;
+
+fn proofs_of(doc: &toml::Value) -> Vec<&toml::Value> {
+    table(doc, "milestones")[0]
+        .get("baseline_proofs")
+        .and_then(toml::Value::as_array)
+        .map(|entries| entries.iter().collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn add_and_update_record_baseline_gates_and_the_ui_call() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "cargo test",
+            "--external-gate",
+            "bun run snapshot",
+            "--baseline-gate",
+            "bun run snapshot",
+            "--ui",
+            "yes",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(stamp(&doc), 5, "{doc}");
+    assert_eq!(
+        names_of(&doc, 0, "baseline_gates"),
+        strings(&["bun run snapshot"]),
+        "an external gate may be a baseline gate"
+    );
+    assert_eq!(table(&doc, "milestones")[0]["ui"].as_bool(), Some(true));
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--baseline-gate", "cargo test", "--ui", "no"],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(
+        names_of(&doc, 0, "baseline_gates"),
+        strings(&["cargo test"]),
+        "update replaces the whole baseline list"
+    );
+    assert_eq!(table(&doc, "milestones")[0]["ui"].as_bool(), Some(false));
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--gate", "cargo nextest run"],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(
+        names_of(&doc, 0, "baseline_gates"),
+        None,
+        "a baseline gate replaced as a gate is dropped: {doc}"
+    );
+    assert_eq!(stamp(&doc), 5, "the ui call alone keeps the new stamp");
+
+    let err = refused(&root, "update", &["--id", "A", "--ui", "maybe"]);
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+}
+
+#[test]
+fn a_baseline_gate_naming_no_gate_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    let err = refused(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "cargo test",
+            "--baseline-gate",
+            "bun run parity",
+        ],
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert!(
+        err.to_string().contains("bun run parity"),
+        "the refusal names the command: {err}"
+    );
+    assert!(table(&read_store(&store), "milestones").is_empty());
+
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "g", "--gate", "cargo test"],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+    let err = refused(
+        &root,
+        "update",
+        &["--id", "A", "--baseline-gate", "bun run parity"],
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn a_baseline_proof_upserts_by_gate_and_a_null_control_stores_its_task() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, BASELINE_FIXTURE);
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--baseline-gate",
+            "cargo test",
+            "--baseline-gate",
+            "bun run parity",
+            "--baseline-proof",
+            "cargo test :: fail",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(stamp(&doc), 5, "{doc}");
+    let proofs = proofs_of(&doc);
+    assert_eq!(proofs.len(), 1, "{doc}");
+    assert_eq!(text(proofs[0], "verdict"), "fail");
+    assert!(proofs[0]["at"].as_datetime().is_some(), "{doc}");
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--baseline-proof",
+            "cargo test :: pass",
+            "--baseline-proof",
+            "bun run parity :: null-control :: 1",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    let proofs = proofs_of(&doc);
+    assert_eq!(proofs.len(), 2, "a proof upserts by gate: {doc}");
+    assert_eq!(
+        (text(proofs[0], "gate"), text(proofs[0], "verdict")),
+        ("cargo test", "pass")
+    );
+    assert!(proofs[0].get("task").is_none(), "{doc}");
+    assert_eq!(
+        (text(proofs[1], "gate"), text(proofs[1], "verdict")),
+        ("bun run parity", "null-control")
+    );
+    assert_eq!(proofs[1]["task"].as_integer(), Some(1));
+}
+
+#[test]
+fn a_bad_baseline_proof_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, BASELINE_FIXTURE);
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--baseline-gate", "bun run parity"],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+    for (bad, names) in [
+        ("bun run parity :: maybe", "maybe"),
+        ("bun run parity", "` :: `"),
+        ("bun run parity :: pass :: 1", "third part"),
+        ("bun run parity :: null-control", "task"),
+        ("bun run parity :: null-control :: one", "one"),
+        ("bun run parity :: null-control :: 2", "no accept entry"),
+        (
+            "bun run parity :: null-control :: 3",
+            "no task of milestone",
+        ),
+        ("cargo test :: pass", "no baseline gate"),
+    ] {
+        let err = refused(&root, "update", &["--id", "A", "--baseline-proof", bad]);
+        assert_eq!(err["kind"], json!("validation"), "{bad}: {err}");
+        assert!(err.to_string().contains(names), "{bad}: {err}");
+    }
+    assert_eq!(fs::read(&store).unwrap(), before);
+}
+
+#[test]
+fn a_store_without_a_baseline_gate_keeps_its_stamp() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "g", "--external-gate", "deploy"],
+    )
+    .success();
+    let before = fs::read_to_string(&store).unwrap();
+    assert!(before.starts_with("schema_version = 4\n"), "{before}");
+    assert!(
+        !before.contains("baseline") && !before.contains("ui ="),
+        "{before}"
+    );
+
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--gate",
+            "bun run snapshot",
+            "--external-gate",
+            "deploy",
+            "--baseline-gate",
+            "bun run snapshot",
+        ],
+    )
+    .success();
+    assert_eq!(stamp(&read_store(&store)), 5);
+    milestone(&root, "update", &["--id", "A", "--external-gate", "deploy"]).success();
+    assert_eq!(
+        fs::read_to_string(&store).unwrap(),
+        before,
+        "a gate update dropping the baseline gate returns the store to its old stamp and bytes"
+    );
+}

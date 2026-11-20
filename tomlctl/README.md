@@ -334,7 +334,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.26.0",
+  "version": "0.27.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -400,7 +400,17 @@ downstream flow-command templates can feature-gate at boot without parsing
                "inputs_plan_ledger", "plan_request",
                "generated_config", "review_propose_kinds",
                "review_plan_ceiling", "review_escalations",
-               "review_stats_yield"],
+               "review_stats_yield",
+               "gate_base_rerun",
+               "gate_accept",
+               "gate_list_after_round",
+               "worker_build_check",
+               "baseline_gates",
+               "launch_args_builds",
+               "handover_blocks",
+               "drift_affected_decisions",
+               "run_note_sources",
+               "review_plan_digest"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -627,3 +637,13 @@ Feature meanings:
 | `review_plan_ceiling` | `review plan` append refuses cells past the run's ceiling unless `--over-ceiling-file` directs an override, recorded in the run's `ceiling_overrides` |
 | `review_escalations` | `review escalation record` stores a wave's escalations on their cells and `review escalation fix` mints a finding blocked on evidence from one |
 | `review_stats_yield` | `review stats` reports per-class audit counts and `--yield` reports what repeat-pass and context-free cells add beyond the first pass |
+| `gate_base_rerun` | a gate failure is rerun at the milestone base commit to tell a pre-existing failure from a new one |
+| `gate_accept` | a gate still failing after the last round can be recorded as accepted by the user |
+| `gate_list_after_round` | `plan emit gate-list` narrows the gate to what a fix round could affect |
+| `worker_build_check` | a worker may run its own reproducing check, with the view naming which checks build |
+| `baseline_gates` | gates are run on the unchanged tree to record a baseline for comparison |
+| `launch_args_builds` | the launch arguments mark which tasks run builds |
+| `handover_blocks` | a handover can block a task from starting until a user-supplied input is done |
+| `drift_affected_decisions` | `plan drift` names the decisions a changed record affects |
+| `run_note_sources` | a run note records the outside sources a worker verified |
+| `review_plan_digest` | `review` reads a plan digest so edits made after the re-check can be re-reviewed |

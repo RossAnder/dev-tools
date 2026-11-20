@@ -27,6 +27,7 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
 use crate::io::{read_prose, relativise, relativise_under, repo_or_cwd_root};
 use crate::output::{Rows, print_json_compact, print_report};
+use crate::plan::target::{PlanDigest, digest_key, plan_digest, review_delta};
 
 /// `review run` leaves.
 #[derive(Subcommand)]
@@ -181,7 +182,7 @@ impl Verb for ReviewRunListArgs {
 }
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
-const START_FIELDS: &[&str] = &["scope", "models", "substrate", "rechecks"];
+const START_FIELDS: &[&str] = &["scope", "models", "substrate", "rechecks", "recheck_scope"];
 /// The run fields `run update` patches.
 const UPDATE_FIELDS: &[&str] = &["signals", "waivers", "audit", "agents", "baselines"];
 
@@ -206,6 +207,18 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         return Err(invalid(format!("{verb}: {}", reasons.join("; "))));
     }
     let family = family.expect("validate_row refuses an unknown family");
+    let rechecks = row
+        .get("rechecks")
+        .and_then(JsonValue::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let delta_scope = row.get("recheck_scope").and_then(JsonValue::as_str) == Some("delta");
+    if row.contains_key("recheck_scope") && rechecks.is_empty() {
+        return Err(invalid(format!(
+            "{verb}: `recheck_scope` widens a re-check, so it needs `rechecks`"
+        )));
+    }
+    let plan_slug = plan_flow_slug(target, family)?;
     let scope: Vec<String> = row
         .get("scope")
         .and_then(JsonValue::as_array)
@@ -269,8 +282,17 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
             retire_ids_of_existing_dirs(doc, &runs_parent)?;
             store::mint(doc, Minted::Runs, &rows)
         },
-        |_, ids| {
+        |store, ids| {
             let id = ids.into_iter().next().expect("one row minted one id");
+            if let Some(slug) = &plan_slug {
+                let digest = start_digest(store, slug, &rechecks, delta_scope)?;
+                let run = store
+                    .runs
+                    .iter_mut()
+                    .find(|run| run.id == id)
+                    .expect("the run just minted is in the store");
+                run.plan_digest = Some(digest);
+            }
             let dir = target.run_dir(&id)?;
             // Inside the write: a directory that cannot be made leaves no run behind.
             store::guard_run_write(&dir, allow_outside)?;
@@ -313,6 +335,73 @@ fn ignore_runs_root(runs_parent: &Path) -> Result<()> {
             format!("writing {}: {e}", ignore.display()),
         )
     })
+}
+
+/// The flow slug a plan-family run on `target` digests, `None` for another
+/// family, a scope store, or a flow with no `plan.toml`.
+fn plan_flow_slug(target: &Target, family: Family) -> Result<Option<String>> {
+    if family != Family::Plan {
+        return Ok(None);
+    }
+    let plan = target.path.with_file_name("plan.toml");
+    let is_flow = crate::flow::validate_slug(&target.key).is_ok()
+        && crate::plan::store::resolve(&target.key)? == plan;
+    Ok((is_flow && plan.is_file()).then(|| target.key.clone()))
+}
+
+/// The digest a plan run records at its start: every target, or for a re-check
+/// the targets `review recheck-targets` yields for the run it re-checks, widened
+/// by `delta_scope` to the review delta of the plan runs finished so far.
+fn start_digest(
+    store: &Store,
+    slug: &str,
+    rechecks: &str,
+    delta_scope: bool,
+) -> Result<PlanDigest> {
+    let current = plan_digest(slug)?;
+    if rechecks.is_empty() {
+        return Ok(current);
+    }
+    let mut keys: BTreeSet<String> = recheck_targets(store, rechecks).map(digest_key).collect();
+    if delta_scope {
+        let finished: Vec<&PlanDigest> = store
+            .runs
+            .iter()
+            .filter(|run| run.family == Family::Plan && !run.finished.is_empty())
+            .filter_map(|run| run.plan_digest.as_ref())
+            .collect();
+        keys.extend(review_delta(&current, &finished));
+    }
+    Ok(current
+        .into_iter()
+        .filter(|(key, _)| keys.contains(key))
+        .collect())
+}
+
+/// Each `applied.target` and `addressed` entry on the findings run `run` minted,
+/// the set `review recheck-targets` prints.
+fn recheck_targets<'a>(store: &'a Store, run: &'a str) -> impl Iterator<Item = &'a str> {
+    store
+        .findings
+        .iter()
+        .filter(move |finding| finding.run == run)
+        .flat_map(|finding| {
+            let applied = finding
+                .rest
+                .get("applied")
+                .and_then(toml::Value::as_table)
+                .and_then(|applied| applied.get("target"))
+                .and_then(toml::Value::as_str);
+            let addressed = finding
+                .rest
+                .get("addressed")
+                .and_then(toml::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(toml::Value::as_str);
+            applied.into_iter().chain(addressed)
+        })
+        .filter(|target| !target.is_empty())
 }
 
 /// Folds the field flags into an object, refusing any key outside `allowed`.

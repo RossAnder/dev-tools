@@ -6,6 +6,8 @@
 //! directly followed by an `outcome:` line, whose `tail:` runs on as raw log
 //! text until the next entry. A command may hold a shell pipe and a summary
 //! may hold ` | `, so the pass line is read on its known keys, never split.
+//! A base rerun's text may also hold `skip: <command>` lines, each holding the
+//! place of a command not rerun at base; they are read only when asked for.
 
 use std::path::Path;
 
@@ -22,12 +24,15 @@ const PASS_PREFIX: &str = "outcome: pass | command: ";
 const COMMAND_PREFIX: &str = "command: ";
 const OUTCOME_PREFIX: &str = "outcome: ";
 const NOT_RUN_PREFIX: &str = "not_run:";
+const SKIP_PREFIX: &str = "skip: ";
 
 /// Each row with the 1-based line its entry opens on. Text that yields no row
-/// is refused.
+/// is refused. With `skips`, a `skip: <command>` line is a row of its own,
+/// `{"command": …, "skip": true}`; without it the line is ordinary text.
 pub(super) fn parse(
     text: &str,
     read_ids: impl Fn(&Path) -> Option<Vec<u8>>,
+    skips: bool,
 ) -> Result<Vec<(usize, Row)>> {
     let lines: Vec<&str> = text
         .split('\n')
@@ -40,8 +45,11 @@ pub(super) fn parse(
         if let Some(rest) = line.strip_prefix(PASS_PREFIX) {
             rows.push((index + 1, pass_row(index + 1, rest)?));
             index += 1;
+        } else if skips && let Some(command) = line.strip_prefix(SKIP_PREFIX) {
+            rows.push((index + 1, skip_row(index + 1, command)?));
+            index += 1;
         } else if opens_block(&lines, index) {
-            let (row, next) = block_row(&lines, index, &read_ids)?;
+            let (row, next) = block_row(&lines, index, &read_ids, skips)?;
             rows.push((index + 1, row));
             index = next;
         } else {
@@ -73,9 +81,22 @@ fn opens_block(lines: &[&str], index: usize) -> bool {
 }
 
 /// Whether the line at `index` opens the next entry or ends the report.
-fn ends_entry(lines: &[&str], index: usize) -> bool {
+fn ends_entry(lines: &[&str], index: usize, skips: bool) -> bool {
     let line = lines[index];
-    line.starts_with(PASS_PREFIX) || line.starts_with(NOT_RUN_PREFIX) || opens_block(lines, index)
+    line.starts_with(PASS_PREFIX)
+        || line.starts_with(NOT_RUN_PREFIX)
+        || (skips && line.starts_with(SKIP_PREFIX))
+        || opens_block(lines, index)
+}
+
+fn skip_row(line: usize, command: &str) -> Result<Row> {
+    if command.trim().is_empty() {
+        return Err(line_err(line, "a `skip:` line names no command"));
+    }
+    let mut row = Row::new();
+    row.insert("command".into(), json!(command));
+    row.insert("skip".into(), json!(true));
+    Ok(row)
 }
 
 /// `rest` is the pass line after its `outcome: pass | command: ` prefix. The
@@ -125,6 +146,7 @@ fn block_row(
     lines: &[&str],
     start: usize,
     read_ids: &impl Fn(&Path) -> Option<Vec<u8>>,
+    skips: bool,
 ) -> Result<(Row, usize)> {
     let line = start + 1;
     let command = &lines[start][COMMAND_PREFIX.len()..];
@@ -137,7 +159,7 @@ fn block_row(
     let mut index = start + 1;
     let mut in_tail = false;
     while index < lines.len() {
-        if index > start + 1 && ends_entry(lines, index) {
+        if index > start + 1 && ends_entry(lines, index, skips) {
             break;
         }
         let text = lines[index];
@@ -258,7 +280,7 @@ mod tests {
     #[test]
     fn a_pass_line_keeps_a_piped_command_and_a_piped_summary() {
         let text = "outcome: pass | command: a | grep b | duration: 7 | summary: Tests  2 failed | 10 passed | log: C:/t/c1.log | retried: transient\n";
-        let rows = parse(text, no_ids).unwrap();
+        let rows = parse(text, no_ids, false).unwrap();
         let row = &rows[0].1;
         assert_eq!(row["command"], json!("a | grep b"));
         assert_eq!(row["summary"], json!("Tests  2 failed | 10 passed"));
@@ -270,7 +292,7 @@ mod tests {
     #[test]
     fn a_retried_pass_line_keeps_its_log_path_clean() {
         let text = "outcome: pass | command: b | duration: 1 | summary: none | log: C:/t/c1t.log | retried: transient\r\n";
-        let row = &parse(text, no_ids).unwrap()[0].1;
+        let row = &parse(text, no_ids, false).unwrap()[0].1;
         assert_eq!(row["log"], json!("C:/t/c1t.log"));
         assert_eq!(row["summary"], json!(""));
     }
@@ -279,13 +301,28 @@ mod tests {
     fn listed_ids_drop_the_more_count() {
         let text =
             "command: t\noutcome: fail\nexit: 1\nfailed_ids: a::b c::d (+3 more)\ntail:\nx\n";
-        let rows = parse(text, no_ids).unwrap();
+        let rows = parse(text, no_ids, false).unwrap();
         assert_eq!(rows[0].1["failed_ids"], json!(["a::b", "c::d"]));
         assert_eq!(rows[0].1["exit"], json!(1));
     }
 
     #[test]
     fn text_with_no_entry_is_refused() {
-        assert!(parse("```\n\nnothing here\n```\n", no_ids).is_err());
+        assert!(parse("```\n\nnothing here\n```\n", no_ids, false).is_err());
+    }
+
+    #[test]
+    fn a_skip_line_is_a_row_only_when_skips_are_read() {
+        let text = "command: t\noutcome: fail\nexit: 1\ntail:\nx\nskip: cargo deploy\noutcome: pass | command: u | duration: 1 | summary: none | log: C:/t/u.log\n";
+        let rows = parse(text, no_ids, true).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1].0, 6);
+        assert_eq!(rows[1].1["command"], json!("cargo deploy"));
+        assert_eq!(rows[1].1["skip"], json!(true));
+
+        let rows = parse(text, no_ids, false).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|(_, row)| row.get("skip").is_none()));
+        assert!(parse("skip: \n", no_ids, true).is_err());
     }
 }

@@ -342,6 +342,8 @@ const GRADES: &[&str] = &["high", "medium", "low"];
 const ANGLES: &[&str] = &["risk", "challenge", "probe", "alternative", "direction"];
 pub(crate) const COMMANDS: &[&str] = &["review-v2", "optimise-v2", "review-plan-v2"];
 const SUBSTRATES: &[&str] = &["workflow", "agent-waves"];
+/// `delta` widens a re-check's digest to the review delta at its start.
+pub(crate) const RECHECK_SCOPES: &[&str] = &["delta"];
 
 /// A set of finding kinds, as a bitmask over [`Kind`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -582,6 +584,8 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Run, "counts", Ty::Table, RECORD_STATE).computed(),
     field(Run, "audit", Ty::Table, RECORD_STATE),
     field(Run, "rechecks", Ty::Str, RECORD_STATE),
+    field(Run, "recheck_scope", Ty::Str, RECORD_STATE).values(RECHECK_SCOPES),
+    field(Run, "plan_digest", Ty::Table, RECORD_STATE).computed(),
     field(Run, "incomplete", Ty::Str, RECORD_STATE).computed(),
     field(Run, "ceiling_overrides", Ty::TableList, RECORD_STATE).computed(),
     // cells

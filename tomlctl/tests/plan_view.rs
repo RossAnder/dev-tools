@@ -1143,3 +1143,17 @@ fn a_malformed_generator_config_leaves_the_view_whole() {
         "{worker}"
     );
 }
+
+#[test]
+fn a_task_bind_reaches_a_row_on_the_bound_tasks_files() {
+    let tasks = format!(
+        "{TASKS}\n[[items]]\nid = 3\nref = \"fix-work\"\ntitle = \"Fix work\"\neffort = \"S\"\nstatus = \"pending\"\ncheckpoint = \"B\"\nfiles = [\"src/a.rs\"]\nneeds = []\ncoupling = []\naction = \"Fix-row-action.\"\n"
+    );
+    let flow = Flow::seeded(Some(&tasks), PLAN, Some(BRIEF.as_bytes()));
+
+    let fix = flow.view(&["--for", "worker", "--task", "3"]);
+    assert!(fix.contains("by-id-because"), "{fix}");
+
+    let other = flow.view(&["--for", "worker", "--task", "2"]);
+    assert!(!other.contains("by-id-because"), "{other}");
+}

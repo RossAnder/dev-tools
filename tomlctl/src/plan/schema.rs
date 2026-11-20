@@ -6,11 +6,14 @@
 //! [binding] / [id_high_water]
 //! [[decision]] / [[contract]] / [[approval]] / [[run]] / [[handover]]
 //! [[attempt]] / [[gate_round]] / [[report]] / [[request]] / [[visual_accept]]
+//! [[gate_accept]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
 //! write is byte-stable with no sort step. A write stamps
-//! `VISUAL_ACCEPT_SCHEMA_VERSION` when the store holds a visual acceptance,
+//! `GATE_ACCEPT_SCHEMA_VERSION` when the store holds any shape
+//! [`PlanStore::holds_gate_accept_shapes`] names,
+//! `VISUAL_ACCEPT_SCHEMA_VERSION` when it otherwise holds a visual acceptance,
 //! `REQUEST_SCHEMA_VERSION` when it otherwise holds a request,
 //! `CLASS_SCHEMA_VERSION` when a decision otherwise
 //! carries a `class`, `RUN_RECORDS_SCHEMA_VERSION` when the store otherwise
@@ -33,9 +36,13 @@ use crate::tasks::schema::{
 };
 
 /// The newest stamp this build reads.
-pub(crate) const SCHEMA_VERSION: i64 = VISUAL_ACCEPT_SCHEMA_VERSION;
+pub(crate) const SCHEMA_VERSION: i64 = GATE_ACCEPT_SCHEMA_VERSION;
 
-/// The stamp of a store holding a visual acceptance.
+/// The stamp of a store holding a gate acceptance, a base rerun, a tree
+/// digest, a blocking handover's keys, run-note sources or a delta waiver.
+pub(crate) const GATE_ACCEPT_SCHEMA_VERSION: i64 = 7;
+
+/// The stamp of a store holding a visual acceptance and no schema 7 shape.
 pub(crate) const VISUAL_ACCEPT_SCHEMA_VERSION: i64 = 6;
 
 /// The stamp of a store holding a request and no visual acceptance.
@@ -51,6 +58,7 @@ pub(crate) const RUN_RECORDS_SCHEMA_VERSION: i64 = 3;
 /// decision class, and the version an unstamped store reads as.
 pub(crate) const BASE_SCHEMA_VERSION: i64 = 2;
 
+const _: () = assert!(GATE_ACCEPT_SCHEMA_VERSION > VISUAL_ACCEPT_SCHEMA_VERSION);
 const _: () = assert!(VISUAL_ACCEPT_SCHEMA_VERSION > REQUEST_SCHEMA_VERSION);
 const _: () = assert!(REQUEST_SCHEMA_VERSION > CLASS_SCHEMA_VERSION);
 const _: () = assert!(CLASS_SCHEMA_VERSION > RUN_RECORDS_SCHEMA_VERSION);
@@ -219,6 +227,16 @@ vocabulary!(
     }
 );
 
+vocabulary!(
+    /// What a gate acceptance records: a waived red gate, a round past the
+    /// cap, or failures that predate the milestone.
+    GateAcceptKind {
+        Accept => "accept",
+        ExtraRound => "extra-round",
+        Base => "base",
+    }
+);
+
 /// The record kinds whose ids are minted, each under its own number sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordKind {
@@ -257,6 +275,7 @@ pub(crate) struct PlanStore {
     pub(crate) reports: Vec<Report>,
     pub(crate) requests: Vec<Request>,
     pub(crate) visual_accepts: Vec<VisualAccept>,
+    pub(crate) gate_accepts: Vec<GateAccept>,
 }
 
 /// The branch and scope a draft holds here until approval, so that it matches
@@ -348,6 +367,9 @@ pub(crate) struct Approval {
     pub(crate) by: String,
     pub(crate) review: ReviewOutcome,
     pub(crate) reason: String,
+    /// Why the user approved with records changed since the last finished
+    /// review left unreviewed. Omitted from the TOML while empty.
+    pub(crate) delta_waiver: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -432,6 +454,13 @@ pub(crate) struct Handover {
     pub(crate) done_when: String,
     pub(crate) source_task: u32,
     pub(crate) done: bool,
+    /// Task ids that may not launch until this handover is done.
+    pub(crate) blocks: Vec<u32>,
+    /// A read-only command the orchestrator runs, exiting 0 once the input
+    /// is in place. Never holds a secret's value: the store is committed.
+    pub(crate) ready_check: String,
+    /// What was observed when the handover was marked done.
+    pub(crate) note: String,
 }
 
 /// One worker's run note, read into the store; upserted on `(task, run_id)`.
@@ -449,6 +478,8 @@ pub(crate) struct Attempt {
     pub(crate) deviations: Vec<Deviation>,
     pub(crate) tangential: Vec<Tangential>,
     pub(crate) checks: Vec<CheckRun>,
+    /// The sources the worker verified; omitted from the TOML while empty.
+    pub(crate) sources: Vec<Source>,
     /// Omitted from the TOML while `None`.
     pub(crate) handover: Option<ProposedHandover>,
     /// What `plan run notes` found wrong with the note; omitted while `""`.
@@ -477,6 +508,19 @@ pub(crate) struct CheckRun {
     pub(crate) result: CheckResult,
 }
 
+/// One outside fact a worker verified, with where it came from. The note
+/// parser enforces `claim` and one of `url` or `query`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Source {
+    pub(crate) url: String,
+    pub(crate) query: String,
+    pub(crate) claim: String,
+    pub(crate) how_verified: String,
+    pub(crate) fetched_at: Datetime,
+    /// The library, API or platform version the claim holds for, `""` when none.
+    pub(crate) version: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProposedHandover {
     pub(crate) reason: String,
@@ -496,6 +540,19 @@ pub(crate) struct GateRound {
     pub(crate) at: Datetime,
     pub(crate) outcome: GateOutcome,
     pub(crate) commands: Vec<GateCommand>,
+    /// Digests of the milestone's files on a failing run, so a later round
+    /// can tell a whitespace-only change. Omitted from the TOML while empty.
+    pub(crate) tree: Vec<TreeEntry>,
+}
+
+/// One path's digests; both read `"deleted"` for a path that did not exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TreeEntry {
+    pub(crate) path: String,
+    /// SHA-256 of the file's bytes.
+    pub(crate) raw: String,
+    /// SHA-256 of the file's bytes with every ASCII whitespace byte removed.
+    pub(crate) stripped: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,6 +566,12 @@ pub(crate) struct GateCommand {
     pub(crate) failed_ids: Vec<String>,
     /// `""` when no log was kept.
     pub(crate) log: String,
+    /// The failed tests were rerun at the milestone's base. Written only when true.
+    pub(crate) base_checked: bool,
+    /// The subset of `failed_ids` that also failed at base; omitted while empty.
+    pub(crate) base_failed_ids: Vec<String>,
+    /// A whole-command base rerun failed. Written only when true.
+    pub(crate) base_whole_failed: bool,
 }
 
 /// What one orchestrator invocation left for a person; appended, never merged.
@@ -565,6 +628,26 @@ pub(crate) struct WaivedDefect {
     pub(crate) note: String,
 }
 
+/// The user's settling of a gate round left red, keyed on `(milestone, round)`
+/// and, for `base`, on `kind` too: the commands and failed ids it waives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GateAccept {
+    pub(crate) milestone: String,
+    pub(crate) round: u32,
+    pub(crate) at: Datetime,
+    pub(crate) kind: GateAcceptKind,
+    pub(crate) why: String,
+    /// The follow-up backlog item; `""` on an `extra-round`.
+    pub(crate) backlog: String,
+    pub(crate) commands: Vec<AcceptedCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AcceptedCommand {
+    pub(crate) command: String,
+    pub(crate) failed_ids: Vec<String>,
+}
+
 impl Default for PlanStore {
     fn default() -> Self {
         Self {
@@ -582,6 +665,7 @@ impl Default for PlanStore {
             reports: Vec::new(),
             requests: Vec::new(),
             visual_accepts: Vec::new(),
+            gate_accepts: Vec::new(),
         }
     }
 }
@@ -589,7 +673,9 @@ impl Default for PlanStore {
 impl PlanStore {
     /// The stamp a write gives this store.
     pub(crate) fn write_version(&self) -> i64 {
-        if !self.visual_accepts.is_empty() {
+        if self.holds_gate_accept_shapes() {
+            GATE_ACCEPT_SCHEMA_VERSION
+        } else if !self.visual_accepts.is_empty() {
             VISUAL_ACCEPT_SCHEMA_VERSION
         } else if !self.requests.is_empty() {
             REQUEST_SCHEMA_VERSION
@@ -601,6 +687,24 @@ impl PlanStore {
         } else {
             RUN_RECORDS_SCHEMA_VERSION
         }
+    }
+
+    /// Whether any key a schema 6 binary would drop is written: every key
+    /// counts, not only `base_checked`, since each is written on its own.
+    pub(crate) fn holds_gate_accept_shapes(&self) -> bool {
+        !self.gate_accepts.is_empty()
+            || self.approvals.iter().any(|a| !a.delta_waiver.is_empty())
+            || self
+                .handovers
+                .iter()
+                .any(|h| !h.blocks.is_empty() || !h.ready_check.is_empty() || !h.note.is_empty())
+            || self.attempts.iter().any(|a| !a.sources.is_empty())
+            || self.gate_rounds.iter().any(|round| {
+                !round.tree.is_empty()
+                    || round.commands.iter().any(|c| {
+                        c.base_checked || c.base_whole_failed || !c.base_failed_ids.is_empty()
+                    })
+            })
     }
 
     /// One past the highest number `kind`'s rows carry or its prefix has ever
@@ -660,6 +764,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
         reports: records(root, "report", report_from_toml)?,
         requests: records(root, "request", request_from_toml)?,
         visual_accepts: records(root, "visual_accept", visual_accept_from_toml)?,
+        gate_accepts: records(root, "gate_accept", gate_accept_from_toml)?,
     })
 }
 
@@ -679,6 +784,7 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
         reports,
         requests,
         visual_accepts,
+        gate_accepts,
     } = store;
 
     let mut root = Table::new();
@@ -713,6 +819,7 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
         visual_accepts,
         visual_accept_to_toml,
     );
+    insert_records(&mut root, "gate_accept", gate_accepts, gate_accept_to_toml);
     TomlValue::Table(root)
 }
 
@@ -956,6 +1063,7 @@ fn approval_from_toml(table: &Table, context: &str) -> Result<Approval> {
         by: str_or(table, "by"),
         review: vocab(table, "review", context)?,
         reason: lf(&str_or(table, "reason")),
+        delta_waiver: lf(&str_or(table, "delta_waiver")),
         commit,
     })
 }
@@ -968,6 +1076,7 @@ fn approval_to_toml(approval: &Approval) -> TomlValue {
         by,
         review,
         reason,
+        delta_waiver,
     } = approval;
     let mut table = Table::new();
     table.insert("commit".to_string(), TomlValue::String(commit.clone()));
@@ -982,6 +1091,12 @@ fn approval_to_toml(approval: &Approval) -> TomlValue {
         TomlValue::String(review.as_str().to_string()),
     );
     table.insert("reason".to_string(), TomlValue::String(lf(reason)));
+    if !delta_waiver.is_empty() {
+        table.insert(
+            "delta_waiver".to_string(),
+            TomlValue::String(lf(delta_waiver)),
+        );
+    }
     TomlValue::Table(table)
 }
 
@@ -1130,6 +1245,9 @@ fn handover_from_toml(table: &Table, context: &str) -> Result<Handover> {
         done_when: lf(&str_or(table, "done_when")),
         source_task,
         done: bool_or_false(table, "done", &context)?,
+        blocks: id_array(table, "blocks", &context)?,
+        ready_check: str_or(table, "ready_check"),
+        note: lf(&str_or(table, "note")),
         id,
     })
 }
@@ -1143,6 +1261,9 @@ fn handover_to_toml(handover: &Handover) -> TomlValue {
         done_when,
         source_task,
         done,
+        blocks,
+        ready_check,
+        note,
     } = handover;
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
@@ -1162,7 +1283,27 @@ fn handover_to_toml(handover: &Handover) -> TomlValue {
         TomlValue::Integer(i64::from(*source_task)),
     );
     table.insert("done".to_string(), TomlValue::Boolean(*done));
+    if !blocks.is_empty() {
+        table.insert("blocks".to_string(), id_array_value(blocks));
+    }
+    if !ready_check.is_empty() {
+        table.insert(
+            "ready_check".to_string(),
+            TomlValue::String(ready_check.clone()),
+        );
+    }
+    if !note.is_empty() {
+        table.insert("note".to_string(), TomlValue::String(lf(note)));
+    }
     TomlValue::Table(table)
+}
+
+fn id_array_value(ids: &[u32]) -> TomlValue {
+    TomlValue::Array(
+        ids.iter()
+            .map(|id| TomlValue::Integer(i64::from(*id)))
+            .collect(),
+    )
 }
 
 fn attempt_from_toml(table: &Table, context: &str) -> Result<Attempt> {
@@ -1197,6 +1338,16 @@ fn attempt_from_toml(table: &Table, context: &str) -> Result<Attempt> {
                 result: vocab(entry, "result", context)?,
             })
         })?,
+        sources: nested(table, "sources", &context, |entry, context| {
+            Ok(Source {
+                url: str_or(entry, "url"),
+                query: lf(&str_or(entry, "query")),
+                claim: lf(&str_or(entry, "claim")),
+                how_verified: lf(&str_or(entry, "how_verified")),
+                fetched_at: required_datetime(entry, "fetched_at", context)?,
+                version: str_or(entry, "version"),
+            })
+        })?,
         handover: match table.get("handover") {
             None => None,
             Some(TomlValue::Table(entry)) => Some(ProposedHandover {
@@ -1223,6 +1374,7 @@ fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
         deviations,
         tangential,
         checks,
+        sources,
         handover,
         problem,
     } = attempt;
@@ -1291,6 +1443,12 @@ fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
                 .collect(),
         ),
     );
+    if !sources.is_empty() {
+        table.insert(
+            "sources".to_string(),
+            TomlValue::Array(sources.iter().map(source_to_toml).collect()),
+        );
+    }
     if !problem.is_empty() {
         table.insert("problem".to_string(), TomlValue::String(lf(problem)));
     }
@@ -1311,6 +1469,28 @@ fn attempt_to_toml(attempt: &Attempt) -> TomlValue {
             ]),
         );
     }
+    TomlValue::Table(table)
+}
+
+fn source_to_toml(source: &Source) -> TomlValue {
+    let Source {
+        url,
+        query,
+        claim,
+        how_verified,
+        fetched_at,
+        version,
+    } = source;
+    let mut table = Table::new();
+    table.insert("url".to_string(), TomlValue::String(url.clone()));
+    table.insert("query".to_string(), TomlValue::String(lf(query)));
+    table.insert("claim".to_string(), TomlValue::String(lf(claim)));
+    table.insert(
+        "how_verified".to_string(),
+        TomlValue::String(lf(how_verified)),
+    );
+    table.insert("fetched_at".to_string(), TomlValue::Datetime(*fetched_at));
+    table.insert("version".to_string(), TomlValue::String(version.clone()));
     TomlValue::Table(table)
 }
 
@@ -1345,6 +1525,16 @@ fn gate_round_from_toml(table: &Table, context: &str) -> Result<GateRound> {
                 summary: lf(&str_or(entry, "summary")),
                 failed_ids: str_array(entry, "failed_ids"),
                 log: str_or(entry, "log"),
+                base_checked: bool_or_false(entry, "base_checked", context)?,
+                base_failed_ids: str_array(entry, "base_failed_ids"),
+                base_whole_failed: bool_or_false(entry, "base_whole_failed", context)?,
+            })
+        })?,
+        tree: nested(table, "tree", &context, |entry, context| {
+            Ok(TreeEntry {
+                path: required_str(entry, "path", context)?,
+                raw: str_or(entry, "raw"),
+                stripped: str_or(entry, "stripped"),
             })
         })?,
         milestone,
@@ -1361,6 +1551,7 @@ fn gate_round_to_toml(gate_round: &GateRound) -> TomlValue {
         at,
         outcome,
         commands,
+        tree,
     } = gate_round;
     let mut table = Table::new();
     table.insert(
@@ -1378,6 +1569,31 @@ fn gate_round_to_toml(gate_round: &GateRound) -> TomlValue {
         "commands".to_string(),
         TomlValue::Array(commands.iter().map(gate_command_to_toml).collect()),
     );
+    if !tree.is_empty() {
+        table.insert(
+            "tree".to_string(),
+            TomlValue::Array(
+                tree.iter()
+                    .map(
+                        |TreeEntry {
+                             path,
+                             raw,
+                             stripped,
+                         }| {
+                            let mut entry = Table::new();
+                            entry.insert("path".to_string(), TomlValue::String(path.clone()));
+                            entry.insert("raw".to_string(), TomlValue::String(raw.clone()));
+                            entry.insert(
+                                "stripped".to_string(),
+                                TomlValue::String(stripped.clone()),
+                            );
+                            TomlValue::Table(entry)
+                        },
+                    )
+                    .collect(),
+            ),
+        );
+    }
     TomlValue::Table(table)
 }
 
@@ -1390,6 +1606,9 @@ fn gate_command_to_toml(command: &GateCommand) -> TomlValue {
         summary,
         failed_ids,
         log,
+        base_checked,
+        base_failed_ids,
+        base_whole_failed,
     } = command;
     let mut table = Table::new();
     table.insert("command".to_string(), TomlValue::String(command.clone()));
@@ -1407,6 +1626,18 @@ fn gate_command_to_toml(command: &GateCommand) -> TomlValue {
     table.insert("summary".to_string(), TomlValue::String(lf(summary)));
     table.insert("failed_ids".to_string(), str_arr_value(failed_ids));
     table.insert("log".to_string(), TomlValue::String(log.clone()));
+    if *base_checked {
+        table.insert("base_checked".to_string(), TomlValue::Boolean(true));
+    }
+    if !base_failed_ids.is_empty() {
+        table.insert(
+            "base_failed_ids".to_string(),
+            str_arr_value(base_failed_ids),
+        );
+    }
+    if *base_whole_failed {
+        table.insert("base_whole_failed".to_string(), TomlValue::Boolean(true));
+    }
     TomlValue::Table(table)
 }
 
@@ -1571,6 +1802,71 @@ fn visual_accept_to_toml(accept: &VisualAccept) -> TomlValue {
     TomlValue::Table(table)
 }
 
+fn gate_accept_from_toml(table: &Table, context: &str) -> Result<GateAccept> {
+    let milestone = required_str(table, "milestone", context)?;
+    let round = required_u32(table, "round", context)?;
+    let context = format!("gate_accept {milestone} r{round}");
+    Ok(GateAccept {
+        at: required_datetime(table, "at", &context)?,
+        kind: vocab(table, "kind", &context)?,
+        why: lf(&str_or(table, "why")),
+        backlog: str_or(table, "backlog"),
+        commands: nested(table, "commands", &context, |entry, context| {
+            Ok(AcceptedCommand {
+                command: required_str(entry, "command", context)?,
+                failed_ids: str_array(entry, "failed_ids"),
+            })
+        })?,
+        milestone,
+        round,
+    })
+}
+
+fn gate_accept_to_toml(accept: &GateAccept) -> TomlValue {
+    let GateAccept {
+        milestone,
+        round,
+        at,
+        kind,
+        why,
+        backlog,
+        commands,
+    } = accept;
+    let mut table = Table::new();
+    table.insert(
+        "milestone".to_string(),
+        TomlValue::String(milestone.clone()),
+    );
+    table.insert("round".to_string(), TomlValue::Integer(i64::from(*round)));
+    table.insert("at".to_string(), TomlValue::Datetime(*at));
+    table.insert(
+        "kind".to_string(),
+        TomlValue::String(kind.as_str().to_string()),
+    );
+    table.insert("why".to_string(), TomlValue::String(lf(why)));
+    table.insert("backlog".to_string(), TomlValue::String(backlog.clone()));
+    table.insert(
+        "commands".to_string(),
+        TomlValue::Array(
+            commands
+                .iter()
+                .map(
+                    |AcceptedCommand {
+                         command,
+                         failed_ids,
+                     }| {
+                        let mut entry = Table::new();
+                        entry.insert("command".to_string(), TomlValue::String(command.clone()));
+                        entry.insert("failed_ids".to_string(), str_arr_value(failed_ids));
+                        TomlValue::Table(entry)
+                    },
+                )
+                .collect(),
+        ),
+    );
+    TomlValue::Table(table)
+}
+
 /// A table of string keys, each LF-normalised, in the order given.
 fn text_table(fields: &[(&str, &String)]) -> TomlValue {
     TomlValue::Table(
@@ -1720,6 +2016,7 @@ pub(crate) mod tests {
                 by: "user".to_string(),
                 review: ReviewOutcome::SkippedLowRisk,
                 reason: "One-file fix.".to_string(),
+                delta_waiver: String::new(),
             }],
             runs: vec![
                 Run {
@@ -1764,12 +2061,16 @@ pub(crate) mod tests {
                 done_when: "The new command appears in a fresh session.".to_string(),
                 source_task: 3,
                 done: true,
+                blocks: Vec::new(),
+                ready_check: String::new(),
+                note: String::new(),
             }],
             attempts: vec![attempt()],
             gate_rounds: vec![gate_round()],
             reports: vec![report()],
             requests: Vec::new(),
             visual_accepts: Vec::new(),
+            gate_accepts: Vec::new(),
         }
     }
 
@@ -1797,6 +2098,7 @@ pub(crate) mod tests {
                 command: "cargo clippy --manifest-path glimpse/Cargo.toml".to_string(),
                 result: CheckResult::Pass,
             }],
+            sources: Vec::new(),
             handover: Some(ProposedHandover {
                 reason: "restart".to_string(),
                 action: "Restart glimpse.".to_string(),
@@ -1823,6 +2125,9 @@ pub(crate) mod tests {
                     summary: "412 passed; 2 failed".to_string(),
                     failed_ids: vec!["view::plan::tests::sections".to_string()],
                     log: ".claude/flows/x/gates/B-r0-s1-c1.log".to_string(),
+                    base_checked: false,
+                    base_failed_ids: Vec::new(),
+                    base_whole_failed: false,
                 },
                 GateCommand {
                     command: "cargo fmt --check".to_string(),
@@ -1832,8 +2137,12 @@ pub(crate) mod tests {
                     summary: String::new(),
                     failed_ids: Vec::new(),
                     log: String::new(),
+                    base_checked: false,
+                    base_failed_ids: Vec::new(),
+                    base_whole_failed: false,
                 },
             ],
+            tree: Vec::new(),
         }
     }
 
@@ -2106,6 +2415,252 @@ pub(crate) mod tests {
             ..fixture()
         };
         assert_eq!(request.write_version(), REQUEST_SCHEMA_VERSION);
+    }
+
+    fn gate_accept(kind: GateAcceptKind) -> GateAccept {
+        GateAccept {
+            milestone: "B".to_string(),
+            round: 2,
+            at: at("2026-11-21T10:00:00Z"),
+            kind,
+            why: "Two browser cases flake under load.".to_string(),
+            backlog: "B-1234abcd".to_string(),
+            commands: vec![AcceptedCommand {
+                command: "bun run test:ui".to_string(),
+                failed_ids: vec!["|browser| src/a.test.ts > renders".to_string()],
+            }],
+        }
+    }
+
+    /// Each schema 7 shape alone over the fixture, named for the failure message.
+    fn schema_7_stores() -> Vec<(&'static str, PlanStore)> {
+        let mut stores = Vec::new();
+        let mut store = fixture();
+        store.gate_accepts = vec![
+            gate_accept(GateAcceptKind::Accept),
+            gate_accept(GateAcceptKind::Base),
+            GateAccept {
+                backlog: String::new(),
+                commands: Vec::new(),
+                ..gate_accept(GateAcceptKind::ExtraRound)
+            },
+        ];
+        stores.push(("gate_accept", store));
+
+        let mut store = fixture();
+        let command = &mut store.gate_rounds[0].commands[0];
+        command.base_checked = true;
+        command.base_failed_ids = vec!["view::plan::tests::sections".to_string()];
+        stores.push(("base_checked", store));
+
+        let mut store = fixture();
+        store.gate_rounds[0].commands[0].base_checked = true;
+        store.gate_rounds[0].commands[0].base_whole_failed = true;
+        stores.push(("base_whole_failed", store));
+
+        let mut store = fixture();
+        store.gate_rounds[0].tree = vec![
+            TreeEntry {
+                path: "src/a.rs".to_string(),
+                raw: "aa".repeat(32),
+                stripped: "bb".repeat(32),
+            },
+            TreeEntry {
+                path: "src/gone.rs".to_string(),
+                raw: "deleted".to_string(),
+                stripped: "deleted".to_string(),
+            },
+        ];
+        stores.push(("tree", store));
+
+        let mut store = fixture();
+        store.handovers[0].blocks = vec![6, 9];
+        stores.push(("blocks", store));
+
+        let mut store = fixture();
+        store.handovers[0].ready_check = "grep -q '^API_TOKEN=' .env".to_string();
+        stores.push(("ready_check", store));
+
+        let mut store = fixture();
+        store.handovers[0].note = "Verified on the dashboard.".to_string();
+        stores.push(("note", store));
+
+        let mut store = fixture();
+        store.attempts[0].sources = vec![Source {
+            url: "https://example.com/docs/api".to_string(),
+            query: String::new(),
+            claim: "The field carries the CPU time.".to_string(),
+            how_verified: "Queried live; three rows returned.".to_string(),
+            fetched_at: at("2026-11-20"),
+            version: "v4".to_string(),
+        }];
+        stores.push(("sources", store));
+
+        let mut store = fixture();
+        store.approvals[0].delta_waiver = "Only a typo changed since the review.".to_string();
+        stores.push(("delta_waiver", store));
+
+        stores
+            .into_iter()
+            .map(|(name, store)| {
+                (
+                    name,
+                    PlanStore {
+                        schema_version: GATE_ACCEPT_SCHEMA_VERSION,
+                        ..store
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_schema_7_shape_round_trips_and_stamps_its_tier() {
+        for (name, store) in schema_7_stores() {
+            assert_eq!(store.write_version(), GATE_ACCEPT_SCHEMA_VERSION, "{name}");
+            let doc = to_toml(&store);
+            assert_eq!(
+                doc["schema_version"].as_integer(),
+                Some(GATE_ACCEPT_SCHEMA_VERSION),
+                "{name}"
+            );
+            assert_eq!(rendered_round_trip(&store), store, "{name}");
+        }
+    }
+
+    /// The gate acceptance tier is tested before the visual one, so a store
+    /// holding both is still refused by a binary that predates the new keys.
+    #[test]
+    fn a_gate_acceptance_is_written_last_and_outranks_a_visual_acceptance() {
+        let store = PlanStore {
+            schema_version: GATE_ACCEPT_SCHEMA_VERSION,
+            visual_accepts: vec![visual_accept()],
+            gate_accepts: vec![gate_accept(GateAcceptKind::Accept)],
+            ..fixture()
+        };
+        assert_eq!(store.write_version(), GATE_ACCEPT_SCHEMA_VERSION);
+        let doc = to_toml(&store);
+        let keys: Vec<&str> = doc
+            .as_table()
+            .expect("root table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(&keys[keys.len() - 2..], ["visual_accept", "gate_accept"]);
+        let row: Vec<&str> = doc["gate_accept"][0]
+            .as_table()
+            .expect("a row table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            row,
+            [
+                "milestone",
+                "round",
+                "at",
+                "kind",
+                "why",
+                "backlog",
+                "commands"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_store_using_no_schema_7_shape_keeps_its_stamp_and_writes_no_new_key() {
+        let visual = PlanStore {
+            schema_version: VISUAL_ACCEPT_SCHEMA_VERSION,
+            visual_accepts: vec![visual_accept()],
+            ..fixture()
+        };
+        let request = PlanStore {
+            schema_version: REQUEST_SCHEMA_VERSION,
+            requests: vec![open_request()],
+            ..fixture()
+        };
+        for store in [
+            fixture(),
+            base_fixture(),
+            classed(fixture()),
+            request,
+            visual,
+        ] {
+            assert!(!store.holds_gate_accept_shapes());
+            let doc = to_toml(&store);
+            assert_eq!(
+                doc["schema_version"].as_integer(),
+                Some(store.schema_version)
+            );
+            assert!(doc.get("gate_accept").is_none(), "{doc}");
+            assert!(doc["approval"][0].get("delta_waiver").is_none(), "{doc}");
+            for key in ["blocks", "ready_check", "note"] {
+                assert!(doc["handover"][0].get(key).is_none(), "{key}: {doc}");
+            }
+            if let Some(attempts) = doc.get("attempt") {
+                assert!(attempts[0].get("sources").is_none(), "{doc}");
+            }
+            if let Some(rounds) = doc.get("gate_round") {
+                assert!(rounds[0].get("tree").is_none(), "{doc}");
+                for command in rounds[0]["commands"].as_array().expect("commands") {
+                    for key in ["base_checked", "base_failed_ids", "base_whole_failed"] {
+                        assert!(command.get(key).is_none(), "{key}: {doc}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn removing_every_schema_7_shape_returns_the_store_to_its_old_stamp() {
+        for (name, mut store) in schema_7_stores() {
+            store.gate_accepts.clear();
+            store.approvals[0].delta_waiver.clear();
+            store.handovers[0].blocks.clear();
+            store.handovers[0].ready_check.clear();
+            store.handovers[0].note.clear();
+            store.attempts[0].sources.clear();
+            store.gate_rounds[0].tree.clear();
+            let command = &mut store.gate_rounds[0].commands[0];
+            command.base_checked = false;
+            command.base_failed_ids.clear();
+            command.base_whole_failed = false;
+            store.schema_version = RUN_RECORDS_SCHEMA_VERSION;
+            assert_eq!(to_toml(&store), to_toml(&fixture()), "{name}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_gate_acceptance_kind_is_refused_with_the_vocabulary() {
+        let store = PlanStore {
+            gate_accepts: vec![gate_accept(GateAcceptKind::Accept)],
+            ..fixture()
+        };
+        let mut raw = to_toml(&store);
+        record_mut(&mut raw, "gate_accept")
+            .insert("kind".to_string(), TomlValue::String("shrug".to_string()));
+        let message = from_toml(&raw).expect_err("unknown kind").to_string();
+        assert!(message.contains("shrug"), "{message}");
+        assert!(message.contains("extra-round"), "{message}");
+    }
+
+    #[test]
+    fn a_source_without_fetched_at_is_refused() {
+        let (_, store) = schema_7_stores()
+            .into_iter()
+            .find(|(name, _)| *name == "sources")
+            .expect("the sources store");
+        let mut raw = to_toml(&store);
+        record_mut(&mut raw, "attempt")
+            .get_mut("sources")
+            .expect("sources")
+            .as_array_mut()
+            .expect("an array")[0]
+            .as_table_mut()
+            .expect("a source table")
+            .remove("fetched_at");
+        let message = from_toml(&raw).expect_err("refused").to_string();
+        assert!(message.contains("fetched_at"), "{message}");
     }
 
     #[test]
@@ -2503,6 +3058,9 @@ pub(crate) mod tests {
             done_when: String::new(),
             source_task: 1,
             done: false,
+            blocks: Vec::new(),
+            ready_check: String::new(),
+            note: String::new(),
         });
         store.handovers.clear();
 

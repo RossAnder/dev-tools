@@ -1,14 +1,12 @@
 //! `plan stage`: where a plan stands, computed from what exists on disk and
 //! never stored. No verb gates on the result.
 
-use std::path::Path;
-
 use anyhow::Result;
 use serde_json::json;
 
 use super::check::{self, CLASS_BRIEF_CHANGED};
 use super::schema::{PlanStore, Run};
-use super::store::{self, Unsettled};
+use super::store::{self, PlanReviewState, Unsettled};
 use crate::cli::PlanStageArgs;
 use crate::io::{relativise, repo_or_cwd_root};
 use crate::output::print_json_line;
@@ -51,7 +49,8 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
     let plan = store::load(&plan_path, &args.integrity)?;
     let tasks = load_store(&resolve_store_path(Some(slug), None)?, &args.integrity)?;
     let findings = check::findings(slug, &args.integrity)?;
-    let review_blockers = review_blockers(store::flow_dir(&plan_path), &plan, &tasks)?;
+    let review = store::plan_review_state(store::flow_dir(&plan_path))?;
+    let review_blockers = review_blockers(&review, &plan, &tasks);
     let brief = relativise(
         &repo_or_cwd_root()?,
         &store::authored_dir(slug)?.join(store::BRIEF_FILE),
@@ -76,6 +75,7 @@ pub(super) fn run(args: PlanStageArgs) -> Result<()> {
         "next": report.next,
         "blockers": report.blockers,
         "open_runs": open_steps,
+        "review_delta": review.delta,
     }))
 }
 
@@ -293,19 +293,16 @@ fn undecided(plan: &PlanStore) -> Vec<String> {
 /// own rule decides, so the two cannot disagree; only with no finished plan-family run
 /// does a `[[run]]` for the review step carrying a skip reason settle it, since a review
 /// run after the skip is the one approval reports.
-fn review_blockers(flow_dir: &Path, plan: &PlanStore, tasks: &Store) -> Result<Vec<String>> {
-    let state = store::plan_review_state(flow_dir)?;
+fn review_blockers(state: &PlanReviewState, plan: &PlanStore, tasks: &Store) -> Vec<String> {
     let mut blockers = Vec::new();
     let mut user = 0;
     for reason in state.unsettled(tasks) {
         match reason {
             Unsettled::NoFinishedRun if store::skipped_reviews(plan).next().is_some() => {
-                return Ok(Vec::new());
+                return Vec::new();
             }
             Unsettled::NoFinishedRun => {
-                return Ok(vec![
-                    "no finished plan review run and no recorded skip".to_string(),
-                ]);
+                return vec!["no finished plan review run and no recorded skip".to_string()];
             }
             Unsettled::OpenUserOwned(ids) => user = ids.len(),
             other => blockers.push(other.to_string()),
@@ -316,7 +313,7 @@ fn review_blockers(flow_dir: &Path, plan: &PlanStore, tasks: &Store) -> Result<V
             "{user} open user-tier or question-tier findings to accept, veto or answer"
         ));
     }
-    Ok(blockers)
+    blockers
 }
 
 #[cfg(test)]

@@ -758,3 +758,47 @@ fn a_run_row_written_before_outcome_existed_still_reads() {
     assert_eq!(run["outcome"], serde_json::Value::Null, "{run}");
     assert_eq!(run["args_hash"], "h", "{run}");
 }
+
+fn seed_task_store(root: &Path) {
+    let doc = serde_json::json!({
+        "schema_version": 2,
+        "checkpoints": [{ "id": "A", "rationale": "this one" }],
+        "items": [{
+            "id": 6, "ref": "row-6", "title": "Row 6", "effort": "S",
+            "status": "pending", "checkpoint": "A", "needs": [], "files": [],
+        }],
+    });
+    common::write_tasks_store(
+        &root
+            .join(".claude")
+            .join("flows")
+            .join(SLUG)
+            .join("tasks.toml"),
+        &toml::to_string(&doc).expect("the fixture serialises"),
+    );
+}
+
+#[test]
+fn a_handover_stores_blocks_ready_check_and_note() {
+    let (_dir, root) = opened();
+    seed_task_store(&root);
+    let row = r#"{"reason":"restart","action":"Add the token.","source_task":1,"blocks":[6],"ready_check":"grep -q '^TOKEN=' .env"}"#;
+    set_handover(&root, row).success();
+    let text = store_text(&root);
+    assert!(text.contains("blocks = [6]"), "{text}");
+    assert!(text.contains("ready_check = "), "{text}");
+    set_handover(&root, r#"{"id":"H1","note":"verified in the dashboard"}"#).success();
+    let text = store_text(&root);
+    assert!(text.contains("verified in the dashboard"), "{text}");
+    assert!(text.contains("blocks = [6]"), "{text}");
+}
+
+#[test]
+fn a_handover_blocking_an_unknown_task_is_refused() {
+    let (_dir, root) = opened();
+    seed_task_store(&root);
+    let row = r#"{"reason":"restart","action":"Add the token.","source_task":1,"blocks":[99]}"#;
+    let out = set_handover(&root, row).failure();
+    assert!(stderr(&out).contains("99"), "{}", stderr(&out));
+    assert!(!store_text(&root).contains("[[handover]]"));
+}
