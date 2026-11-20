@@ -372,6 +372,11 @@ fn tasks_update(root: &Path, args: &[&str]) {
 /// A committed tree holding a two-row milestone, row 2 in another lane, and an
 /// empty plan store; `None` when there is no git.
 fn lane_fixture(root: &Path) -> Option<std::path::PathBuf> {
+    lane_fixture_with(root, &["src/two.rs"])
+}
+
+/// `lane_fixture` with row 2 holding `two`.
+fn lane_fixture_with(root: &Path, two: &[&str]) -> Option<std::path::PathBuf> {
     let ignore = root.join(".gitignore");
     let mut ignored = fs::read_to_string(&ignore).unwrap();
     ignored.push_str("\n.claude/.locks/\n");
@@ -385,7 +390,7 @@ fn lane_fixture(root: &Path) -> Option<std::path::PathBuf> {
     committed(root)?;
     let items = vec![
         row(1, "pending", MILESTONE, &[], &["src/one.rs"]),
-        row(2, "pending", OTHER, &[], &["src/two.rs"]),
+        row(2, "pending", OTHER, &[], two),
     ];
     let specs = vec![spec(1, "lite", json!([])), spec(2, "lite", json!([]))];
     seed_tasks(root, &store(items, specs, json!({})));
@@ -425,6 +430,7 @@ fn lane_check_reports_paths_and_store_writes_outside_the_run() {
             "clean": true,
             "run_id": "wf_9",
             "out_of_lane": [],
+            "other_flows": [],
             "store_writes": [],
             "digest": "matched",
         })
@@ -462,6 +468,44 @@ fn lane_check_reports_paths_and_store_writes_outside_the_run() {
         json!([{ "source": "digest", "section": "rows" }])
     );
     assert_eq!(out["digest"], "changed");
+}
+
+const OTHER_FLOW_PLAN: &str = ".claude/flows/other/plan.toml";
+
+#[test]
+fn lane_check_sets_another_flows_records_apart() {
+    let (_dir, root) = sandbox();
+    if lane_fixture(&root).is_none() {
+        return;
+    }
+    run_start(&root, &["--step", "implement:M"]).success();
+    fs::create_dir_all(root.join(".claude/flows/other")).unwrap();
+    fs::write(root.join(OTHER_FLOW_PLAN), "schema_version = 2\n").unwrap();
+
+    let out = stdout_json(&lane_check(&root).success());
+    assert_eq!(out["other_flows"], json!([OTHER_FLOW_PLAN]), "{out}");
+    assert_eq!(out["out_of_lane"], json!([]), "{out}");
+    assert_eq!(out["clean"], true, "{out}");
+}
+
+#[test]
+fn lane_check_keeps_another_flows_path_a_row_names_out_of_lane() {
+    let (_dir, root) = sandbox();
+    if lane_fixture_with(&root, &["src/two.rs", OTHER_FLOW_PLAN]).is_none() {
+        return;
+    }
+    run_start(&root, &["--step", "implement:M"]).success();
+    fs::create_dir_all(root.join(".claude/flows/other")).unwrap();
+    fs::write(root.join(OTHER_FLOW_PLAN), "schema_version = 2\n").unwrap();
+
+    let out = stdout_json(&lane_check(&root).success());
+    assert_eq!(out["other_flows"], json!([]), "{out}");
+    assert_eq!(
+        out["out_of_lane"],
+        json!([{ "path": OTHER_FLOW_PLAN, "rows": [2] }]),
+        "{out}"
+    );
+    assert_eq!(out["clean"], false, "{out}");
 }
 
 #[test]

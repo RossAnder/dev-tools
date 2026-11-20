@@ -127,14 +127,16 @@ Adds or updates decisions. A row without `id` mints one and needs `decision` (no
 unknown key, an unknown id or a bad vocabulary value refuses the batch, which persists nothing.
 
 ```bash
-tomlctl plan decide --slug <slug> --ndjson <path>
+tomlctl plan decide --slug <slug> --ndjson <path> [--new]
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--ndjson` | source | One JSON object per line: `-` for stdin, otherwise a file path. A leading `@` is accepted, and a `.toml` path is a [record file](write.md). | required |
+| `--new` | — | Every row creates a decision: a row carrying `id` refuses the batch, naming the decision it would overwrite, or saying ids are minted when none exists. Pass it whenever the rows are new decisions. | off |
 
-Prints `{"ok":true,"ids":["D1"]}`, one id per row in order.
+Prints `{"ok":true,"ids":["D3","D1"],"updated":["D1"]}`: `ids` holds one id per row in order, and
+`updated` the ids of rows that updated an existing decision, `[]` when none did.
 
 A row may carry `class`, the kind of call the decision is: `structure`, `look`, `ux`, `cost`,
 `vocabulary`, `architecture` or `compromise`. An unknown value refuses the batch, naming the
@@ -145,7 +147,10 @@ vocabulary. It is written only when set, and a store holding any classed decisio
 ## `plan contract`
 
 Adds or updates contracts on the same terms as `plan decide`. A new row needs `kind` and a non-empty
-`claim`; `tasks` is an array of integers.
+`claim`; `tasks` is an array of integers. `kind` is `interface`, a shape one task `provides` and
+another `consumes`, or `invariant`, a fact that must stay true across the tasks. Any other value
+refuses the batch, naming those two. A row takes only `id`, `kind`, `claim`, `check`, `tasks`,
+`provides` and `consumes` ([fields](plan-store.md#plantoml-store-shape)).
 
 ```bash
 tomlctl plan contract --slug <slug> --ndjson <path>
@@ -339,7 +344,7 @@ tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--id` | id | The milestone's id. | required |
-| `--goal` | text | Replaces the goal. | keeps it |
+| `--goal` | text | Replaces the goal, stored as the milestone's `[[checkpoints]].rationale`; this flag is how that rationale is edited. | keeps it |
 | `--gate` | command, repeatable | Replaces the whole gate list and the whole `external_gates` list with what this call gives, so `--gate` alone leaves no gate marked. | keeps it |
 | `--external-gate` | command, repeatable | A gate marked external, stored as on `plan milestone add`. With or without `--gate`, replaces the whole gate list and the whole `external_gates` list. | keeps it |
 | `--clear-gate` | — | Empties the gate list and `external_gates`; `plan check` then reports `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate` or `--external-gate`. | keeps it |
@@ -374,7 +379,8 @@ tomlctl plan check --slug <slug> [--milestone <id>]
 
 A row report with `ok` as its header and one [finding](tasks.md#finding-shape) per row:
 `{"ok":false,"findings":[{"class","severity","ids","detail"}]}`. A `files` entry and a `binds` path
-compare after folding backslashes and dropping a leading `./`.
+compare after folding backslashes and dropping a leading `./`. Read `ok` with `--header --get ok`:
+a bare `--get ok` names a row field and is refused.
 
 ## `plan view`
 
@@ -542,6 +548,7 @@ output are [plan-engine.md](plan-engine.md#plan-emit).
 | `plan/ui-capture-missing` | warning | A milestone that is not deferred, recorded with `--ui yes`, declares no `ui_states`, so its visual pass captures nothing. |
 | `plan/decision-bind-unknown` | error | A `binds` entry is empty, a task id no row carries, or a path neither on a row's `files` nor under the repo root. |
 | `plan/task-no-spec` | error | A row has no `[[specs]]` entry. |
+| `plan/task-no-files` | error | A row has empty `files`, so `plan emit launch-args` drops it. A git or external step is a handover or a gate, not a task. A done row with a `commit` is not checked. |
 | `plan/spec-orphan` | error | A spec is keyed on a `ref` no row carries. |
 | `plan/spec-no-outcome` | error | A spec has a blank `outcome`. |
 | `plan/spec-no-accept` | error | A spec has no `accept` entry. |

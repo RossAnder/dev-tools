@@ -250,6 +250,11 @@ fn batch_row(
     let type_name = crate::convert::json_type_name;
 
     if let Some(key) = object.keys().find(|key| !ROW_KEYS.contains(&key.as_str())) {
+        if settable(key, true).is_ok() {
+            return Err(refuse(format!(
+                "`{key}` is a `set` field — give it inside `set`, as `\"set\":{{\"{key}\":…}}`"
+            )));
+        }
         return Err(refuse(format!(
             "unknown key `{key}` — a row takes {}",
             ROW_KEYS.join(", ")
@@ -1725,6 +1730,27 @@ mod tests {
         }
         let err = format!("{:#}", settable("nonsense", false).unwrap_err());
         assert!(err.contains("unknown field"), "{err}");
+    }
+
+    #[test]
+    fn a_set_field_given_as_a_row_key_is_pointed_inside_set() {
+        let refusal = |row: &str| match rows_from_ndjson(row, false, false) {
+            Ok(_) => panic!("{row} is refused"),
+            Err(err) => format!("{err:#}"),
+        };
+        for key in ["files", "needs", "title", "checkpoint"] {
+            let err = refusal(&format!("{{\"id\":3,\"{key}\":\"x\"}}\n"));
+            assert!(
+                err.contains(&format!("`{key}` is a `set` field")),
+                "{key}: {err}"
+            );
+            assert!(
+                err.contains(&format!("\"set\":{{\"{key}\":")),
+                "{key}: {err}"
+            );
+        }
+        let err = refusal("{\"id\":3,\"nonsense\":1}\n");
+        assert!(err.contains("unknown key `nonsense`"), "{err}");
     }
     use crate::cli::ReadIntegrityArgs;
     use crate::tasks::add::{self, NewTask};

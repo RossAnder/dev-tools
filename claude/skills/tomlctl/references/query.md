@@ -335,9 +335,12 @@ What the `git ls-files` basis does and does not cover:
   aborts the sweep. Submodule *contents* are never swept.
 - **Very deep paths**: `core.longpaths` is unset on Windows, so a path over the platform
   limit can be dropped on git's side without a warning — a gap the tool cannot see.
-- **Binary and oversize files**: a NUL byte in the first 8 KiB marks a file binary
-  (ripgrep's heuristic, which also catches UTF-16 text); anything over `--max-file-bytes`
-  skips. Both are counted, not fatal.
+- **Binary and oversize files**: a file is binary first by extension — a media, archive,
+  font, executable or database extension (`png`, `pdf`, `zip`, `woff2`, `dll`, `sqlite` and
+  the like, any case) skips without being opened, so a tree of tracked images costs no reads
+  — and otherwise by a NUL byte in its first 8 KiB (ripgrep's heuristic, which also catches
+  UTF-16 text). Anything over `--max-file-bytes` skips. All are counted, not fatal; an
+  extension skip counts under `skipped.binary` like a sniffed one.
 
 Patterns compile with `unicode-perl` and `unicode-case`, so `(?i)`, `\d`, `\w`, `\s` and
 `\b` work as written. `\p{..}` classes are refused, and Unicode `\w` / `\W` repeats above

@@ -22,25 +22,56 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_one_or_rows;
 
-/// Several distinct ids print a row report, so the output options apply per
-/// row; a repeated id prints once, at its first position. Every row is built
-/// before anything prints, so an unknown id fails the call with no partial
-/// output.
+/// Several distinct rows print a row report, so the output options apply per
+/// row; a row named twice, by id or by ref, prints once, at its first
+/// position. Every row is built before anything prints, so an unknown id or
+/// ref fails the call with no partial output.
 pub(crate) fn dispatch(
-    ids: &[u32],
+    keys: &[String],
     target: TasksTarget,
     with: Vec<ShowPart>,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
+    let ids = resolve_keys(&store, keys)?;
     let mut seen = BTreeSet::new();
     let rows = ids
-        .iter()
-        .filter(|&&id| seen.insert(id))
-        .map(|&id| show(&store, id, &with))
+        .into_iter()
+        .filter(|&id| seen.insert(id))
+        .map(|id| show(&store, id, &with))
         .collect::<Result<Vec<_>>>()?;
     print_one_or_rows(rows)
+}
+
+/// An all-digit key is an id, left for [`show`] to find; any other key is a
+/// ref, taken in the `task:<ref>` and `task:<ref>.acceptance` target forms
+/// too, so a review target's text can be passed as it stands.
+fn resolve_keys(store: &Store, keys: &[String]) -> Result<Vec<u32>> {
+    keys.iter()
+        .map(|key| {
+            let key = key.trim();
+            if !key.is_empty()
+                && key.bytes().all(|b| b.is_ascii_digit())
+                && let Ok(id) = key.parse::<u32>()
+            {
+                return Ok(id);
+            }
+            let bare = key.strip_prefix("task:").unwrap_or(key);
+            let bare = bare.split('.').next().unwrap_or(bare);
+            store
+                .find_ref(bare)
+                .filter(|_| !bare.is_empty())
+                .map(|row| row.id)
+                .ok_or_else(|| {
+                    tagged_err(
+                        ErrorKind::NotFound,
+                        None,
+                        format!("no task with ref `{bare}` in the store"),
+                    )
+                })
+        })
+        .collect()
 }
 
 /// An empty `parts` is the summary shape. A cycle or a dangling edge is an
@@ -626,6 +657,22 @@ mod tests {
     fn an_unknown_id_is_not_found() {
         let err = show(&fixture(), 99, &[]).expect_err("task 99 is absent");
         assert!(err.to_string().contains("no task 99"), "{err}");
+    }
+
+    #[test]
+    fn keys_resolve_ids_refs_and_task_targets() {
+        let keys: Vec<String> = ["12", "task-13", "task:task-14", "task:task-10.acceptance"]
+            .iter()
+            .map(|key| key.to_string())
+            .collect();
+        let ids = resolve_keys(&fixture(), &keys).expect("every key resolves");
+        assert_eq!(ids, vec![12, 13, 14, 10]);
+
+        for unknown in ["task-99", "task:", ""] {
+            let err = resolve_keys(&fixture(), &[unknown.to_string()])
+                .expect_err("an unknown ref is refused");
+            assert!(err.to_string().contains("no task with ref"), "{err}");
+        }
     }
 
     #[test]

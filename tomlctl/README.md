@@ -410,7 +410,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "handover_blocks",
                "drift_affected_decisions",
                "run_note_sources",
-               "review_plan_digest"],
+               "review_plan_digest",
+               "plan_decide_new"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -647,3 +648,4 @@ Feature meanings:
 | `drift_affected_decisions` | `plan drift` names the decisions a changed record affects |
 | `run_note_sources` | a run note records the outside sources a worker verified |
 | `review_plan_digest` | `review` reads a plan digest so edits made after the re-check can be re-reviewed |
+| `plan_decide_new` | `plan decide --new` refuses a row carrying `id`, and `plan decide` prints the ids it `updated` |

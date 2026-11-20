@@ -597,7 +597,7 @@ fn wrong_shapes_inside_a_spec_are_refused() {
     let cases = [
         (json!("just text"), "`spec` must be a table"),
         (json!({"outcome": 3}), "spec.outcome"),
-        (json!({"constraints": "one"}), "spec.constraints"),
+        (json!({"constraints": 3}), "spec.constraints"),
         (json!({"accept": {"check": "true"}}), "spec.accept"),
         (json!({"accept": ["true"]}), "spec.accept[0]"),
         (

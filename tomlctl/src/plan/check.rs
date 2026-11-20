@@ -187,6 +187,7 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
             .iter()
             .filter_map(|row| no_spec_finding(row, &tasks)),
     );
+    found.extend(tasks.items.iter().filter_map(no_files_finding));
     found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
     found.extend(baseline_findings(&tasks, &plan));
@@ -576,6 +577,24 @@ fn no_spec_finding(row: &TaskRow, tasks: &Store) -> Option<Finding> {
         "plan/task-no-spec",
         vec![row.id],
         format!("task {} (`{}`) has no spec", row.id, row.r#ref),
+    ))
+}
+
+/// `plan emit launch-args` drops a row with no files, so it would never run. A
+/// committed row is history and is left alone.
+fn no_files_finding(row: &TaskRow) -> Option<Finding> {
+    let committed = row.status == Status::Done && !row.commit.trim().is_empty();
+    if !row.files.is_empty() || committed {
+        return None;
+    }
+    Some(error(
+        "plan/task-no-files",
+        vec![row.id],
+        format!(
+            "task {} (`{}`) has no files: a git or external step is a handover or a gate, \
+             not a task",
+            row.id, row.r#ref
+        ),
     ))
 }
 

@@ -185,14 +185,45 @@ fn load_rows(src: &str) -> Result<Vec<(usize, Row)>> {
 pub(super) fn decide(args: PlanDecideArgs) -> Result<()> {
     let rows = load_rows(&args.ndjson)?;
     let path = store::resolve(&args.target.slug)?;
-    let ids = store::mutate(&path, &args.integrity, |plan| {
-        let mut ids = Vec::with_capacity(rows.len());
-        for (line, row) in &rows {
-            ids.push(upsert_decision(plan, *line, row)?);
+    let (ids, updated) = store::mutate(&path, &args.integrity, |plan| {
+        if args.new {
+            refuse_ided_rows(plan, &rows)?;
         }
-        Ok(ids)
+        let mut ids = Vec::with_capacity(rows.len());
+        let mut updated = Vec::new();
+        for (line, row) in &rows {
+            let id = upsert_decision(plan, *line, row)?;
+            if row_id(*line, row)?.is_some() {
+                updated.push(id.clone());
+            }
+            ids.push(id);
+        }
+        Ok((ids, updated))
     })?;
-    print_ok(json!({"ok": true, "ids": ids}))?;
+    print_ok(json!({"ok": true, "ids": ids, "updated": updated}))?;
+    Ok(())
+}
+
+/// `--new`: a row carrying `id` would update that decision, so the batch is
+/// refused before any row is applied, naming what the row would overwrite.
+fn refuse_ided_rows(plan: &PlanStore, rows: &[(usize, Row)]) -> Result<()> {
+    for (line, row) in rows {
+        let Some(id) = row_id(*line, row)? else {
+            continue;
+        };
+        let message = match plan.decisions.iter().find(|d| d.id == id) {
+            Some(existing) => format!(
+                "--new refuses a row carrying `id`: `{id}` would overwrite decision {id} \
+                 (\"{}\"); drop `id` to mint a new decision",
+                existing.decision
+            ),
+            None => format!(
+                "--new refuses a row carrying `id`: no decision `{id}` exists, and ids are \
+                 minted, so a new decision carries no `id`"
+            ),
+        };
+        return Err(row_err(*line, message));
+    }
     Ok(())
 }
 

@@ -995,13 +995,14 @@ door = "two-way"
 binds = ["2"]
 "#;
 
-fn remove(root: &Path, id: &str, reason: &str) {
-    cli(root)
+fn remove(root: &Path, id: &str, reason: &str) -> Value {
+    let out = cli(root)
         .args([
             "tasks", "remove", id, "--slug", TASKS_SLUG, "--reason", reason,
         ])
         .assert()
         .success();
+    serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON")
 }
 
 fn add(root: &Path, title: &str) -> u64 {
@@ -1034,7 +1035,8 @@ fn unknown_bind_ids(root: &Path) -> Option<Value> {
 }
 
 /// A decision bound to the removed task stays dangling, where a re-mint would
-/// hand it to the new one and read clean.
+/// hand it to the new one and read clean; the removal names it so the caller
+/// can settle it.
 #[test]
 fn a_removed_tasks_id_is_never_minted_again_and_its_bind_stays_dangling() {
     let (_tmp, root) = sandbox();
@@ -1046,7 +1048,12 @@ fn a_removed_tasks_id_is_never_minted_again_and_its_bind_stays_dangling() {
     .expect("plan.toml");
     assert_eq!(unknown_bind_ids(&root), None, "task 2 still exists");
 
-    remove(&root, "2", "dropped");
+    let report = remove(&root, "2", "dropped");
+    assert_eq!(
+        report["plan_refs"],
+        json!([{"kind": "decision", "id": "D1", "field": "binds"}]),
+        "{report}"
+    );
     assert_eq!(unknown_bind_ids(&root), Some(json!([2])));
 
     assert_eq!(add(&root, "Third"), 3);

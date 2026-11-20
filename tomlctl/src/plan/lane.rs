@@ -386,7 +386,7 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
         ));
     }
 
-    let out_of_lane = out_of_lane(&tasks, run, &plan.requests, slug)?;
+    let (out_of_lane, other_flows) = out_of_lane(&tasks, run, &plan.requests, slug)?;
     let mut store_writes = trail_writes(&tasks, run);
     let digest = if run.store_digest.is_empty() {
         "unrecorded"
@@ -412,6 +412,7 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
         "clean": clean,
         "run_id": run.run_id,
         "out_of_lane": out_of_lane,
+        "other_flows": other_flows,
         "store_writes": store_writes,
         "digest": digest,
     }))
@@ -425,12 +426,15 @@ pub(super) fn lane_check(args: PlanEmitLaneCheckArgs) -> Result<()> {
 /// ruled granted on an unapplied request of a row in the lane counts as in
 /// lane too, since the drain has not yet written the grant into the row's
 /// `files`.
+///
+/// The second list holds the paths under another flow's directories that no
+/// row's `files` names: that flow's own records, written by its own session.
 fn out_of_lane(
     tasks: &Store,
     run: &Run,
     requests: &[Request],
     slug: &str,
-) -> Result<Vec<JsonValue>> {
+) -> Result<(Vec<JsonValue>, Vec<String>)> {
     let root = repo_or_cwd_root()?;
     let uncommitted = uncommitted_files(&root, slug)?;
     let mut lane = lane_paths(tasks, run, requests);
@@ -442,23 +446,43 @@ fn out_of_lane(
         lane.insert(format!("{}{SIDECAR_SUFFIX}", normal_path(&path)));
         lane.insert(normal_path(&path));
     }
-    Ok(uncommitted
+    let mut outside = Vec::new();
+    let mut other_flows = Vec::new();
+    for path in uncommitted
         .iter()
         .filter(|path| !lane.contains(path.as_str()) && !lane.contains(&normal_path(path)))
-        .map(|path| {
-            let holders: Vec<u32> = tasks
-                .items
-                .iter()
-                .filter(|row| {
-                    row.files
-                        .iter()
-                        .any(|file| normal_path(file) == normal_path(path))
-                })
-                .map(|row| row.id)
-                .collect();
-            json!({ "path": path, "rows": holders })
-        })
-        .collect())
+    {
+        let holders: Vec<u32> = tasks
+            .items
+            .iter()
+            .filter(|row| {
+                row.files
+                    .iter()
+                    .any(|file| normal_path(file) == normal_path(path))
+            })
+            .map(|row| row.id)
+            .collect();
+        if holders.is_empty() && other_flow_path(path, slug) {
+            other_flows.push(path.clone());
+        } else {
+            outside.push(json!({ "path": path, "rows": holders }));
+        }
+    }
+    Ok((outside, other_flows))
+}
+
+/// A path inside `.claude/flows/<x>/` or `docs/flows/<x>/` for a flow `x` other
+/// than `slug`.
+fn other_flow_path(path: &str, slug: &str) -> bool {
+    let normal = normal_path(path);
+    let Some(rest) = [".claude/flows/", "docs/flows/"]
+        .into_iter()
+        .find_map(|prefix| normal.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    rest.split_once('/')
+        .is_some_and(|(flow, inner)| !flow.is_empty() && flow != slug && !inner.is_empty())
 }
 
 /// The files of every row in the lane, plus each path granted on one of those
@@ -1026,6 +1050,27 @@ mod tests {
             let lane = lane_paths(&tasks, &run, &[request]);
             assert!(!lane.contains("docs/extra.md"), "{lane:?}");
             assert!(lane.contains("src/1.rs"), "{lane:?}");
+        }
+    }
+
+    #[test]
+    fn only_a_path_inside_another_flows_directory_is_another_flows() {
+        for path in [
+            ".claude/flows/other/plan.toml",
+            "docs/flows/other/notes/run/1.md",
+            ".\\docs\\flows\\other\\brief.md",
+        ] {
+            assert!(other_flow_path(path, "mine"), "{path}");
+        }
+        for path in [
+            ".claude/flows/mine/plan.toml",
+            "docs/flows/mine/brief.md",
+            ".claude/flows/other",
+            ".claude/flows//x.toml",
+            ".claude/backlog.toml",
+            "src/flows/other/a.rs",
+        ] {
+            assert!(!other_flow_path(path, "mine"), "{path}");
         }
     }
 }

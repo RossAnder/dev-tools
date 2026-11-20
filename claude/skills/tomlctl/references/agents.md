@@ -17,10 +17,13 @@ know what an agent did reads the execution record, which stays the durable audit
 glimpse compiles in its own copy of tomlctl, so an `agents.toml` schema change needs
 `cargo install --path glimpse` as well as `cargo install --path tomlctl`.
 
-**Local telemetry.** `agents.toml` and its `.sha256` sidecar are gitignored by the targeted
-pattern `.claude/flows/*/agents.toml*`, so the store never churns a commit and is not shared
-between clones. Do not ignore `.claude/` wholesale to achieve the same — `flow doctor` flags
-that.
+**Tracked with the flow.** `agents.toml` and its `.sha256` sidecar live under
+`.claude/flows/<slug>/` and are committed with the flow's other stores: the drain's flow-store
+commit stages them through `plan emit commit-paths --for flow` (implement-v2-engine
+`references/drain.md`, step 10, carried out in `references/finish.md`). Each row's
+`transcript_path` is a machine-local transcript path. Do not ignore `.claude/` wholesale to
+keep it local: `flow doctor` flags that, and `plan approve` refuses a flow whose `plan.toml` or
+`tasks.toml` is ignored.
 
 ## Contents
 
@@ -103,7 +106,7 @@ tomlctl agents audit --transcripts <dir> --gate '<command>' --gate '<command>'
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--transcripts` | directory | The transcript directory the launch reports. | required |
-| `--pattern` | regex, repeatable | A command matching any pattern is reported. Given patterns replace the defaults; an invalid one errors naming it. | a build or whole-suite test run: `cargo build`, `test` or `nextest`; `bun`, `npm`, `pnpm` or `yarn` `test` or `build`, with or without `run`; `vitest`, `jest` or `playwright test` through `npx`, `bunx` or `pnpm exec`; `docker build`, `docker compose build` or `docker buildx build`; `go build` or `test`; `dotnet build` or `test`; `pytest`. Compile checks (`cargo clippy`, a `type-check` script) and reading commands such as a recursive `grep` are not reported |
+| `--pattern` | regex, repeatable | A command matching any pattern is reported. Given patterns replace the defaults; an invalid one errors naming it. | a build or whole-suite test run: `cargo build`, `test` or `nextest`; `bun`, `npm`, `pnpm` or `yarn` `test` or `build`, with or without `run`; `vitest`, `jest` or `playwright test` through `npx`, `bunx` or `pnpm exec`; `docker build`, `docker compose build` or `docker buildx build`; `go build` or `test`; `dotnet build` or `test`; `pytest`; and a process kill by name: `taskkill` with `/IM` (or Git Bash's `//IM`), `pkill`, `killall`, `Stop-Process -Name` or `-ProcessName`, or `Get-Process` piped to `Stop-Process`. A kill by PID (`taskkill /PID`, `kill`, `Stop-Process -Id`), compile checks (`cargo clippy`, a `type-check` script) and reading commands such as a recursive `grep` are not reported |
 | `--gate` | command, repeatable | A gate command, taken literally: a Bash command containing it, with runs of whitespace collapsed on both sides, is reported as well as one matching a pattern. A blank value is ignored. | none |
 
 `agent` is the file name without `.jsonl`, and `command` is the tool call's `input.command`. A
@@ -112,8 +115,9 @@ marked `...`; a gate match is windowed over the whitespace-collapsed command. Ea
 its `message.content` array count; a line that is not JSON, or has no such array, is skipped. A
 directory with no matching command prints `[]`. The default patterns cover builds and whole-suite test runs, plus a `bun -e`, `bun --eval`,
 `node -e` or `node --eval` command that names a file under `scripts/` (a script run by evaluating
-an import of it; a direct `bun run scripts/x.ts` is not matched). The default patterns and the `--gate` commands name what a milestone
-gate owns and a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted
+an import of it; a direct `bun run scripts/x.ts` is not matched), and process kills by name,
+which reach processes the agent did not start. The default patterns and the `--gate` commands
+name what a milestone gate owns or a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted
 `bun test` in a grep's search text also matches.
 
 ## Store shape

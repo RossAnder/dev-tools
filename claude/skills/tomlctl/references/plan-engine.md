@@ -53,7 +53,7 @@ unprobes the entry it changes.
 |---|---|
 | `dag/cycle`, `dag/dangling-ref`, `dag/duplicate-number`, `dag/unbuildable`, `checkpoint/invalid-cut`, `plan/orphan-row`, `policy/*` | `tasks check` |
 | `plan/spec-orphan` | `tasks add-many` (the new row replaces the orphan spec and then needs its own) |
-| `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/accept-owner-invalid`, `plan/accept-cover-unknown`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `backlog/unknown-id` | `tasks update --ndjson` |
+| `plan/spec-no-outcome`, `plan/spec-no-accept`, `plan/accept-no-check`, `plan/accept-owner-invalid`, `plan/accept-cover-unknown`, `plan/means-required-no-reason`, `plan/design-anchor-dead`, `plan/premise-task-unknown`, `plan/task-no-files`, `backlog/unknown-id` | `tasks update --ndjson` |
 | `plan/contract-no-check`, `plan/contract-task-unknown` | `plan contract` |
 | `plan/decision-bind-unknown`, or a surfaced decision still `agent-assumed`, which no class reports but `plan approve` refuses | `plan decide` |
 | `plan/handover-task-unknown`, `plan/handover-incomplete` | `plan handover set --ndjson <rows with the handover id and the missing or corrected keys>` |
@@ -238,14 +238,15 @@ a worker may write on its own row. It reads the task ids the run recorded throug
 Refused `not_found` when the plan store records no such run, and `validation` when the run
 recorded no task ids.
 
-Prints `{clean, run_id, out_of_lane, store_writes, digest}`. A clean run prints
-`{"clean":true,"run_id":"<id>","out_of_lane":[],"store_writes":[],"digest":"matched"}`.
+Prints `{clean, run_id, out_of_lane, other_flows, store_writes, digest}`. A clean run prints
+`{"clean":true,"run_id":"<id>","out_of_lane":[],"other_flows":[],"store_writes":[],"digest":"matched"}`.
 
 | Key | Holds |
 |---|---|
 | `clean` | `true` only when `out_of_lane` and `store_writes` are empty and `digest` is `matched`. |
 | `run_id` | The run's id, for the report. |
 | `out_of_lane` | `{path, rows}` per uncommitted path, as `plan drift --uncommitted` lists them, that is in no lane: not in the `files` of a row the run dispatched or of a row a worker started (`agent` `plan-worker-lite` or `plan-worker-deep`, empty `commit`), not `.claude/backlog.toml`, `.claude/inputs.toml` or a review store a `[[finding_links]]` entry names, nor any of their `.sha256`. `rows` are the ids of the rows whose `files` hold it, empty when none does. Paths under `.claude/flows/<slug>/` and `docs/flows/<slug>/` are never listed. A path ruled `granted` on an unapplied request of a row in the lane counts as in lane too, since the drain has not yet written the grant into that row's `files`; once the request is `applied` the row's `files` carry it. |
+| `other_flows` | Each uncommitted path under another flow's `.claude/flows/<x>/` or `docs/flows/<x>/` that no row's `files` names: that flow's own records, which `clean` ignores. A path some row's `files` names stays in `out_of_lane`. |
 | `store_writes` | `{source: "trail", ref, task, field, old, new, actor, at}` per `[[changes]]` row written in the run's window, where `task` is the id of the row carrying `ref`, `null` for a milestone or a removed row. Then `{source: "digest", section}` per section of the store whose digest moved since it was taken: `rows`, `specs`, `milestones` (with the checkpoints), `changes` (the rows written before the window) or `rest`. |
 | `digest` | `matched`, `changed`, or `unrecorded` for a run whose `plan run start` took no digest, which leaves only the trail to answer. |
 

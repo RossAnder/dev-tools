@@ -438,6 +438,66 @@ fn one_unknown_id_among_several_fails_the_whole_fetch() {
     assert_eq!(err["message"], json!("no task 99 in the store"), "{err}");
 }
 
+/// A review target names a task by ref, so a ref, bare or in the
+/// `task:<ref>.acceptance` target form, fetches the same object as its id.
+#[test]
+fn a_ref_prints_the_same_object_as_its_id() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, READ_FIXTURE);
+
+    let by_id = tasks(&root, &["show", "3", "--with", "body,deps"]);
+    for key in [
+        "write-the-read-verbs",
+        "task:write-the-read-verbs",
+        "task:write-the-read-verbs.acceptance",
+    ] {
+        let by_ref = tasks(&root, &["show", key, "--with", "body,deps"]);
+        assert_eq!(by_ref, by_id, "{key}");
+    }
+}
+
+/// Ids and refs mix in one call, in the order given, and a row named both ways
+/// prints once, at its first position.
+#[test]
+fn ids_and_refs_mix_and_a_row_named_twice_prints_once() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, READ_FIXTURE);
+
+    let rows = tasks(
+        &root,
+        &[
+            "show",
+            "3,scaffold-the-module-tree,write-the-read-verbs",
+            "2",
+        ],
+    );
+    assert_eq!(ids(&rows), vec![3, 1, 2], "{rows}");
+}
+
+/// An unknown ref is `not_found`, like an unknown id, and fails the whole call
+/// with no partial output.
+#[test]
+fn an_unknown_ref_is_a_not_found_envelope() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, READ_FIXTURE);
+
+    let out = cli(&root)
+        .args(["--error-format", "json", "tasks", "show", "1,no-such-task"])
+        .args(["--slug", TASKS_SLUG])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    assert!(out.get_output().stdout.is_empty(), "{out:?}");
+    let err = parse_json_error_envelope(&String::from_utf8_lossy(&out.get_output().stderr));
+    assert_eq!(err["kind"], json!("not_found"), "{err}");
+    assert_eq!(
+        err["message"],
+        json!("no task with ref `no-such-task` in the store"),
+        "{err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------

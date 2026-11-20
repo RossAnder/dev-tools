@@ -75,6 +75,37 @@ impl TaskIds {
     }
 }
 
+/// [`TaskIds`] for `tasks show`, where each token is an id or a task ref and
+/// is resolved against the store, not by clap. Same arg ids, so [`ids_help`]
+/// and the hidden `--id` spelling apply unchanged.
+#[derive(Args, Clone)]
+pub(crate) struct TaskKeys {
+    #[arg(
+        required_unless_present = "id",
+        num_args = 1..,
+        value_delimiter = ',',
+        value_name = "ID|REF,..."
+    )]
+    ids: Vec<String>,
+    /// Recovers the guessed flag spelling; appended to the positional keys.
+    #[arg(
+        long = "id",
+        alias = "ids",
+        hide = true,
+        value_delimiter = ',',
+        value_name = "ID|REF,..."
+    )]
+    id: Vec<String>,
+}
+
+impl TaskKeys {
+    pub(crate) fn into_ids(self) -> Vec<String> {
+        let mut ids = self.ids;
+        ids.extend(self.id);
+        ids
+    }
+}
+
 /// Projection selector for `tasks show --with`. Comma-delimited and
 /// repeatable; with the flag absent the output is `summary` alone. An unknown
 /// part is a clap parse failure — exit 2, usage prose, no
@@ -328,13 +359,14 @@ pub(crate) enum TasksOp {
     },
 
     /// Print one row's object, or an array of rows in the order given; an
-    /// unknown id fails the whole call. Without `--with` each is the summary
-    /// shape; `--with body,files,deps` is the fetch-by-id form a dispatching
-    /// orchestrator hands an implementing agent in place of pasted prose.
-    #[command(mut_args(ids_help("Task ids to print, comma- or space-separated")))]
+    /// unknown id or ref fails the whole call. Without `--with` each is the
+    /// summary shape; `--with body,files,deps` is the fetch-by-id form a
+    /// dispatching orchestrator hands an implementing agent in place of pasted
+    /// prose.
+    #[command(mut_args(ids_help("Task ids or refs to print, comma- or space-separated")))]
     Show {
         #[command(flatten)]
-        ids: TaskIds,
+        ids: TaskKeys,
         #[command(flatten)]
         target: TasksTarget,
         #[arg(

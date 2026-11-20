@@ -134,6 +134,24 @@ fn audit_reports_a_command_holding_a_gate_command() {
 }
 
 #[test]
+fn audit_reports_a_kill_by_name_and_passes_a_kill_by_pid() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_transcript(
+        tmp.path(),
+        "agent-a1.jsonl",
+        &[
+            bash_line("taskkill /T /PID 123"),
+            bash_line("taskkill //F //IM workerd.exe"),
+        ],
+    );
+
+    assert_eq!(
+        audit(tmp.path(), &[]),
+        json!([{"agent": "agent-a1", "command": "taskkill //F //IM workerd.exe"}])
+    );
+}
+
+#[test]
 fn audit_is_quiet_on_narrow_checks() {
     let tmp = tempfile::tempdir().unwrap();
     write_transcript(

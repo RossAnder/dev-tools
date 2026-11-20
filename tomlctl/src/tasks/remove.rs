@@ -19,10 +19,11 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::finding::{NO_TASK, task_list};
-use super::schema::{Change, DEFAULT_ACTOR, ImportOverride, Status, Store};
+use super::schema::{Change, DEFAULT_ACTOR, ImportOverride, Status, Store, premise_target};
 use super::store;
-use crate::cli::WriteIntegrityArgs;
+use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::plan::schema::{Bind, PlanStore};
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct RemoveOutcome {
@@ -35,6 +36,29 @@ pub(crate) struct RemoveOutcome {
     /// plan, named as `tasks update --unlock-import-fields` takes them. Empty
     /// when the row carried no stamp.
     pub(crate) pruned_override_fields: Vec<&'static str>,
+    /// Records still naming the removed id, reported and left as they are:
+    /// `plan.toml`'s decisions, contracts, handovers and unapplied requests,
+    /// then other rows' spec premises.
+    pub(crate) plan_refs: Vec<PlanRef>,
+}
+
+/// One record naming a removed task: `id` is the record's own id, or the
+/// holding row's ref for a premise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlanRef {
+    pub(crate) kind: &'static str,
+    pub(crate) id: String,
+    pub(crate) field: &'static str,
+}
+
+impl PlanRef {
+    fn new(kind: &'static str, id: &str, field: &'static str) -> Self {
+        Self {
+            kind,
+            id: id.to_string(),
+            field,
+        }
+    }
 }
 
 pub(crate) fn remove(
@@ -45,9 +69,62 @@ pub(crate) fn remove(
     reason: Option<&str>,
 ) -> Result<RemoveOutcome> {
     let v2_flow = store::is_v2_flow(path);
-    store::mutate(path, integrity, |store| {
+    let mut outcome = store::mutate(path, integrity, |store| {
         retire(store, id, force, reason, v2_flow)
-    })
+    })?;
+    if v2_flow {
+        let mut refs = plan_records_naming(path, id);
+        refs.append(&mut outcome.plan_refs);
+        outcome.plan_refs = refs;
+    }
+    Ok(outcome)
+}
+
+/// The removal has already landed, so a `plan.toml` that does not read
+/// reports nothing rather than failing the call.
+fn plan_records_naming(store_path: &Path, id: u32) -> Vec<PlanRef> {
+    let Some(plan_path) = store_path.parent().map(|dir| dir.join("plan.toml")) else {
+        return Vec::new();
+    };
+    let integrity = ReadIntegrityArgs {
+        verify_integrity: false,
+        strict_read: false,
+    };
+    crate::plan::store::load(&plan_path, &integrity)
+        .map(|plan| records_naming(&plan, id))
+        .unwrap_or_default()
+}
+
+fn records_naming(plan: &PlanStore, id: u32) -> Vec<PlanRef> {
+    let mut refs = Vec::new();
+    for decision in &plan.decisions {
+        if decision
+            .binds
+            .iter()
+            .any(|entry| Bind::parse(entry) == Some(Bind::Task(id)))
+        {
+            refs.push(PlanRef::new("decision", &decision.id, "binds"));
+        }
+    }
+    for contract in &plan.contracts {
+        if contract.tasks.contains(&id) {
+            refs.push(PlanRef::new("contract", &contract.id, "tasks"));
+        }
+    }
+    for handover in &plan.handovers {
+        if handover.source_task == id {
+            refs.push(PlanRef::new("handover", &handover.id, "source_task"));
+        }
+        if handover.blocks.contains(&id) {
+            refs.push(PlanRef::new("handover", &handover.id, "blocks"));
+        }
+    }
+    for request in &plan.requests {
+        if !request.applied && request.task == id {
+            refs.push(PlanRef::new("request", &request.id, "task"));
+        }
+    }
+    refs
 }
 
 /// An audited store records every removal as a tombstone, so it refuses one
@@ -137,6 +214,19 @@ fn retire(
         }
     }
 
+    let removed_ref = store.items[index].r#ref.clone();
+    let plan_refs: Vec<PlanRef> = store
+        .specs
+        .iter()
+        .filter(|spec| spec.r#ref != removed_ref)
+        .filter(|spec| {
+            spec.premises
+                .iter()
+                .any(|premise| premise_target(&premise.at) == Some(id))
+        })
+        .map(|spec| PlanRef::new("premise", &spec.r#ref, "premises"))
+        .collect();
+
     let v2 = v2_flow || store.holds_v2_keys();
     if v2 {
         store.id_high_water = store.id_high_water.max(id);
@@ -184,6 +274,7 @@ fn retire(
         r#ref: row.r#ref,
         rewired,
         pruned_override_fields: stamped_fields(pruned.as_ref()),
+        plan_refs,
     })
 }
 
@@ -286,6 +377,7 @@ mod tests {
                 r#ref: "task-2".to_string(),
                 rewired: Vec::new(),
                 pruned_override_fields: Vec::new(),
+                plan_refs: Vec::new(),
             }
         );
         assert_eq!(
@@ -570,6 +662,30 @@ mod tests {
 
         super::retire(&mut store, 1, false, Some("dropped"), false).expect_err("needs --force");
         assert_eq!(store.id_high_water, 0);
+    }
+
+    /// The premise is reported and left in place: the bind stays dangling
+    /// for the caller to settle.
+    #[test]
+    fn another_rows_premise_after_the_removed_id_is_reported() {
+        use crate::tasks::schema::Premise;
+        let premise = |at: &str| Premise {
+            claim: "c".to_string(),
+            check: "true".to_string(),
+            at: at.to_string(),
+            probe: None,
+        };
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[]), row(3, &[], &[])]);
+        store.specs = vec![spec("task-1"), spec("task-2"), spec("task-3")];
+        store.specs[0].premises = vec![premise("after:2"), premise("after:2")];
+        store.specs[2].premises = vec![premise("after:20"), premise("base")];
+
+        let outcome = retire(&mut store, 2, false).expect("the row retires");
+        assert_eq!(
+            outcome.plan_refs,
+            vec![PlanRef::new("premise", "task-1", "premises")]
+        );
+        assert_eq!(store.specs[0].premises[0].at, "after:2");
     }
 
     #[test]

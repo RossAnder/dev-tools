@@ -119,6 +119,34 @@ fn sweep_reports_each_site_once_with_full_coverage() {
     assert_eq!(out["coverage_complete"], json!(true));
 }
 
+/// The image carries no NUL and a matching line, so only its extension
+/// keeps it out of the hits.
+#[test]
+fn sweep_skips_a_binary_extension_as_binary() {
+    if !git_available() {
+        return;
+    }
+    let (_dir, root) = sandbox();
+    seed_sources(&root);
+    write(&root, "assets/logo.png", "needle\n");
+
+    let out = run_json(&root, &["sweep", "-e", PATTERN]);
+
+    assert_eq!(
+        out["hits"],
+        json!([
+            { "file": "src/a.rs", "line": 2, "pattern": 0 },
+            { "file": "src/b.rs", "line": 3, "pattern": 0 },
+        ]),
+        "{out}"
+    );
+    assert_eq!(
+        out["skipped"],
+        json!({ "binary": 1, "oversize": 0, "unreadable": 0, "unenumerated": 0 })
+    );
+    assert_eq!(out["coverage_complete"], json!(false));
+}
+
 #[test]
 fn sweep_outside_a_repo_is_a_tagged_error() {
     if !git_available() {

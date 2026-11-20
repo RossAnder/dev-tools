@@ -836,8 +836,26 @@ fn keep_tail(source: &Path, gates: &Path, name: &str) -> Result<bool> {
     };
     fs::create_dir_all(gates).with_context(|| format!("creating {}", gates.display()))?;
     let kept: PathBuf = gates.join(name);
-    fs::write(&kept, tail(&bytes)).with_context(|| format!("writing {}", kept.display()))?;
+    let failures = without_passes(&bytes);
+    fs::write(&kept, tail(&failures)).with_context(|| format!("writing {}", kept.display()))?;
     Ok(true)
+}
+
+/// `bytes` less the lines that only report a passing test: nextest's `PASS [`
+/// and libtest's `test <name> ... ok`. A suite's passes would otherwise fill the
+/// whole tail and push its failure detail out.
+fn without_passes(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .filter(|line| {
+            let line = line.trim_ascii();
+            let pass = line.starts_with(b"PASS [")
+                || (line.starts_with(b"test ") && line.ends_with(b" ... ok"));
+            !pass
+        })
+        .flatten()
+        .copied()
+        .collect()
 }
 
 /// The bytes of `source` when it resolves to a file under the OS temp
@@ -915,5 +933,32 @@ mod tests {
         let kept = tail(long.as_bytes());
         assert!(kept.len() <= TAIL_BYTES);
         assert!(std::str::from_utf8(kept).unwrap().ends_with("\nend\n"));
+    }
+
+    #[test]
+    fn the_kept_log_drops_pass_lines_so_an_early_failure_survives() {
+        let mut log = String::from("    Starting 3002 tests across 1 binary\n");
+        log.push_str("        FAIL [   0.120s] it plan_check::a_failing_case\r\n");
+        log.push_str("--- STDERR:              it plan_check::a_failing_case ---\n");
+        log.push_str("thread 'a_failing_case' panicked at tests/plan_check.rs:9:5\n");
+        log.push_str("test plan_check::libtest_case ... FAILED\n");
+        for n in 0..3000 {
+            log.push_str(&format!("        PASS [   0.010s] it case_{n}\n"));
+            log.push_str(&format!("test case_{n} ... ok\r\n"));
+        }
+        log.push_str("     Summary [  12.000s] 3002 tests run: 3000 passed, 2 failed\n");
+
+        let kept = String::from_utf8(tail(&without_passes(log.as_bytes())).to_vec()).unwrap();
+        assert!(!kept.contains("PASS ["), "{kept}");
+        assert!(!kept.contains(" ... ok"), "{kept}");
+        for line in [
+            "FAIL [   0.120s] it plan_check::a_failing_case\r\n",
+            "--- STDERR:",
+            "panicked at tests/plan_check.rs:9:5",
+            "test plan_check::libtest_case ... FAILED",
+            "3000 passed, 2 failed\n",
+        ] {
+            assert!(kept.contains(line), "{line}: {kept}");
+        }
     }
 }

@@ -10,8 +10,9 @@ use regex::Regex;
 use serde_json::{Value as JsonValue, json};
 
 /// The patterns used when none is given: the build and whole-suite test runs
-/// of the common toolchains, which a milestone gate owns. Compile checks such
-/// as `cargo clippy` or a `type-check` script are a worker's, so they pass.
+/// of the common toolchains, which a milestone gate owns, and process kills by
+/// image name, which reach processes the agent did not start. Compile checks
+/// such as `cargo clippy`, and kills by PID, pass.
 pub(crate) const DEFAULT_PATTERNS: &[&str] = &[
     r"\bcargo\s+(?:\+\S+\s+)?(?:build|test|nextest)\b",
     r"\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?(?:test|build)\b",
@@ -21,6 +22,11 @@ pub(crate) const DEFAULT_PATTERNS: &[&str] = &[
     r"\bdotnet\s+(?:build|test)\b",
     r"\bpytest\b",
     r"\b(?:bun|node)\s+(?:-e|--eval)\b.*\bscripts/\S",
+    // `//IM` is the Git Bash spelling of `/IM`.
+    r"(?i)\btaskkill(?:\.exe)?\b[^|;&\n]*\s/{1,2}im\b",
+    r"\b(?:pkill|killall)\b",
+    r"(?i)\bStop-Process\b[^;&\n]*\s-(?:Name|ProcessName)\b",
+    r"(?i)\bGet-Process\b[^|\n]*\|\s*Stop-Process\b",
 ];
 
 /// The longest command a row carries, in characters, besides the `...`
@@ -185,6 +191,12 @@ mod tests {
             "python -m pytest",
             "bun -e \"await import('./scripts/preview-deploy.ts')\"",
             "node --eval \"require('./scripts/x.js')\"",
+            "taskkill //F //IM workerd.exe",
+            "taskkill.exe /f /im node.exe /t",
+            "pkill -f vite",
+            "killall node",
+            "Stop-Process -Name workerd -Force",
+            "Get-Process node | Stop-Process",
         ] {
             assert!(flagged(command), "{command}");
         }
@@ -202,6 +214,10 @@ mod tests {
             "bun run scripts/x.ts",
             "bun -e \"console.log(1)\"",
             "rg -n foo scripts/",
+            "taskkill /T /PID 123",
+            "taskkill //F //PID 4567",
+            "kill 4567",
+            "Stop-Process -Id 4567",
         ] {
             assert!(!flagged(command), "{command}");
         }

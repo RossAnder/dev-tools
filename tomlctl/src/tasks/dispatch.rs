@@ -218,13 +218,23 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let outcome = remove::remove(&path, &integrity, id, force, reason.as_deref())?;
-            print_json_compact(&json!({
+            let mut envelope = json!({
                 "ok": true,
                 "id": outcome.id,
                 "ref": outcome.r#ref,
                 "rewired": outcome.rewired,
                 "pruned_override_fields": outcome.pruned_override_fields,
-            }))
+            });
+            // Present only when a record still names the id, as `advisories`
+            // is on `add`.
+            if !outcome.plan_refs.is_empty() {
+                envelope["plan_refs"] = outcome
+                    .plan_refs
+                    .iter()
+                    .map(|entry| json!({"kind": entry.kind, "id": entry.id, "field": entry.field}))
+                    .collect();
+            }
+            print_json_compact(&envelope)
         }
 
         TasksOp::Show {

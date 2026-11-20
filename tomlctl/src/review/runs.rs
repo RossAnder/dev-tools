@@ -17,6 +17,7 @@ use super::cells::{self, Accounting};
 use super::digest::Counts;
 use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
 use super::invalid;
+use super::recheck::recheck_targets;
 use super::resolve;
 use super::run_show::ReviewRunShowArgs;
 use super::settle;
@@ -376,32 +377,6 @@ fn start_digest(
         .into_iter()
         .filter(|(key, _)| keys.contains(key))
         .collect())
-}
-
-/// Each `applied.target` and `addressed` entry on the findings run `run` minted,
-/// the set `review recheck-targets` prints.
-fn recheck_targets<'a>(store: &'a Store, run: &'a str) -> impl Iterator<Item = &'a str> {
-    store
-        .findings
-        .iter()
-        .filter(move |finding| finding.run == run)
-        .flat_map(|finding| {
-            let applied = finding
-                .rest
-                .get("applied")
-                .and_then(toml::Value::as_table)
-                .and_then(|applied| applied.get("target"))
-                .and_then(toml::Value::as_str);
-            let addressed = finding
-                .rest
-                .get("addressed")
-                .and_then(toml::Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(toml::Value::as_str);
-            applied.into_iter().chain(addressed)
-        })
-        .filter(|target| !target.is_empty())
 }
 
 /// Folds the field flags into an object, refusing any key outside `allowed`.

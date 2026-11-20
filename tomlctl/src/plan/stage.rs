@@ -146,6 +146,7 @@ fn remedy(class: &str) -> &'static str {
         | "plan/means-required-no-reason"
         | "plan/design-anchor-dead"
         | "plan/premise-task-unknown"
+        | "plan/task-no-files"
         | "backlog/unknown-id" => TASKS_UPDATE,
         "plan/contract-no-check" | "plan/contract-task-unknown" => PLAN_CONTRACT,
         "plan/decision-bind-unknown" => PLAN_DECIDE,
@@ -357,6 +358,7 @@ mod tests {
             ("plan/means-required-no-reason", TASKS_UPDATE),
             ("plan/design-anchor-dead", TASKS_UPDATE),
             ("plan/premise-task-unknown", TASKS_UPDATE),
+            ("plan/task-no-files", TASKS_UPDATE),
             ("backlog/unknown-id", TASKS_UPDATE),
             ("plan/contract-no-check", PLAN_CONTRACT),
             ("plan/contract-task-unknown", PLAN_CONTRACT),

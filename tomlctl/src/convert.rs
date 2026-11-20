@@ -341,17 +341,29 @@ pub(crate) fn unmatched_row_paths<'a>(
 }
 
 /// `validate_paths`, adding a `--header` hint when the unmatched path names a
-/// field of `header` instead of a row field.
+/// field of `header` instead of a row field. With no rows the row shape is
+/// unknown, so only a path set the header carries in full is refused, and a
+/// clean report's empty rows cannot hide a header read behind silence.
 pub(crate) fn validate_row_paths<'a>(
     rows: &[JsonValue],
     header: Option<RowHeader<'_>>,
     paths: impl IntoIterator<Item = &'a str>,
     flag: &str,
 ) -> Result<()> {
-    if rows.is_empty() {
-        return Ok(());
-    }
     let paths: Vec<&str> = paths.into_iter().collect();
+    if rows.is_empty() {
+        return match (header, paths.first()) {
+            (Some(h), Some(first)) if paths.iter().all(|p| h.carries(p)) => Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "{flag} path `{first}` matches no field; available fields: (none); \
+                     it is a header field — add --header"
+                ),
+            )),
+            _ => Ok(()),
+        };
+    }
     for p in &paths {
         if rows.iter().all(|r| navigate_json_all(r, p).is_empty())
             && let Some(hint) = array_step_hint(rows, p, flag)
@@ -1125,6 +1137,37 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(!err.contains("did you mean"), "{err}");
+    }
+
+    #[test]
+    fn empty_rows_refuse_only_a_path_set_the_header_carries() {
+        let report = serde_json::json!({ "ok": true, "findings": [] });
+        let header = || {
+            Some(RowHeader {
+                report: &report,
+                rows_field: "findings",
+            })
+        };
+        let err = validate_row_paths(&[], header(), ["ok"], "--get")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "--get path `ok` matches no field; available fields: (none); \
+             it is a header field — add --header"
+        );
+        for paths in [
+            vec!["class"],
+            vec!["ok", "class"],
+            vec!["findings"],
+            vec!["findings.class"],
+        ] {
+            assert!(
+                validate_row_paths(&[], header(), paths.iter().copied(), "--select").is_ok(),
+                "{paths:?}"
+            );
+        }
+        assert!(validate_row_paths(&[], None, ["ok"], "--get").is_ok());
     }
 
     /// `detable_to_json` over a borrowed `DeTable` must produce the same JSON

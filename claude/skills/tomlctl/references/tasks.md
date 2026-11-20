@@ -58,25 +58,27 @@ or a documented count. `import-plan`, `check` and `render --check` report findin
 ## `tasks show`
 
 ```bash
-tomlctl tasks show <id> --slug <slug> --with body,files,deps
+tomlctl tasks show <id-or-ref> --slug <slug> --with body,files,deps
 tomlctl tasks show 3,7,12 --slug <slug> --get status
 tomlctl tasks show 3,7 --slug <slug> --with absent --select id,absent --lines
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| *(positional)* | ids, comma- or space-separated | Tasks to print. At least one. | — |
+| *(positional)* | ids or refs, comma- or space-separated | Tasks to print. At least one. An all-digit value is an id; any other is a ref, also taken as `task:<ref>` or `task:<ref>.acceptance`. | — |
 | `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `spec`, `deps`, `dependents`, `absent`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
 One id prints that row's object. Several print an array of those objects in the order given,
-with `--with` applied to each, so the global `--get`, `--select` and `--lines` work per row.
-An unknown id errors with `kind=not_found` and fails the whole call, whichever position it
-holds. Only `dependents` builds the graph, so a store with a cycle or a dangling edge still
+with `--with` applied to each, so the global `--get`, `--select` and `--lines` work per row;
+a row named twice, by id or by ref, prints once, at its first position.
+An unknown id or ref errors with `kind=not_found` and fails the whole call, whichever position
+it holds. Only `dependents` builds the graph, so a store with a cycle or a dangling edge still
 shows its rows under every other part.
 
 The ids are positional. A hidden `--id` flag (also spelt `--ids`) is accepted for the
 spelling agents guess, takes the same comma-separated list, and is appended after the
-positional ids; it is not listed in `--help`, so write the ids positionally.
+positional ids; it is not listed in `--help`, so write the ids positionally. Every other
+`tasks` verb takes numeric ids only.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -119,6 +121,11 @@ tomlctl tasks list --slug <slug> --count-by status
 `--count` joins `--count-by`, `--group-by`, `--pluck` and `--count-distinct` in a
 mutually-exclusive group, so a mismatched pair is a parse-time error rather than a silent
 collapse to one shape. `[tasks].total` in a flow's `context.toml` is this verb under `--count`.
+
+`tasks list` takes no `--with`: its rows carry the store keys and no spec. For bodies or specs
+of several rows, list the ids with
+`tomlctl tasks list --slug <slug> --where status=pending --pluck id --lines`, then fetch them
+with `tomlctl tasks show <ids> --slug <slug> --with body,spec`.
 
 The store carries none of the legacy shortcut flags `items list` accepts. In particular
 **`--file` here is the store target, not `--where file=…`** — the one flag whose meaning

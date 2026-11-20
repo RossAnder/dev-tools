@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use anyhow::Result;
@@ -14,6 +15,26 @@ use crate::repo_files::tracked_files;
 
 /// A NUL this early marks the file binary, as ripgrep decides it.
 const BINARY_SNIFF_BYTES: usize = 8192;
+
+/// Lowercased extensions skipped as binary without opening the file: the
+/// sweep's cost scales with the number of files opened, not their bytes.
+const BINARY_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff", "avif", "heic", "mp3", "mp4", "mov",
+    "webm", "wav", "ogg", "flac", "pdf", "zip", "gz", "tgz", "7z", "rar", "jar", "woff", "woff2",
+    "ttf", "otf", "eot", "exe", "dll", "so", "dylib", "wasm", "psd", "sqlite", "db",
+];
+
+/// Whether a listed path carries a known binary extension.
+fn has_binary_extension(entry: &str) -> bool {
+    Path::new(entry)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            BINARY_EXTENSIONS
+                .iter()
+                .any(|known| ext.eq_ignore_ascii_case(known))
+        })
+}
 
 pub(crate) const DEFAULT_MAX_FILE_BYTES: u64 = 4 << 20;
 pub(crate) const DEFAULT_MAX_HITS: usize = 5000;
@@ -53,9 +74,10 @@ pub(crate) struct SweepReport {
     /// here was skipped or cut by `max_hits`, so its silence is not evidence.
     pub(crate) scanned: BTreeSet<String>,
     /// Canonical keys of the enumerated files the engine opened and refused
-    /// to search: binary, oversize or unreadable. A file that never reached
-    /// the enumeration, or whose path could not be canonicalised (a staged
-    /// delete, a dangling symlink), is in neither set.
+    /// to search: binary, oversize or unreadable. A file skipped by its
+    /// binary extension is never opened and is keyed by its listed path. A
+    /// file that never reached the enumeration, or whose path could not be
+    /// canonicalised (a staged delete, a dangling symlink), is in neither set.
     pub(crate) skipped: BTreeSet<String>,
     pub(crate) skipped_binary: usize,
     pub(crate) skipped_oversize: usize,
@@ -118,17 +140,23 @@ impl ScannedFile {
 /// Read one file under the predicates every listed file passes before it is
 /// searched, so a caller re-reading a file sees the bytes the sweep saw.
 pub(crate) fn scan_file(path: &Path, max_file_bytes: u64) -> Result<ScannedFile, Skip> {
-    let meta = fs::metadata(path).map_err(|_| Skip::Unreadable)?;
+    let mut file = fs::File::open(path).map_err(|_| Skip::Unreadable)?;
+    let meta = file.metadata().map_err(|_| Skip::Unreadable)?;
     if meta.is_dir() {
         return Err(Skip::Unreadable);
     }
     if meta.len() > max_file_bytes {
         return Err(Skip::Oversize);
     }
-    let bytes = fs::read(path).map_err(|_| Skip::Unreadable)?;
-    if memchr::memchr(0, &bytes[..bytes.len().min(BINARY_SNIFF_BYTES)]).is_some() {
+    let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+    file.by_ref()
+        .take(BINARY_SNIFF_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Skip::Unreadable)?;
+    if memchr::memchr(0, &bytes).is_some() {
         return Err(Skip::Binary);
     }
+    file.read_to_end(&mut bytes).map_err(|_| Skip::Unreadable)?;
     let newlines = memchr::memchr_iter(b'\n', &bytes).collect();
     Ok(ScannedFile { bytes, newlines })
 }
@@ -163,6 +191,13 @@ pub(crate) fn run_compiled(
     let mut seen: BTreeSet<String> = BTreeSet::new();
 
     'files: for entry in &enumeration.files {
+        if has_binary_extension(entry) {
+            if seen.insert(entry.clone()) {
+                report.skipped_binary += 1;
+                report.skipped.insert(entry.clone());
+            }
+            continue;
+        }
         let Some(absolute) = join_under(root, entry) else {
             report.skipped_unreadable += 1;
             continue;
@@ -299,6 +334,38 @@ mod tests {
             assert_eq!(report.files_scanned(), 0);
             assert!(!report.coverage_complete());
         });
+    }
+
+    /// `a.png` holds no NUL and a matching line, so only the extension
+    /// keeps it from being searched.
+    #[test]
+    fn a_binary_extension_is_skipped_as_binary_without_a_sniff() {
+        if !git_available() {
+            return;
+        }
+        with_root(|root| {
+            write(root, "a.png", b"foo\n");
+            write(root, "b.PDF", b"foo\n");
+            write(root, "c.txt", b"foo\n");
+            let report = sweep(root, &["foo"], &SweepOptions::default());
+            assert_eq!(report.hits, [hit("c.txt", 1, 0)]);
+            assert_eq!(report.skipped_binary, 2);
+            assert_eq!(
+                report.skipped,
+                ["a.png".to_string(), "b.PDF".to_string()].into()
+            );
+            assert_eq!(report.files_scanned(), 1);
+            assert!(!report.coverage_complete());
+        });
+    }
+
+    #[test]
+    fn binary_extensions_match_the_last_extension_case_insensitively() {
+        assert!(has_binary_extension("img/logo.PNG"));
+        assert!(has_binary_extension("dist/app.tar.gz"));
+        assert!(!has_binary_extension("src/png.rs"));
+        assert!(!has_binary_extension("docs/a.pngx"));
+        assert!(!has_binary_extension("Makefile"));
     }
 
     #[test]

@@ -1896,6 +1896,8 @@ fn capabilities_features_contains_every_plan_feature() {
         "drift_affected_decisions",
         "run_note_sources",
         "review_plan_digest",
+        // `plan decide --new` and its `updated` list.
+        "plan_decide_new",
     ];
     for name in expected {
         assert!(

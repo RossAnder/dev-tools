@@ -196,13 +196,79 @@ fn decisions_mint_ids_and_updates_keep_untouched_keys() {
     let (_dir, root) = opened();
     let out = ndjson(&root, "decide", &format!("{GOOD}\n{GOOD}\n")).success();
     assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["D1", "D2"]));
+    assert_eq!(stdout_json(&out)["updated"], serde_json::json!([]));
 
     let out = ndjson(&root, "decide", "{\"id\":\"D1\",\"surfaced\":true}\n").success();
     assert_eq!(stdout_json(&out)["ids"], serde_json::json!(["D1"]));
+    assert_eq!(stdout_json(&out)["updated"], serde_json::json!(["D1"]));
     let text = store_text(&root);
     assert!(text.contains("surfaced = true"), "{text}");
     assert!(text.contains("Use the helper."), "{text}");
     assert!(text.contains("because = \"dup\""), "{text}");
+}
+
+fn decide_new(root: &Path, rows: &str) -> assert_cmd::assert::Assert {
+    let file = root.join("rows.ndjson");
+    fs::write(&file, rows).expect("rows file");
+    plan(
+        root,
+        &[
+            "decide",
+            "--new",
+            "--ndjson",
+            file.to_str().expect("utf8 path"),
+        ],
+    )
+}
+
+#[test]
+fn decide_new_mints_id_less_rows_and_prints_no_updates() {
+    let (_dir, root) = opened();
+    let out = decide_new(&root, &format!("{GOOD}\n{GOOD}\n")).success();
+    let report = stdout_json(&out);
+    assert_eq!(report["ids"], serde_json::json!(["D1", "D2"]), "{report}");
+    assert_eq!(report["updated"], serde_json::json!([]), "{report}");
+}
+
+#[test]
+fn decide_new_refuses_a_row_carrying_an_existing_id_and_writes_nothing() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    let before = store_text(&root);
+
+    let rows = format!("{GOOD}\n{{\"id\":\"D1\",\"decision\":\"Replace it.\"}}\n");
+    let out = decide_new(&root, &rows).failure();
+    let err = stderr(&out);
+    assert!(err.contains("line 2"), "{err}");
+    assert!(err.contains("would overwrite decision D1"), "{err}");
+    assert!(err.contains("Use the helper."), "{err}");
+    assert_eq!(
+        store_text(&root),
+        before,
+        "a refused batch persists nothing"
+    );
+
+    let out = decide_new(&root, "{\"id\":\"D7\",\"decision\":\"x\"}\n").failure();
+    let err = stderr(&out);
+    assert!(err.contains("no decision `D7` exists"), "{err}");
+    assert!(err.contains("ids are minted"), "{err}");
+    assert_eq!(
+        store_text(&root),
+        before,
+        "a refused batch persists nothing"
+    );
+}
+
+#[test]
+fn decide_without_new_lists_id_carrying_rows_as_updated() {
+    let (_dir, root) = opened();
+    ndjson(&root, "decide", &format!("{GOOD}\n")).success();
+    let rows = format!("{GOOD}\n{{\"id\":\"D1\",\"decision\":\"Replace it.\"}}\n");
+    let out = ndjson(&root, "decide", &rows).success();
+    let report = stdout_json(&out);
+    assert_eq!(report["ids"], serde_json::json!(["D2", "D1"]), "{report}");
+    assert_eq!(report["updated"], serde_json::json!(["D1"]), "{report}");
+    assert!(store_text(&root).contains("Replace it."));
 }
 
 #[test]

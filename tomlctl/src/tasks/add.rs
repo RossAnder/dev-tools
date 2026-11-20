@@ -445,12 +445,12 @@ impl SpecPatch {
         spec.refuse_unknown(&SPEC_FIELDS)?;
         Ok(Self {
             outcome: spec.text("outcome")?,
-            constraints: spec.strings("constraints")?,
+            constraints: spec.string_list("constraints")?,
             accept: spec.entries("accept", accept_entry)?,
             premises: spec.entries("premises", premise_entry)?,
             means: spec.entries("means", means_entry)?,
-            design: spec.strings("design")?,
-            precedent: spec.strings("precedent")?,
+            design: spec.string_list("design")?,
+            precedent: spec.string_list("precedent")?,
             executor: spec.one_of("executor", &EXECUTORS)?,
         })
     }
@@ -536,6 +536,17 @@ impl<'a> SpecObject<'a> {
 
     fn strings(&self, key: &str) -> Result<Option<Vec<String>>> {
         row_strings(self.line, &self.path(key), self.get(key))
+    }
+
+    /// [`Self::strings`], except that a non-blank string is a one-element list:
+    /// a spec's prose lists are often written as a single sentence.
+    fn string_list(&self, key: &str) -> Result<Option<Vec<String>>> {
+        match self.get(key) {
+            Some(JsonValue::String(text)) if !text.trim().is_empty() => {
+                Ok(Some(vec![text.clone()]))
+            }
+            _ => self.strings(key),
+        }
     }
 
     fn one_of(&self, key: &str, vocabulary: &[&str]) -> Result<Option<String>> {
@@ -971,6 +982,33 @@ mod tests {
     fn seeded(path: &Path) {
         add(path, &write_args(), task("Seed the store", &[])).expect("first row lands");
         add(path, &write_args(), task("Wire the renderer", &[1])).expect("second row lands");
+    }
+
+    #[test]
+    fn a_single_string_spec_list_is_a_one_element_list() {
+        let raw = serde_json::json!({
+            "constraints": "no new deps",
+            "design": ["one", "two"],
+            "precedent": "see items.rs",
+        });
+        let patch = SpecPatch::parse(1, &raw).expect("a string list field parses");
+        assert_eq!(patch.constraints, Some(vec!["no new deps".to_string()]));
+        assert_eq!(
+            patch.design,
+            Some(vec!["one".to_string(), "two".to_string()])
+        );
+        assert_eq!(patch.precedent, Some(vec!["see items.rs".to_string()]));
+
+        for bad in [
+            serde_json::json!({"design": "  "}),
+            serde_json::json!({"design": 3}),
+        ] {
+            let message = SpecPatch::parse(1, &bad)
+                .err()
+                .expect("a blank string or a number is refused")
+                .to_string();
+            assert!(message.contains("must be an array of strings"), "{message}");
+        }
     }
 
     #[test]

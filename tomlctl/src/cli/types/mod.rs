@@ -246,6 +246,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "drift_affected_decisions",
     "run_note_sources",
     "review_plan_digest",
+    // `plan decide --new` and its `updated` list.
+    "plan_decide_new",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

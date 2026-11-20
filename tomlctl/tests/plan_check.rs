@@ -601,6 +601,23 @@ fn a_row_with_no_spec_and_a_spec_with_no_row_are_both_errors() {
 }
 
 #[test]
+fn a_row_with_no_files_is_an_error_until_it_is_committed() {
+    // The decision binds `src/a.rs` through the row's files; bind the task alone
+    // so the emptied list raises nothing else.
+    let plan = swap(PLAN, r#"binds = ["1", "src/a.rs"]"#, r#"binds = ["1"]"#);
+    let bare = swap(TASKS, r#"files = ["src/a.rs"]"#, "files = []");
+    let flow = Flow::seeded(&bare, &plan, BRIEF.as_bytes());
+    assert_reports_error(&flow, "plan/task-no-files");
+
+    let committed = swap(
+        &bare,
+        "status = \"pending\"",
+        "status = \"done\"\ncommit = \"abc1234\"",
+    );
+    assert_clean(&Flow::seeded(&committed, &plan, BRIEF.as_bytes()));
+}
+
+#[test]
 fn a_spec_needs_an_outcome_and_an_accept() {
     let tasks = swap(TASKS, "outcome = \"the guard holds\"", "outcome = \" \"");
     assert_reports_error(&Flow::with_tasks(&tasks), "plan/spec-no-outcome");

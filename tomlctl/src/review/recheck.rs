@@ -9,7 +9,7 @@ use clap::Args;
 use serde_json::json;
 use toml::Value as TomlValue;
 
-use super::store::{self, Target};
+use super::store::{self, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewStore};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_line;
@@ -45,27 +45,33 @@ pub(crate) fn run(target: &Target, run: &str, integrity: &ReadIntegrityArgs) -> 
             format!("{VERB}: no run {run} in this store"),
         ));
     }
-    let mut targets: BTreeSet<&str> = BTreeSet::new();
-    for finding in stored.findings.iter().filter(|f| f.run == run) {
-        let applied = finding
-            .rest
-            .get("applied")
-            .and_then(TomlValue::as_table)
-            .and_then(|a| a.get("target"))
-            .and_then(TomlValue::as_str);
-        let addressed = finding
-            .rest
-            .get("addressed")
-            .and_then(TomlValue::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(TomlValue::as_str);
-        targets.extend(
-            applied
-                .into_iter()
-                .chain(addressed)
-                .filter(|t| !t.is_empty()),
-        );
-    }
+    let targets: BTreeSet<&str> = recheck_targets(&stored, run).collect();
     print_json_line(&json!({"run": run, "targets": targets}))
+}
+
+/// Each non-empty `applied.target` and `addressed` entry on the findings run
+/// `run` minted, unsorted and possibly repeated. `review run start` digests
+/// the same set for a re-check, so the two cannot drift.
+pub(super) fn recheck_targets<'a>(store: &'a Store, run: &'a str) -> impl Iterator<Item = &'a str> {
+    store
+        .findings
+        .iter()
+        .filter(move |finding| finding.run == run)
+        .flat_map(|finding| {
+            let applied = finding
+                .rest
+                .get("applied")
+                .and_then(TomlValue::as_table)
+                .and_then(|applied| applied.get("target"))
+                .and_then(TomlValue::as_str);
+            let addressed = finding
+                .rest
+                .get("addressed")
+                .and_then(TomlValue::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(TomlValue::as_str);
+            applied.into_iter().chain(addressed)
+        })
+        .filter(|target| !target.is_empty())
 }

@@ -209,6 +209,11 @@ pub(crate) struct PlanDecideArgs {
         help = "Decisions, one JSON object per line; a row with `id` updates: `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
     pub(crate) ndjson: String,
+    #[arg(
+        long = "new",
+        help = "Every row creates a decision: a row carrying `id` refuses the batch rather than updating that decision"
+    )]
+    pub(crate) new: bool,
     #[command(flatten)]
     pub(crate) integrity: WriteIntegrityArgs,
 }
