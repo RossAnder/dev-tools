@@ -271,4 +271,4 @@ It moves each finding scheduled into `<slug>` by its task's state, by the table 
 
 A refusal stops the engine before the flow-store commit, as a failed commit does: make no flow-store commit, leave the milestone commit and its stamps in place, and report the store and the refusal in `needs_human`, so the user fixes the store and the reconcile and the flow-store commit are made by hand or by a later invocation.
 
-**Staging.** A reconciled store under `.claude/flows/<slug>/` is already in the flow-store commit's paths. A store outside it joins that commit with its sidecar: add `<store>` and `<store>.sha256` to the `git status --porcelain --` and `git add --` lists of the flow-store commit, and to its `git commit --` pathspec, so the pre-commit hook compares the pair. It never goes in the milestone commit, which stays the rows' `files` alone: a milestone is still exactly two commits.
+**Staging.** The two `plan emit commit-paths` calls of [drain.md](drain.md), step 10, decide what each commit stages: `--for flow` lists every reconciled store with its sidecar, outside the flow's directory too, and `--for work` never does. A milestone is still exactly two commits.

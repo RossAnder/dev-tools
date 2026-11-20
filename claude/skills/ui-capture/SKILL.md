@@ -35,6 +35,8 @@ controls = ["settings-04"]
 
 Exit 0 means every state asked for was captured, with its outputs written. Any other exit means at least one was not, and the caller treats the run as a capture failure, never as a pass. A state named by `--only` that the command does not know is a failure too.
 
+The command may run several times at once. A worker fixing a visual defect runs it for its own states, into its own `--out`, while other fix workers do the same, so a command should tolerate concurrent runs: write nothing outside `--out`, and bind no fixed port, taking a free one instead.
+
 States are the project's own data: each names a UI condition the command can reach, such as an empty list, a very long label, an error banner or a narrow viewport. Capturing the same view at content and size extremes is what exposes dead space, a panel that grows with its container and a fixed-height panel, so a project's state list should carry those extremes for every view that has them.
 
 ## Outputs

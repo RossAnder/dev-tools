@@ -32,6 +32,14 @@ The highest `<n>` printed is the rounds spent, or none. The visual round `<r>` i
 
 `<dir>` is `<out>/<id>-<r>/`, with `<out>` the declaration's `out`.
 
+Before capturing, read whether the user already accepted this round:
+
+```bash
+tomlctl items list .claude/flows/<slug>/plan.toml --array visual_accept --where milestone=<id> --where round=<r> --get round
+```
+
+A row for the current round means the user accepted its failure (**Accepting a failed last round**, below): skip the pass, capture nothing, launch no inspector, and go to the commit ([drain.md](drain.md), step 10). No output means the pass runs from step 3.
+
 ## 3. Capture
 
 Dispatch the `verification` agent once, one-shot, with no `name:` and no `model:`, as the gate does ([drain.md](drain.md), step 7). The one command is the declaration's `command` with `--out <dir>` and one `--only` per state and per control, states first, each in the order `visual` printed:
@@ -162,8 +170,31 @@ A defect is minted with `tasks add-many` in this milestone, in the row shape of 
     ```
 
   A look entry names only the milestone's `ui_states`, never a control.
-- `spec.outcome` states the defect gone from the state; `spec.executor` is `lite` when the defect's location and detail name the fix, and `deep` when finding why the state looks wrong is part of the work.
+- `spec.outcome` states the defect gone from the state, and states the defect as the inspector located it: the state, the defect's class, its location and the inspector note's path. The `reason` holds the same facts, but a worker is never shown it. `spec.executor` is `lite` when the defect's location and detail name the fix, and `deep` when finding why the state looks wrong is part of the work.
 - `spec.design` is copied from the task the `files` came from, the look entry's task for a `look` defect, so the worker reads the chosen design. It is an array of design-relative anchors, such as `["design/ui-<id>.md#<section>"]`: a bare string is refused, and a file with no anchor fails `plan/design-anchor-dead`.
+
+**The worker's own capture.** Every fix task minted for a defect, a `look` defect or any other, also carries one `spec.means` entry that lets its worker capture its own states before it returns, so a fix that regresses a neighbouring look is caught inside the round. The entry needs the task's id `<n>`, which `add-many` prints in `rows[].id`, so mint the row first and then set the means with a `tasks update` naming that id:
+
+```toml
+[[record]]
+id = <n>
+reason = "visual <id> round <r>: the fix task's own capture"
+
+[[record.spec.means]]
+text = "<command> --out <out>/<id>-<r>-task-<n>/ --only <state>"
+binding = "required"
+detail = "Run it after the edit. Read each <state>.png or <state>.txt and geometry.json it writes against the look criterion and the ui-capture skill's defect rubric, and fix what it shows before returning done."
+```
+
+```bash
+tomlctl tasks update --slug <slug> --ndjson <scratch>/visual-<id>-<r>-means.toml
+```
+
+- `text` is the exact command: the declaration's `command` and `out` from `.claude/ui-capture.toml`, with one `--only` per state of the task's look entry, in that entry's order.
+- `<out>/<id>-<r>-task-<n>/` is that worker's own directory. It is never `<dir>`, so the worker's capture cannot overwrite the round's evidence, and like every path under `<out>` it is exempt from the clean-tree check and the out-of-lane rule (below).
+- The worker's capture is a self-check. It changes no verdict and no round count, and the next pass still captures into its own `<dir>` and judges every state.
+
+A capture-failure task (below) carries no such entry.
 
 **A capture failure** mints one task on the capture, its `reason` opening `visual <id> round <r>: capture`, then what was missing: the failing exit, or each state with no file or no `geometry.json` key. It counts toward the same two rounds. Its `files` are the files the capture command runs, the script or entry the declaration's `command` names, with the milestone rows that edit them; its `accept` is one gate-owned check that the command captures the failed states:
 
@@ -179,7 +210,9 @@ A missing `geometry.json` key is not caught by that check's exit; the next pass'
 
 Then relaunch through [run-milestone.md](run-milestone.md), step 3. When every row is `done` again, the gate runs ([drain.md](drain.md), step 7), and on its pass this pass runs again from step 1 under the next round.
 
-**Two rounds at most**, apart from the gate's own two and the reproduce check's. A pass that still finds a defect, or a capture failure, after round 2 mints nothing: leave the milestone uncommitted, and report each failing state under the report's `gate:` section with its copied capture path:
+**Two rounds at most**, apart from the gate's own two and the reproduce check's. A pass that still finds a defect, or a capture failure, after round 2 mints nothing.
+
+A pass whose verdicts still hold a `fail` after round 2, from an inspector or from your settling of an `unsure`, goes to the user first (**Accepting a failed last round**, below). An unsound run (a control that passed) and a capture failure have no verdict to waive and are never offered for acceptance. When the user does not accept, or nothing could be offered, leave the milestone uncommitted, and report each failing state under the report's `gate:` section with its copied capture path:
 
 ```
 - milestone <id> visual failed after round <n>: <state> - docs/flows/<slug>/notes/run/visual-<id>-<r>/<state>.png
@@ -187,10 +220,45 @@ Then relaunch through [run-milestone.md](run-milestone.md), step 3. When every r
 
 The fix rows stay `done` and their edits stay in place for the user.
 
+## Accepting a failed last round
+
+Ask through `AskUserQuestion` whether to accept the look as it is or leave milestone `<id>` uncommitted. The question names each failing state, the look criterion it failed (the `behaviour` of each `visual.looks` entry naming the state, or the defect alone for a state no look entry names) and the defect, with the path of its copied capture. The two options are:
+
+- **Accept the look as it is**: the milestone commits with the defects in place, and one backlog item follows them up.
+- **Leave it uncommitted**: the milestone stops here, reported as failed after round 2, its fix rows and edits left in place.
+
+The acceptance records the user's decision and nothing else: it changes no verdict, no inspector note and no round count, and the inspector stays the only judge of the look. On acceptance, in this order:
+
+1. **Capture one backlog item** for the waived defects, by the `backlog-capture` skill: `backlog check` first, then `backlog add` with kind `debt`, `<slug>` as `flow`, and the states and their look criteria in the context. When `backlog check` finds an open item for the same defects, take its id instead of adding one.
+2. **Record the acceptance.** Stage the payload with the Write tool at `<scratch>/visual-<id>-<r>-accept.json`, then run:
+
+   ```bash
+   tomlctl plan run visual --slug <slug> --milestone <id> --round <r> --accept --json '@<scratch>/visual-<id>-<r>-accept.json'
+   ```
+
+   ```json
+   {
+     "why": "<the user's words>",
+     "states": ["<state>"],
+     "looks": [{"task": 12, "accept": 1}],
+     "defects": [{"state": "<state>", "class": "<class>", "location": "<location>", "detail": "<detail>", "note": "docs/flows/<slug>/notes/run/visual-<id>-<r>-<n>.md"}],
+     "backlog": "<B-id>"
+   }
+   ```
+
+   - `why` is the user's own words, or the picked option's label when they gave none.
+   - `states` are the failing states, never a control.
+   - `looks` are the failing states' look entries as `{task, accept}`, exactly as `visual.looks` printed them.
+   - `defects` hold one entry per defect the index reported on a failing state: `class`, `location` and `detail` copied from the index entry's defect, and `note` the state's inspector note path. A state you settled from `unsure` to `fail` has no index defect: record it with `class = "unsure"`, an empty `location`, `detail` the one sentence saying what the note left unsettled, and the same note path.
+   - `backlog` is the id step 1 printed.
+3. **Go to the commit** ([drain.md](drain.md), step 10). The report carries the acceptance as one `gate:` line, by [report.md](report.md).
+
 ## The capture directory in the tree checks
 
-`<out>` is the project's to keep out of git, normally through its ignore rules. While it is not ignored, every path under it is the pass's own output, not an edit: it is exempt from the pre-flight's clean-tree check and the drain's out-of-lane rule, as a linked review store is ([apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks"), and it never goes in either commit.
+`<out>` is the project's to keep out of git, normally through its ignore rules. While it is not ignored, every path under it is the pass's own output, not an edit: it is exempt from the pre-flight's clean-tree check and the drain's out-of-lane rule, as a linked review store is ([apply-rows.md](apply-rows.md), section "Linked review stores in the clean-tree and lane checks"), and it never goes in either commit. That holds for a fix task's own directory, `<out>/<id>-<r>-task-<n>/`, written by its worker's capture.
 
 ## Re-entry
 
 An open `visual:<id>` run is a pass whose index was never read. Settle it by the open-run rule as an open `implement:<id>` run is settled, then, once it is abandoned, run this pass again from step 1: the round is unchanged, since no fix task was minted for it, so the capture rewrites `<dir>` and the inspectors rewrite the round's notes.
+
+A round the user accepted is never run again. Step 2 reads `[[visual_accept]]` for the current round before anything is captured, and since an accepted round mints no fix task, a later session computes the same `<r>`, finds the row, and goes to the commit. A milestone whose commit already landed is stamped by the drain's "Stamping on re-entry" and never reaches this pass; one whose commit did not land runs its gate again there, and on a pass reaches step 2 here, which skips to the commit.

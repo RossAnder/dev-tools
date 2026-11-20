@@ -105,7 +105,7 @@ The build discipline lets a worker compile-check and run narrow checks, never a 
 tomlctl agents audit --transcripts <dir> --gate <gate-command> --gate <gate-command>
 ```
 
-Pass one `--gate` for each `command` that `tomlctl plan emit gate-list --slug <slug> --milestone <id>` prints, so a worker that ran the milestone's own gate is caught whatever its toolchain. It prints an array of `{agent, command}` rows, one per Bash command an agent ran that contains one of those gate commands or invokes a build or test-suite run of a common toolchain (`cargo build`, `test` or `nextest`, `bun test`, `npm run build`, `docker build` and the like; [agents.md](../../tomlctl/references/agents.md#agents-audit) lists them). Compile checks and reading commands, a recursive `grep` among them, are not reported. The verb reads the transcripts and prints only matching commands; you still never read a transcript yourself. A row names a transcript agent, not a task, so judge each row against the whole milestone. It is allowed when its command:
+Pass one `--gate` for each `command` that `tomlctl plan emit gate-list --slug <slug> --milestone <id>` prints, under `commands` and under `held` alike, so a worker that ran the milestone's own gate is caught whatever its toolchain. It prints an array of `{agent, command}` rows, one per Bash command an agent ran that contains one of those gate commands or invokes a build or test-suite run of a common toolchain (`cargo build`, `test` or `nextest`, `bun test`, `npm run build`, `docker build` and the like; [agents.md](../../tomlctl/references/agents.md#agents-audit) lists them). Compile checks and reading commands, a recursive `grep` among them, are not reported. The verb reads the transcripts and prints only matching commands; you still never read a transcript yourself. A row names a transcript agent, not a task, so judge each row against the whole milestone. It is allowed when its command:
 
 - equals, or is a narrower form of, an `accept` check of any row of the milestone, an amended one step 5a wrote included, or a check any row's `detail` names, such as the same `cargo test` with a test filter or `--test <name>` added;
 - or is the `cli::dispatch::tests` subset, `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`, which a worker runs after editing a `claude/**/*.md` file or adding a `tomlctl` verb;
@@ -305,9 +305,9 @@ Every row of the milestone is `done` by now. Build the gate's command list in on
 tomlctl plan emit gate-list --slug <slug> --milestone <id>
 ```
 
-It prints `{commands: [{command, source}], skipped: [{task, accept, reason}]}`. `commands` holds the milestone's `gates` in stored order, `source` `gate`, then every accept check whose owner is the gate, in row order and within a row in `accept` order, `source` `accept:<task>:<index>`. A check a worker ran is not there, and neither is a command byte-identical to one already listed, which is `skipped` with reason `duplicate`. An accept check its plan marked as covered by one of the milestone's gates is `skipped` with reason `covered_by <command>`: it is not run, and the gate summary in the closing report names each such check, its task and the gate that covered it.
+It prints `{commands: [{command, source}], skipped: [{task, accept, reason}]}`, plus `held: [{command, source}]` when the plan marks any command external and `visual` when the milestone has `ui_states`. `commands` holds the milestone's `gates` in stored order, `source` `gate`, then every accept check whose owner is the gate, in row order and within a row in `accept` order, `source` `accept:<task>:<index>`. A check a worker ran is not there, and neither is a command byte-identical to one already listed, which is `skipped` with reason `duplicate`. An accept check its plan marked as covered by one of the milestone's gates is `skipped` with reason `covered_by <command>`: it is not run, and the gate summary in the closing report names each such check, its task and the gate that covered it. A gate the milestone's `external_gates` lists, or a gate-owned accept check whose `effect` is `external`, is printed under `held` and never also under `commands`, in the order it would have had there.
 
-There is nothing to run only when `commands` is empty: go to step 8, by way of [visual.md](visual.md) when the milestone has `ui_states`, and say in the closing report that the milestone had no gate.
+There is nothing to run only when `commands` and `held` are both empty: go to step 8, by way of [visual.md](visual.md) when the milestone has `ui_states`, and say in the closing report that the milestone had no gate.
 
 Otherwise dispatch the `verification` agent once, one-shot, with no `name:` and no `model:`:
 
@@ -315,7 +315,7 @@ Otherwise dispatch the `verification` agent once, one-shot, with no `name:` and 
 Agent({subagent_type: "verification", description: "gate milestone <id>", prompt: "<the input below>"})
 ```
 
-The prompt is each `commands[].command` in the order printed, as `verification.md` reads its input, less the held commands below. Never reorder, filter or de-duplicate the list by hand: the verb already has. A failing accept check is a gate failure like any other: it mints a fix task and costs a round.
+The prompt is each `commands[].command` in the order printed, as `verification.md` reads its input, less any command you hold by judgement below; the `held` rows are never in it. Never reorder, filter or de-duplicate the list by hand: the verb already has. A failing accept check is a gate failure like any other: it mints a fix task and costs a round.
 
 ```
 commands:
@@ -329,9 +329,9 @@ keep_going: true
 ```
 
 - Each command is one `- ` item, byte for byte as printed.
-- The verb prints no options and holds nothing back: which commands are held, and each command's `timeout:`, `rerun:` and `transient:` options, are yours to add, by the rules below.
+- The verb prints no options: each command's `timeout:`, `rerun:` and `transient:` options are yours to add, by the rules below.
 - `keep_going: true` is always passed, so one gate run reports every failing command and one fix round can answer all of them.
-- A command that changes something outside the build, such as `cargo install` or a script that links or deploys, is held out of this dispatch: under `keep_going` it would install from a tree another command just failed. When every block comes back `pass` or `flaky`, dispatch the held commands in a second `verification` call, in the order printed; when one fails, they wait for the gate after the fix round.
+- **Held commands.** The `held` rows are the commands the plan marked as reaching outside the working tree, and they are always held out of this dispatch: under `keep_going` an install or deploy would run from a tree another command just failed. A command the plan did not mark that still changes something outside the build, such as `cargo install` or a script that links or deploys, is held by your judgement, exactly as a marked one: `held` adds to that judgement and never replaces it. When every block of the first call comes back `pass` or `flaky`, or `commands` was empty, dispatch the held commands in a second `verification` call, the `held` rows in the order printed and then the ones you held in their `commands` order, with no question to the user before it: the plan's approval covers them. When a block of the first call fails, they wait for the gate after the fix round.
 - `timeout:` (seconds, default 540) goes under a gate the project documents as slow. `rerun:` goes under a test command whose runner accepts a list of test ids, with `{ids}` where they go.
 - `transient:` carries the project's known environmental failure patterns, from its `CLAUDE.md`; omit it when there are none.
 
@@ -344,29 +344,18 @@ Never run a gate in this conversation, to corroborate a result or for any other 
 | `fail` | Failed; the agent went on to the commands after it |
 | `timeout` | Ran past its budget; says nothing about the code |
 
-**Record the gate run** as soon as the agent returns, before you act on it. Stage one row per block in `<scratch>/implement-<id>-<n>-gate.toml`, in the order the agent returned them:
-
-```toml
-[[record]]
-command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
-outcome = "fail"
-exit = 100
-duration_s = 412
-summary = "Summary [ 410.2s] 812 tests run: 811 passed, 1 failed, 3 skipped"
-failed_ids = ["store::tests::lock_contention"]
-log = "/tmp/tmp.k3Xq/c2.log"
-```
-
-`command` and `outcome` are the block's; `exit` is its `exit:` value, left out when that is `none`; `duration_s` is its `duration_s:`, or a pass line's `duration:`; `summary` its `summary:`, left out when that is `none`; `failed_ids` its space-separated `failed_ids:` ids, one string each, without a `(+<n> more)` tail; `log` its `log:` path, which the agent gives for every non-pass block. Then record them:
+**Record the gate run** as soon as the agent returns, before you act on it. Write the agent's returned text, unchanged and whole, with the Write tool to `<scratch>/implement-<id>-<n>-gate.txt`, and pass it as `--blocks`; never retype a block into a record file:
 
 ```bash
-tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <scratch>/implement-<id>-<n>-gate.toml
+tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --blocks <scratch>/implement-<id>-<n>-gate.txt
 ```
+
+The verb parses each pass line and each block into one row: a pass stores exit `0`, and a block's full failed ids come from the `<log>.ids` file beside its log when the agent left one, so an id past the twentieth or one holding a space is kept. Text that yields no row is refused with `kind=validation`; the format it reads is in [plan-run.md](../../tomlctl/references/plan-run.md), section "Reading the verification agent's text".
 
 `<n>` is `0` for the milestone's first gate run and the fix round's number after that: the highest `<n>` the round count below prints, or `0` when it prints none. The verb copies the tail of each non-pass command's log into `.claude/flows/<slug>/gates/`, which the flow-store commit of step 10 stages; a log it could not read is listed in `unread` and stored as `""`, and never fails the record. A second dispatch within the same drain, for the held commands or after a timeout, records under the same round and passes `--rerun`, which merges into the run just recorded and replaces the commands it reran:
 
 ```bash
-tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <scratch>/implement-<id>-<n>-gate-rerun.toml --rerun
+tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --blocks <scratch>/implement-<id>-<n>-gate-rerun.txt --rerun
 ```
 
 Every other gate call passes no flag and records a new run of its round, so a gate run again at a later invocation keeps the earlier results. This record counts nothing: the rounds already spent still come from the `gate <id> round` reasons, below.
@@ -435,17 +424,20 @@ A handover proposed in the note but empty in the index, or the other way round, 
 
 ## 10. Commit
 
-Run this when the gate has passed, or when the milestone has no gate, and, for a milestone with `ui_states`, once its visual pass has passed by [visual.md](visual.md).
+Run this when the gate has passed, or when the milestone has no gate, and, for a milestone with `ui_states`, once its visual pass has passed or the user accepted its failed last round, by [visual.md](visual.md), section "Accepting a failed last round". An accepted round is a `[[visual_accept]]` row of the plan store for the milestone and that round; the commit proceeds on the record, and the report prints it under `gate:` ([report.md](report.md)). A visual round that failed without an acceptance reaches the report with no commit.
 
-**Stage exactly the milestone's work.** The milestone's rows are the rows of `tasks list --slug <slug> --where checkpoint=<id>`; their `files` together are the commit's candidates. Read the uncommitted paths, one unquoted path per line, and stage only the candidates among them, compared byte for byte, since `git add` refuses a path that matches nothing; commit with the same pathspec, so nothing else already in the index rides along:
+**Stage exactly the milestone's work.** One call lists it, one unquoted path per line: every changed path, deletions included, that the `files` of a row of the milestone name, wherever it lives, under the flow's own directories too. Stage exactly those paths and commit with the same pathspec, so nothing else already in the index rides along:
 
 ```bash
-tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files
+tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work --get paths
 git add -- <path> <path>
 git commit -m "<message>" -- <path> <path>
 ```
 
-Never `git add -A`, `git add .` or `commit -a`. A deleted file in the list is staged as a deletion by the same `git add`.
+Never `git add -A`, `git add .` or `commit -a`. A deleted file in the list is staged as a deletion by the same `git add`. The same call without `--get` prints two more lists, read once before staging:
+
+- `unmatched`: row files that match no changed path and no ignore rule. Nothing to stage: the row named a file it left unchanged, or one an earlier commit already holds.
+- `ignored`: `{path, rule}` for each row file the repository's ignore rules hide. Stage none of them and never `git add -f`: the ignore rules are the repository's. Put one `reconcile` entry per path in the report ([report.md](report.md)), quoting the rule, with `needs_person = true`, so the user can add an exception or accept that the file stays local.
 
 **The message** comes from the `commit-conventions` skill, applied to the staged tree. Draft it there; never write one directly.
 
@@ -464,27 +456,25 @@ A backlog row a milestone task closes may now be complete; reconcile it before t
 tomlctl backlog reconcile --flow <slug> --apply
 ```
 
-When the milestone holds an apply row, reconcile its findings here too, by [apply-rows.md](apply-rows.md), section "Reconcile", which also names the review stores this commit stages.
+When the milestone holds an apply row, reconcile its findings here too, by [apply-rows.md](apply-rows.md), section "Reconcile".
 
-**The flow-store commit.** The stores, the run's notes, the gate logs and the backlog go in a second, small commit of their own, with its message from the `commit-conventions` skill too. When the Next rule below ends the invocation at this milestone, gather and record the report first, by "Record the report" in [report.md](report.md), so the report lands in this commit; when it goes on to the next milestone, the report waits for step 11:
+**The flow-store commit.** The stores, the run's notes, the gate logs and the backlog go in a second, small commit of their own, with its message from the `commit-conventions` skill too. When the Next rule below ends the invocation at this milestone, gather and record the report first, by "Record the report" in [report.md](report.md), so the report lands in this commit; when it goes on to the next milestone, the report waits for step 11. Then list its paths in a second call, made now and not before the milestone commit, since the stamp, the reconciles and the report have written stores since:
 
 ```bash
-git status --porcelain --ignored -- .claude/flows/<slug>/ docs/flows/<slug>/notes/run/ .claude/backlog.toml .claude/backlog.toml.sha256
+tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for flow --get paths
 git add -- <each path that printed>
 git commit -m "<message>" -- <each path that printed>
 ```
 
-A line opening `!!` is a path the repository's ignore rules keep out, such as a gate log under a `*.log` rule or the backlog under a `.claude/*` rule. Stage none of them and never `git add -f`: the ignore rules are the repository's. Run `git check-ignore -v <path>` on each and put one `reconcile` entry per path in the report, quoting the rule, with `needs_person = true`, so the user can add an exception or accept that the record stays local.
-
-When the question loop wrote `.claude/inputs.toml` during the milestone, stage it and its sidecar here too, by [questions.md](questions.md), section "The writes during a live run". Each store's `.sha256` sidecar is staged beside it; the pre-commit hook compares the two. This commit may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write.
+The list holds every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, the backlog store, the inputs store the question loop writes, and each review store a `[[finding_links]]` entry of the milestone names outside the flow's directory, each with its `.sha256` sidecar, which the pre-commit hook compares with its store; a path the milestone commit took is never in it. The same call without `--get` prints `ignored` too: `{path, rule}` for each such path the ignore rules hide, such as a gate log under a `*.log` rule or the backlog under a `.claude/*` rule. Stage none of them and never `git add -f`; put one `reconcile` entry per path in the report, quoting `rule`, with `needs_person = true`, so the user can add an exception or accept that the record stays local. When the report is recorded here, read `ignored` with one call before recording it, so those entries land in it, and take `paths` from a call made after. This commit may stage another session's elaboration writes, which stay non-runnable because that milestone stays deferred until its elaboration's last write.
 
 ### Stamping on re-entry
 
-A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `tomlctl plan drift --slug <slug> --uncommitted --get uncommitted_files` prints none of them and `git -c core.quotePath=false show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above, then, when the milestone holds an apply row, run [apply-rows.md](apply-rows.md) **Reconcile** before the flow-store commit, and make the flow-store commit. Otherwise a milestone holding no apply row runs the gate again from step 7, and one holding an apply row goes back through the tail of step 6 first: the **Reproduce check** when a row fixes a finding, then the **Settle drain** when a row settles one, then the gate. Running the settle drain again is safe: it skips a finding an earlier pass recorded. On a milestone with `ui_states`, a gate that passes here runs the visual pass again before the commit, by [visual.md](visual.md), its round counted from the `visual <id> round ` reasons already minted.
+A milestone whose rows are all `done` with an empty `commit` is one whose run ended between the commit and the stamp, or before the gate. When `HEAD` is a milestone commit holding the rows' files, so that `tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work --get paths` prints nothing and `git -c core.quotePath=false show --name-only --format= HEAD` lists them, stamp `HEAD`'s sha as above, then, when the milestone holds an apply row, run [apply-rows.md](apply-rows.md) **Reconcile** before the flow-store commit, and make the flow-store commit. Otherwise a milestone holding no apply row runs the gate again from step 7, and one holding an apply row goes back through the tail of step 6 first: the **Reproduce check** when a row fixes a finding, then the **Settle drain** when a row settles one, then the gate. Running the settle drain again is safe: it skips a finding an earlier pass recorded. On a milestone with `ui_states`, a gate that passes here runs the visual pass again before the commit, by [visual.md](visual.md), its round counted from the `visual <id> round ` reasons already minted; when the user accepted that round, its step 2 finds the `[[visual_accept]]` row, captures nothing and goes straight to the commit.
 
 ### Next
 
-Go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. Otherwise end the invocation with the report below: the stop rule of step 6, a gate that failed after round 2 or timed out twice, and a visual pass that was unsound, failed after round 2 or could not run ([visual.md](visual.md)), reach here without a commit.
+Go to run-milestone step 2 when this milestone was committed and `--milestone` was not given; step 2's schedule decides whether anything runs, so a parked row no longer stops the engine by itself. Otherwise end the invocation with the report below: the stop rule of step 6, a gate that failed after round 2 or timed out twice, and a visual pass that was unsound, failed after round 2 without the user's acceptance, or could not run ([visual.md](visual.md)), reach here without a commit. A visual pass whose last round the user accepted committed, and goes on like any committed milestone.
 
 ## 11. The `needs_human` report
 
