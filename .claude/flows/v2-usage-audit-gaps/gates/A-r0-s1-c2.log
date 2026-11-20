@@ -1,0 +1,67 @@
+    Checking tomlctl v0.27.0 (C:\Users\rossa\dev\dev-tools\tomlctl)
+error[E0061]: this function takes 4 arguments but 3 arguments were supplied
+   --> tomlctl\src\plan\records.rs:937:9
+    |
+937 |         upsert_handover(plan, 1, row.as_object().expect("an object"))
+    |         ^^^^^^^^^^^^^^^---------------------------------------------- argument #4 of type `std::option::Option<&[u32]>` is missing
+    |
+note: function defined here
+   --> tomlctl\src\plan\records.rs:576:4
+    |
+576 | fn upsert_handover(
+    |    ^^^^^^^^^^^^^^^
+...
+580 |     task_ids: Option<&[u32]>,
+    |     ------------------------
+help: provide the argument
+    |
+937 |         upsert_handover(plan, 1, row.as_object().expect("an object"), /* Option<&[u32]> */)
+    |                                                                     ++++++++++++++++++++++
+
+warning: this `if` statement can be collapsed
+   --> tomlctl\src\plan\drift.rs:220:9
+    |
+220 | /         if counted && !path.is_empty() && !path.starts_with(flow_dir) {
+221 | |             if let Some((_, files)) = commits.last_mut() {
+222 | |                 files.push(path.to_string());
+223 | |             }
+224 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+220 ~         if counted && !path.is_empty() && !path.starts_with(flow_dir)
+221 ~             && let Some((_, files)) = commits.last_mut() {
+222 |                 files.push(path.to_string());
+223 ~             }
+    |
+
+warning: this `if` statement can be collapsed
+   --> tomlctl\src\plan\records.rs:604:5
+    |
+604 | /     if let (Some(blocks), Some(known)) = (&blocks, task_ids) {
+605 | |         if let Some(missing) = blocks.iter().find(|id| !known.contains(id)) {
+606 | |             return Err(row_err(
+607 | |                 line,
+...   |
+611 | |     }
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.100.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+604 ~     if let (Some(blocks), Some(known)) = (&blocks, task_ids)
+605 ~         && let Some(missing) = blocks.iter().find(|id| !known.contains(id)) {
+606 |             return Err(row_err(
+...
+609 |             ));
+610 ~         }
+    |
+
+warning: `tomlctl` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p tomlctl -- ` to apply 2 suggestions)
+    Checking glimpse v0.1.0 (C:\Users\rossa\dev\dev-tools\glimpse)
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `tomlctl` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

@@ -604,6 +604,111 @@ finished = 2026-11-20T17:00:48Z
 skip_reason = ""
 outcome = "ok"
 
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "d5e671dc3ddbeb26860580e822f2e8af4d375de259a8d7fefa699cd5b53be390"
+run_id = "wf_8f9400b7-ca5"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T17:03:57Z
+finished = 2026-11-20T17:27:55Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+]
+digest_at = 2026-11-20T17:03:28Z
+
+[run.store_digest]
+changes = "4f53cda18c2baa0c"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "e3b302122f831aaa"
+specs = "5655baf91e7976e4"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "c833325b19a4f98fccbd36a33d0e3d7346b30dff55be5c31efb7cc5157bcb4bd"
+run_id = "wf_de75e79a-b9b"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T17:29:42Z
+finished = 2026-11-20T17:30:59Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    32,
+    33,
+]
+digest_at = 2026-11-20T17:29:30Z
+
+[run.store_digest]
+changes = "009d1e1dae9a11ef"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "984e3c533b14ce1a"
+specs = "8be699f49bd8583f"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "5692700426e4b71a81c885fa1a88da5aee6eff39a40a5d974cf1c2d71be31101"
+run_id = "wf_6baac12d-a73"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T17:34:00Z
+finished = 2026-11-20T17:35:09Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    34,
+    35,
+]
+digest_at = 2026-11-20T17:33:48Z
+
+[run.store_digest]
+changes = "ab9df86da0581bd3"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "370141c198d8cf7c"
+specs = "5459f1fdc3596691"
+
+[[run]]
+step = "implement:A"
+workflow = "implement-v2-milestone"
+args_hash = "4823e629d8818a842ceba71e50201ccc36d1179289142d2ada52f908c4dd2151"
+run_id = "wf_a9ef9e2c-964"
+session = "7a032f75-eaec-4a7e-911a-bf6e3b490e49"
+started = 2026-11-20T17:44:22Z
+finished = 2026-11-20T17:45:17Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    36,
+    37,
+]
+digest_at = 2026-11-20T17:44:11Z
+
+[run.store_digest]
+changes = "f2fabe8266660b9b"
+milestones = "df3d5b5fbec4f7cf"
+rest = "a16877973b1f1354"
+rows = "9e42f3b5a7ce3288"
+specs = "0bb15dc36b861c75"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -612,3 +717,838 @@ when = "After milestone A's commit, before milestone B is launched."
 done_when = "The glimpse pane opens this flow's task graph without a schema-version error."
 source_task = 15
 done = false
+
+[[attempt]]
+task = 1
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan store schema 7 shapes added, stamped 7 only when one is present, documented in plan-store.md"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/run_notes.rs",
+    "claude/skills/tomlctl/references/plan-store.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The schema 7 stamp is raised by any written new key on a gate command (base_checked, base_failed_ids or base_whole_failed), not only by base_checked = true"
+why = "Each key is written on its own when set; a store carrying base_failed_ids or base_whole_failed without base_checked would otherwise be stamped 6 and a schema 6 binary would drop the key silently. The holds_gate_accept_shapes predicate counts every key that is written."
+means = "design/records.md, Plan store schema 7: stamp 7 for a gate command with base_checked = true"
+
+[[attempt.deviations]]
+what = "schema_request.rs was left unedited"
+why = "Its PlanStore literals all use ..fixture() and its tests assert tiers no schema 7 shape touches, so nothing there needed a change to compile or stay correct."
+means = "files list naming tomlctl/src/plan/schema_request.rs as edit"
+
+[[attempt.deviations]]
+what = "Attempt sources read fetched_at as a required datetime; claim and url-or-query are read leniently by the store"
+why = "fetched_at has no sensible empty default for a Datetime field; enforcing claim and url-or-query is the note parser's job, which turns a malformed note into a problem line instead of a store that refuses to load."
+means = ""
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/{schema,approve,records,run_gate,run_notes}.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "grep -q 'GATE_ACCEPT_SCHEMA_VERSION: i64 = 7' tomlctl/src/plan/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'base_failed_ids' tomlctl/src/plan/schema.rs && grep -q 'delta_waiver' tomlctl/src/plan/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'gate_accept' claude/skills/tomlctl/references/plan-store.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 2
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "milestone A flags added to the plan CLI types"
+block = "present"
+files_touched = ["tomlctl/src/cli/types/plan.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep checks for after-round, waive-review-delta, baseline-gate, baseline-proof, base"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "fail"
+
+[[attempt]]
+task = 3
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan run gate --base records base reruns by order, skips parse in gate_blocks.rs, and a failing run records its tree digests"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/gate_blocks.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "A `--accept` call is refused with a validation error in run_gate.rs's run()"
+why = "The flag (added by the CLI types task) has to be destructured for run_gate.rs to compile, and the gate_rows group lets `--accept` stand alone, so without a branch it would fall through to the no-rows refusal. The acceptance task replaces this branch."
+means = ""
+
+[[attempt.deviations]]
+what = "A base result of `timeout` leaves the command base_checked = false, like a skip"
+why = "records.md defines pass and fail base results only; a timed-out base rerun says nothing about whether the failure predates the milestone, so marking it checked would read as 'not a base failure' on no evidence."
+means = ""
+
+[[attempt.deviations]]
+what = "A skip must name the failing command at its position, or the base call is refused naming its line"
+why = "The mapping is by order; a cheap equality check on the one row that carries the round's own command text catches a misordered call before it writes wrong base fields. Rerun rows are not checked, since a narrowed rerun names a different command line."
+means = ""
+
+[[attempt.deviations]]
+what = "A `skip:` line is recognised by gate_blocks::parse only when its new `skips` argument is true (set by --base); without it the line stays ordinary text"
+why = "The constraint says a call without --base records exactly what it records today; recognising skip lines unconditionally would also end a fail block's tail at a log line starting `skip: `."
+means = ""
+
+[[attempt.deviations]]
+what = "A rerun merge (--rerun) rewrites tree from the merged outcome: written on fail, cleared otherwise"
+why = "The tree belongs to the recorded run's outcome; a merge that turns a run to pass leaves no failing run for gate-list to compare against."
+means = ""
+
+[[attempt.checks]]
+command = "grep -q 'base_checked = true' tomlctl/src/plan/run_gate.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'fn whitespace_digest' tomlctl/src/plan/run_gate.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/run_gate.rs tomlctl/src/plan/gate_blocks.rs tomlctl/tests/plan_run_records.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 4
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan run gate --accept records accept, extra-round and base gate acceptances checked against the round's latest run"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The payload parsing helpers (key check, kind, why, backlog, commands) are written in run_gate.rs rather than shared with run_visual.rs"
+why = "run_visual.rs's helpers are private and the file is outside this task; the shapes differ enough (a vocabulary kind, a conditional backlog, a commands array) that sharing would mean editing that file. Alternatives weighed: request run_visual.rs and lift its helpers to a shared module (less duplication, a cross-file refactor beyond the task), or duplicate the one small key-check helper (chosen)."
+means = "Mirror plan run visual --accept (run_visual.rs) for payload parsing, the upsert and the output envelope"
+
+[[attempt.deviations]]
+what = "The output envelope adds `kind` beside ok, milestone and round"
+why = "A base record is keyed on kind as well, so the envelope names which record the call wrote."
+means = "Mirror plan run visual --accept for the output envelope"
+
+[[attempt.deviations]]
+what = "`commands` must hold at least one entry for every kind, and a non-whole base entry must name at least one failed id"
+why = "records.md says a record is made against the round's failing commands; an empty list, or an id-less base entry for a command that did not fail whole at base, would waive nothing or read as the whole command. Both are easy to relax."
+means = ""
+
+[[attempt.checks]]
+command = "grep -q 'extra-round' tomlctl/tests/plan_run_records.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/run_gate.rs tomlctl/tests/plan_run_records.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 5
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "worker-owned building accept checks are now accepted"
+block = "present"
+files_touched = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "! grep -q 'self.run_by == RUN_BY_WORKER && self.writes_build' tomlctl/src/tasks/schema.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --tests"
+result = "fail"
+
+[[attempt]]
+task = 6
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "milestones store baseline gates, baseline proofs and the ui call on task-store schema 5, wired into plan milestone add and update"
+block = "present"
+files_touched = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/tests/plan_milestone.rs",
+]
+
+[[attempt.deviations]]
+what = "`--baseline-proof` is wired into `plan milestone update` only, not `add`"
+why = "The CLI args struct (tomlctl/src/cli/types/plan.rs, another task's file) declares `baseline_proof` on PlanMilestoneUpdateArgs only; a proof on add could not name a null-control task row in any case, since the milestone has no rows yet"
+means = "detail: wire --baseline-gate and --baseline-proof into plan milestone add and update"
+
+[[attempt.deviations]]
+what = "Fixed the stale assertion in tasks::schema::tests::an_absent_run_by_takes_its_owner_from_writes_build_and_writes_no_key, which still expected a worker-run building check to be refused"
+why = "An earlier task in this milestone lifted that refusal from Accept::owner_problem in the same file but left this unit test asserting it, so the milestone gate would have failed on it; the file is this task's, and the new assertion follows the recorded decision on building reproducers"
+means = "none (outside the detail)"
+
+[[attempt.deviations]]
+what = "When `--gate` or `--clear-gate` replaces the gate list without `--baseline-gate`, baseline gates no longer in the gates are dropped, and proofs whose gate is no longer a baseline gate are dropped with them"
+why = "Matches how external_gates marks are pruned on a gate replacement in patch_milestone; the alternative, refusing the gate update until the baseline list is fixed, would add a step no other milestone list requires"
+means = "follow how external_gates and gate_probes were added"
+
+[[attempt.tangential]]
+kind = "bug"
+area = "tomlctl/src/cli/types/plan.rs"
+summary = "The help text for `--baseline-gate` says 'rerun at the milestone's base commit when it fails', and the help for `--baseline-proof` says 'the flags given replace the whole list', but the records design and this verb store a proof per gate by upsert and describe the baseline gate as one proved on the unchanged tree"
+why = "`--help` and the skill flag reference generated from it would misdescribe the stored behaviour"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "cargo clippy --all-targets (isolated copy of tomlctl, sibling pattern gaps patched in the copy only)"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check (the five edited files)"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'baseline_gates' tomlctl/src/tasks/schema.rs && grep -q 'baseline_proofs' tomlctl/src/plan/milestone.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo nextest run -E 'test(/^plan_milestone::/) | test(/tasks::schema::/) | test(/plan::milestone::/) | test(/tasks::milestones::/) | test(/plan::lane::/) | test(/^tasks_/)' (isolated copy)"
+result = "pass"
+
+[[attempt]]
+task = 7
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "gate-list --after-round narrows after a whitespace-only round; launch-args marks building tasks and withholds handover-blocked ones"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+
+[[attempt.deviations]]
+what = "A narrowed `commands` keeps every entry of the current full list that round n did not record as pass or flaky, rather than only round n's fail/timeout commands; `carried` holds the full-list entries round n passed. A round-n command no longer in the list is dropped."
+why = "A command the list holds now but round n never ran (an accept check a fix row added) was never run at all, so carrying it would skip it; taking entries from the full list also keeps each one's `source`. On the plain case (same list, every command ran) the result is exactly the spec's."
+means = "design/records.md#emit-outputs: commands as round n's commands whose outcome was fail or timeout"
+
+[[attempt.deviations]]
+what = "`--after-round` on a flow with no plan.toml, or naming a round with no recorded run, prints the full list with narrowed = false instead of refusing."
+why = "The spec's 'any other case' rule; refusing would turn a missing record into a blocked gate."
+means = "design/records.md#emit-outputs"
+
+[[attempt.deviations]]
+what = "When a task is blocked by several undone handovers, the reason names the first in store order; a premise withholding outranks a handover one."
+why = "The spec names one reason per drop; the existing build keeps the first reason that dropped a row."
+means = "detail: withheld with reason handover:<id>"
+
+[[attempt.tangential]]
+kind = "other"
+area = "tomlctl/src/plan/check.rs"
+summary = "The lib test target did not compile during this run: check.rs calls missing baseline_findings/ui_capture_findings, and records.rs:937 calls a 4-argument fn with 3."
+why = "In-flight edits of other tasks; it blocked the cli::dispatch::tests run after the plan-engine.md edit."
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/emit.rs tomlctl/tests/plan_emit.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --test it"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = """grep -q 'after_round' tomlctl/src/plan/emit.rs && grep -q '"builds"' tomlctl/src/plan/emit.rs && grep -q 'handover:' tomlctl/src/plan/emit.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 8
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "handover set accepts blocks, ready_check and note"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/records.rs",
+    "tomlctl/tests/plan_records.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = """grep -q '"ready_check"' tomlctl/src/plan/records.rs && grep -q '"blocks"' tomlctl/src/plan/records.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "fail"
+
+[[attempt]]
+task = 9
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan drift now emits affected_decisions; compile and tests not runnable yet because of sibling edits"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/tests/plan_drift.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'affected_decisions' tomlctl/src/plan/drift.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "not-run"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/drift.rs tomlctl/tests/plan_drift.rs"
+result = "pass"
+
+[[attempt]]
+task = 10
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "a task-id bind now also reaches rows sharing a file with the bound task"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/view.rs",
+    "tomlctl/tests/plan_view.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'fn a_task_bind_reaches_a_row_on_the_bound_tasks_files' tomlctl/tests/plan_view.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml"
+result = "fail"
+
+[[attempt]]
+task = 11
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "the run-note block accepts a [[sources]] table, drops a bad entry alone and carries the sources onto the attempt"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/run_note.rs",
+    "tomlctl/src/plan/run_notes.rs",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "fetched_at accepts a TOML date or a string that parses as one (a datetime with a date part is also accepted); a time-only value is dropped as not a date. A `sources` value that is not an array at all makes the block malformed, the same as any other top-level type error; only a bad entry inside the array is dropped alone"
+why = "The spec says only 'a date, required'. The repo's other date readers (as_date in tasks, review and agents schema) also accept a string that parses, so a worker who quotes the date is not penalised. Rejecting quoted dates would be stricter, but a worker would then lose the entry for a formatting slip"
+means = "design/records.md#run-note-sources"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/run_note.rs tomlctl/src/plan/run_notes.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = """grep -q '"sources"' tomlctl/src/plan/run_note.rs"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt]]
+task = 12
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan-family review runs stamp a per-target plan digest; stage, gate and approve read one shared review delta, and a first approval refuses it unless waived"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/target.rs",
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/stage.rs",
+    "tomlctl/src/plan/approve.rs",
+    "tomlctl/tests/plan_approve.rs",
+    "tomlctl/tests/review_runs.rs",
+]
+
+[[attempt.deviations]]
+what = "The re-check target set is derived again in review/runs.rs (recheck_targets) rather than shared with review/recheck.rs"
+why = "review/recheck.rs only prints its set and is outside this task's files; the copy reads the same two keys (applied.target, addressed) over the same findings. Alternatives: request recheck.rs to expose a shared function (cleaner, one more file), or shell the verb (no)."
+means = ""
+
+[[attempt.deviations]]
+what = "Brief sections are hashed over the section check::design_section_in returns for derive_ref(section), heading line included, not over review::add::section_spans' body"
+why = "section_spans is private to the review module and review/add.rs is not this task's file; the digest only needs a stable text per section that changes when the section does."
+means = ""
+
+[[attempt.deviations]]
+what = "recheck_scope without rechecks is refused at review run start; --waive-review-delta with an empty reason is refused; a waiver is stored only when the delta it waives is non-empty"
+why = "Malformed payloads are refused naming the field, and records.md says delta_waiver is empty otherwise. Easy to unwind and invisible to a correct caller."
+means = ""
+
+[[attempt.deviations]]
+what = "plan stage reports review_delta as a field only; it does not add a blocker or change stage or next"
+why = "The delta can be waived at approval, so a blocker would steer next away from plan approve for a choice the user may decline; the engine prose (a milestone B task) decides how to act on the field."
+means = ""
+
+[[attempt.tangential]]
+kind = "debt"
+area = "claude/skills/tomlctl/references/review-runs.md"
+summary = "The review run start --set row still lists only scope, models, substrate and rechecks; recheck_scope (delta) and the computed plan_digest are not documented, nor is the plan stage review_delta field or the plan gate review-delta risk row"
+why = "Agents reading the flag reference will not know a delta-scoped re-check exists"
+
+[[attempt.tangential]]
+kind = "debt"
+area = "tomlctl/src/review/recheck.rs"
+summary = "The recheck-targets set is computed in recheck.rs and again in runs.rs::recheck_targets; a shared pub(crate) function would keep them from drifting"
+why = "A digest scope that disagrees with recheck-targets would leave targets in the delta that the re-check did cover"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check (each edited file)"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan_digest' tomlctl/src/review/runs.rs && grep -q 'waive_review_delta' tomlctl/src/plan/approve.rs"
+result = "pass"
+
+[[attempt]]
+task = 13
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan check gains baseline-gate-unproved, handover-blocks-unknown, handover-blocks-done and ui-capture-missing, each with positive and negative tests"
+block = "present"
+files_touched = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+]
+
+[[attempt.deviations]]
+what = "A failed baseline proof counts as accepted when a decision with provenance user-stated or user-confirmed, not vetoed, has decision text containing the gate's exact command."
+why = "The spec and design say 'a decision records the user accepting it' but no field or convention marks such a decision. Alternatives weighed: a dedicated class or bind form (needs a schema change outside this task's files), or a gate_accept record (that record is keyed to a gate round, not to Prove). Text containment needs no schema change and is easy to unwind."
+means = "detail: plan/baseline-gate-unproved fires when the latest proof is fail and no decision records the user accepting it"
+
+[[attempt.deviations]]
+what = "plan/baseline-gate-unproved and plan/ui-capture-missing skip a deferred milestone."
+why = "A deferred milestone gets its proofs and capture states at elaboration, so a warning before then would fire on every deferred UI or baseline milestone at approval. This follows ui_scope_findings and ui-accept-structural, which skip deferred milestones too."
+means = "detail: warn on a milestone whose ui is true and whose ui_states is empty"
+
+[[attempt.deviations]]
+what = "plan/handover-blocks-unknown and plan/handover-blocks-done are raised only for a handover that is not done."
+why = "handover_findings already returns early for a done handover, because it has nothing left to run and must not block plan approve --amend; a done handover's blocks hold nothing back."
+means = "detail: plan/handover-blocks-unknown (error): a handover's blocks names no task"
+
+[[attempt.deviations]]
+what = "plan/ui-capture-missing follows the retargeted rule (ui = true and no ui_states, config or not) and no longer reads the capture config or look decisions."
+why = "The detail's last part retargets the class this way, and design/records.md#task-store-milestone-fields says the same."
+means = "detail: original root.join(ui_capture::CONFIG) existence trigger"
+
+[[attempt.tangential]]
+kind = "question"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+summary = "When Prove records a user accepting a failed baseline proof, the decision's text must contain the gate command verbatim, from a user-stated or user-confirmed decision, for plan check to stop warning."
+why = "The prose tasks that teach Prove (and plan.md's class entry) should state this rule, or the warning keeps firing after the user accepts."
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "fail"
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --test it"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/plan_check.rs"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/baseline-gate-unproved' tomlctl/src/plan/check.rs && grep -q 'plan/handover-blocks-unknown' tomlctl/src/plan/check.rs && grep -q 'plan/handover-blocks-done' tomlctl/src/plan/check.rs && grep -q 'plan/ui-capture-missing' tomlctl/src/plan/check.rs"
+result = "pass"
+
+[[attempt]]
+task = 14
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "plan.md documents the milestone A plan-group surface"
+block = "present"
+files_touched = ["claude/skills/tomlctl/references/plan.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep accept check for --baseline-gate, ready_check, affected_decisions, --waive-review-delta, plan/ui-capture-missing in plan.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 15
+run_id = "wf_8f9400b7-ca5"
+milestone = "A"
+status = "done"
+summary = "ten milestone A features advertised and tomlctl bumped to 0.27.0"
+block = "present"
+files_touched = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q gate_accept/review_plan_digest in mod.rs && grep version 0.27.0 in Cargo.toml"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/tests/capabilities.rs"
+result = "pass"
+
+[[attempt]]
+task = 32
+run_id = "wf_de75e79a-b9b"
+milestone = "A"
+status = "done"
+summary = "baseline gate and proof help and docs reworded"
+block = "present"
+files_touched = [
+    "tomlctl/src/cli/types/plan.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "! grep -q 'base commit when it fails' tomlctl/src/cli/types/plan.rs claude/skills/tomlctl/references/plan.md"
+result = "pass"
+
+[[attempt.checks]]
+command = """! (grep -A3 'long = "baseline-proof"' tomlctl/src/cli/types/plan.rs | grep -q 'replace the whole list')"""
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "not-run"
+
+[[attempt]]
+task = 33
+run_id = "wf_de75e79a-b9b"
+milestone = "A"
+status = "done"
+summary = "review-runs.md documents recheck_scope and plan_digest"
+block = "present"
+files_touched = ["claude/skills/tomlctl/references/review-runs.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q recheck_scope and plan_digest in review-runs.md"
+result = "pass"
+
+[[attempt]]
+task = 34
+run_id = "wf_6baac12d-a73"
+milestone = "A"
+status = "done"
+summary = "test call passes None for task_ids and the blocks check is a let-chain"
+block = "present"
+files_touched = ["tomlctl/src/plan/records.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/records.rs"
+result = "pass"
+
+[[attempt]]
+task = 35
+run_id = "wf_6baac12d-a73"
+milestone = "A"
+status = "done"
+summary = "collapsed the nested if in plan/drift.rs into a let-chain"
+block = "present"
+files_touched = ["tomlctl/src/plan/drift.rs"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml (no drift.rs diagnostics)"
+result = "pass"
+
+[[attempt.checks]]
+command = "rustfmt --edition 2024 --check tomlctl/src/plan/drift.rs"
+result = "pass"
+
+[[attempt]]
+task = 36
+run_id = "wf_a9ef9e2c-964"
+milestone = "A"
+status = "done"
+summary = "plan drift section moved to plan-engine.md; plan.md is 571 lines"
+block = "present"
+files_touched = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "test $(wc -l < claude/skills/tomlctl/references/plan.md) -le 600 && grep -q '^## `plan drift`' claude/skills/tomlctl/references/plan-engine.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 37
+run_id = "wf_a9ef9e2c-964"
+milestone = "A"
+status = "done"
+summary = "both tests now use an unknown owner; the plan_check test also asserts a worker-run building check is clean"
+block = "present"
+files_touched = [
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "cargo nextest run -E 'test(/^plan_check::.*owner/) | test(/^plan_stage::/)'"
+result = "pass"
+
+[[gate_round]]
+milestone = "A"
+round = 0
+seq = 1
+at = 2026-11-20T17:33:22Z
+outcome = "fail"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+exit = 0
+duration_s = 2
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --locked --all-targets"
+outcome = "fail"
+exit = 101
+duration_s = 37
+summary = ""
+failed_ids = []
+log = ".claude/flows/v2-usage-audit-gaps/gates/A-r0-s1-c2.log"
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+exit = 101
+duration_s = 39
+summary = ""
+failed_ids = []
+log = ".claude/flows/v2-usage-audit-gaps/gates/A-r0-s1-c3.log"
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+exit = 0
+duration_s = 0
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round]]
+milestone = "A"
+round = 1
+seq = 1
+at = 2026-11-20T17:43:20Z
+outcome = "fail"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+exit = 0
+duration_s = 2
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+exit = 0
+duration_s = 26
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+exit = 100
+duration_s = 387
+summary = "Summary [ 333.677s] 3572 tests run: 3569 passed (4 slow), 3 failed, 1 skipped"
+failed_ids = [
+    "cli::dispatch::tests::skills::skill_references_under_line_ceiling",
+    "plan_check::check_reports_a_worker_owner_on_a_building_check",
+    "plan_stage::a_spec_shape_error_names_tasks_update_and_tasks_update_clears_it",
+]
+log = ".claude/flows/v2-usage-audit-gaps/gates/A-r1-s1-c3.log"
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+exit = 0
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round]]
+milestone = "A"
+round = 2
+seq = 1
+at = 2026-11-20T17:56:23Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+exit = 0
+duration_s = 3
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo clippy --workspace --locked --all-targets"
+outcome = "pass"
+exit = 0
+duration_s = 7
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+exit = 0
+duration_s = 332
+summary = "Summary [ 330.450s] 3572 tests run: 3572 passed (4 slow), 1 skipped"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+exit = 0
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "cargo install --path tomlctl --locked"
+outcome = "pass"
+exit = 0
+duration_s = 246
+summary = ""
+failed_ids = []
+log = ""

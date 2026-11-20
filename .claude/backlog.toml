@@ -15150,3 +15150,27 @@ dedup_id = "08f10dce19015855"
 origin = "v2-usage-audit"
 context = "dev-tools implement-v2-run-hardening milestone A: tasks 1, 3, 6 and 11 all claim tomlctl/src/cli/types/plan.rs, so a 4-slot pool ran one worker for long stretches and the chain set the 29-minute run. Report the longest same-file chain at Prove and suggest a foundational split."
 base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-1d0ef666"
+kind = "debt"
+summary = "The recheck-targets set is computed in review/recheck.rs and again in review/runs.rs recheck_targets; a shared pub(crate) function would keep them from drifting"
+area = "tomlctl/src/review/recheck.rs"
+tags = [
+    "review-v2",
+    "plan-digest",
+]
+status = "open"
+created = 2026-11-20T17:31:27Z
+last_seen = 2026-11-20T17:31:27Z
+seen_count = 1
+dedup_id = "1d0ef6667387db5c"
+origin = "implement-v2"
+flow = "v2-usage-audit-gaps"
+context = "review run start with rechecks stamps plan_digest over the targets runs.rs::recheck_targets derives, a copy of the set review recheck-targets prints from recheck.rs (both read applied.target and addressed). If the two drift, the review delta keeps targets the re-check did cover. Lift the set into one pub(crate) function in recheck.rs and call it from runs.rs."
+base_sha = "7f04ec64994a74b48afc745c2dccfbf659a32060"
+evidence = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/src/review/recheck.rs",
+]
+related = ["B-f007171d"]

@@ -85,7 +85,7 @@ check = "grep -q 'VISUAL_ACCEPT_SCHEMA_VERSION: i64 = 6' tomlctl/src/plan/schema
 at = "base"
 
 [specs.premises.probe]
-at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+at = "7f04ec64994a74b48afc745c2dccfbf659a32060"
 neg_rc = 0
 verdict = "holds"
 
@@ -270,7 +270,7 @@ check = "grep -q 'self.run_by == RUN_BY_WORKER && self.writes_build' tomlctl/src
 at = "base"
 
 [specs.premises.probe]
-at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+at = "7f04ec64994a74b48afc745c2dccfbf659a32060"
 neg_rc = 0
 verdict = "holds"
 
@@ -955,6 +955,7 @@ constraints = [
     "Touch no file outside this task's files.",
     "Name every tomlctl verb and flag exactly as milestone A shipped them.",
     "Fenced tomlctl commands use single-token placeholders.",
+    "When Prove records the user accepting a failed baseline proof, the decision is user-stated or user-confirmed and its text contains the gate's exact command; plan check stops reporting plan/baseline-gate-unproved only then.",
 ]
 premises = []
 means = []
@@ -1168,6 +1169,163 @@ writes_build = true
 run_by = "covered"
 covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
 
+[[specs]]
+ref = "describe-baseline-gates-and-proofs-accurately-in-the-cli-help-and-planmd"
+outcome = "The --baseline-gate help (on plan milestone add and update) and plan.md's --baseline-gate rows describe a baseline gate as a gate proved by running it on the unchanged tree before approval, not as one rerun at the base commit when it fails, and the --baseline-proof help says proofs are upserted by gate rather than replacing the whole list."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change help strings and prose only; no flag name, value name or behaviour changes.",
+    "Follow design/records.md, section Task store milestone fields, for the meaning of a baseline gate and its proofs.",
+]
+premises = []
+means = []
+design = ["design/records.md#task-store-milestone-fields"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "Neither file says a baseline gate is rerun at the base commit when it fails"
+check = "! grep -q 'base commit when it fails' tomlctl/src/cli/types/plan.rs claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The --baseline-proof help no longer says the flags replace the whole list"
+check = """! (grep -A3 'long = "baseline-proof"' tomlctl/src/cli/types/plan.rs | grep -q 'replace the whole list')"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs]]
+ref = "document-recheck_scope-plan_digest-and-review_delta-in-review-runsmd"
+outcome = "review-runs.md documents the recheck_scope run field (value delta, requires rechecks) on review run start, and the computed plan_digest a plan-family run on a v2 flow store carries, including that it cannot be supplied, and points to plan.md for the review_delta that plan stage, gate and approve read from it."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Name every field and verb exactly as tomlctl/src/review/runs.rs and tomlctl/src/review/fields.rs define them.",
+    "Fenced tomlctl commands use single-token placeholders.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "review-runs.md names recheck_scope and plan_digest"
+check = "grep -q 'recheck_scope' claude/skills/tomlctl/references/review-runs.md && grep -q 'plan_digest' claude/skills/tomlctl/references/review-runs.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs]]
+ref = "fix-the-recordsrs-test-call-to-upsert_handover-and-its-collapsible-if"
+outcome = "The lib test target compiles: the test-module call to upsert_handover passes the task_ids argument the function now takes, and the nested if in upsert_handover's blocks check is collapsed into one let-chain, so clippy reports nothing in plan/records.rs."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Keep the test's intent: pass None for task_ids unless the test asserts on blocks, in which case pass the ids it needs.",
+    "Do not change upsert_handover's signature or behaviour.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The lib and its tests lint clean"
+check = "cargo clippy --workspace --locked --all-targets"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo clippy --workspace --locked --all-targets"
+
+[[specs.accept]]
+behaviour = "The records unit tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/plan::records::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "collapse-the-nested-if-clippy-flags-in-plandriftrs"
+outcome = "The nested if clippy flags as collapsible_if in plan/drift.rs is collapsed into one let-chain, with behaviour unchanged, so clippy reports nothing in plan/drift.rs."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change no behaviour.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "drift.rs lints clean"
+check = "cargo clippy --workspace --locked --all-targets"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo clippy --workspace --locked --all-targets"
+
+[[specs]]
+ref = "bring-planmd-under-the-600-line-reference-ceiling-by-moving-plan-drift-to-plan-enginemd"
+outcome = "plan.md is at most 600 lines: its `plan drift` section moves whole, wording unchanged, into plan-engine.md as a section of its own, plan.md keeping a one- or two-line pointer to it in its place, and both files' Contents lists and intro sentences name the section where it now lives."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Move the section text unchanged; do not reword or drop any other content of plan.md, and leave its Check classes section in place, which the finding-class parity test reads.",
+    'Keep the anchor `plan-drift` resolving: the moved heading stays `## \`plan drift\``.',
+    "After the edit, run cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests and fix any failure in these two files.",
+]
+premises = []
+means = []
+design = []
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan.md is within the line ceiling"
+check = "test $(wc -l < claude/skills/tomlctl/references/plan.md) -le 600 && grep -q '^## `plan drift`' claude/skills/tomlctl/references/plan-engine.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[[specs.accept]]
+behaviour = "The skill reference gates pass"
+check = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs]]
+ref = "retarget-the-two-tests-that-still-expect-a-worker-run-building-check-to-be-refused"
+outcome = "Both tests raise plan/accept-owner-invalid with an owner that is still invalid, such as an unknown run_by value, and plan_check.rs's test is renamed to say so and also asserts that a worker-run building check is now clean."
+constraints = [
+    "Touch no file outside this task's files.",
+    "Change only these two tests' fixtures, assertions and name; keep every other case in them.",
+    "A worker-run check with writes_build = true is valid: design/records.md, section Task store milestone fields.",
+]
+premises = []
+means = []
+design = ["design/records.md#task-store-milestone-fields"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "The plan_check and plan_stage tests pass"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::/) | test(/^plan_stage::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
 [[milestones]]
 id = "A"
 gates = [
@@ -1185,7 +1343,7 @@ external_gates = ["cargo install --path tomlctl --locked"]
 gate = "cargo install --path tomlctl --locked"
 probe = "cargo install --list"
 verdict = "holds"
-at = "6b6c579c7af3863440ee59552c3f91cb9481b3cb"
+at = "7f04ec64994a74b48afc745c2dccfbf659a32060"
 
 [[milestones]]
 id = "B"
@@ -1197,12 +1355,75 @@ elaboration = "upfront"
 defer_reason = ""
 after = ["A"]
 
+[[changes]]
+at = 2026-11-20T17:29:05Z
+ref = "describe-baseline-gates-and-proofs-accurately-in-the-cli-help-and-planmd"
+field = "*"
+old = ""
+new = "Describe baseline gates and proofs accurately in the CLI help and plan.md"
+actor = "orchestrator"
+reason = "drain A round 1: task-6.md reports the --baseline-gate and --baseline-proof help misdescribing the stored behaviour; plan.md's --baseline-gate row copies the same wording"
+
+[[changes]]
+at = 2026-11-20T17:29:05Z
+ref = "document-recheck_scope-plan_digest-and-review_delta-in-review-runsmd"
+field = "*"
+old = ""
+new = "Document recheck_scope, plan_digest and review_delta in review-runs.md"
+actor = "orchestrator"
+reason = "drain A round 1: task-12.md reports review-runs.md still lists only scope, models, substrate and rechecks for review run start, omitting the recheck_scope field and the computed plan_digest task 12 added"
+
+[[changes]]
+at = 2026-11-20T17:29:15Z
+ref = "teach-plan-authoring-baseline-gates-blocking-handovers-sourced-facts-and-the-self-edit-order"
+field = "spec.constraints"
+old = """["Touch no file outside this task's files.","Name every tomlctl verb and flag exactly as milestone A shipped them.","Fenced tomlctl commands use single-token placeholders."]"""
+new = """["Touch no file outside this task's files.","Name every tomlctl verb and flag exactly as milestone A shipped them.","Fenced tomlctl commands use single-token placeholders.","When Prove records the user accepting a failed baseline proof, the decision is user-stated or user-confirmed and its text contains the gate's exact command; plan check stops reporting plan/baseline-gate-unproved only then."]"""
+actor = "orchestrator"
+reason = "carried from task 13 deviation: plan check counts a failed baseline proof as accepted only when a user-stated or user-confirmed, unvetoed decision's text contains the gate's exact command, so Prove must record the acceptance that way"
+
+[[changes]]
+at = 2026-11-20T17:33:43Z
+ref = "fix-the-recordsrs-test-call-to-upsert_handover-and-its-collapsible-if"
+field = "*"
+old = ""
+new = "Fix the records.rs test call to upsert_handover and its collapsible if"
+actor = "orchestrator"
+reason = "gate A round 1: cargo clippy --workspace --locked --all-targets and cargo nextest run fail: E0061 at plan/records.rs test module, upsert_handover called with 3 arguments where it now takes task_ids as a 4th, so the lib test target does not compile; clippy also warns collapsible_if in upsert_handover's blocks check"
+
+[[changes]]
+at = 2026-11-20T17:33:43Z
+ref = "collapse-the-nested-if-clippy-flags-in-plandriftrs"
+field = "*"
+old = ""
+new = "Collapse the nested if clippy flags in plan/drift.rs"
+actor = "orchestrator"
+reason = "gate A round 1: cargo clippy --workspace --locked --all-targets warns collapsible_if at plan/drift.rs, in the code task 9 added"
+
+[[changes]]
+at = 2026-11-20T17:44:10Z
+ref = "bring-planmd-under-the-600-line-reference-ceiling-by-moving-plan-drift-to-plan-enginemd"
+field = "*"
+old = ""
+new = "Bring plan.md under the 600-line reference ceiling by moving plan drift to plan-engine.md"
+actor = "orchestrator"
+reason = "gate A round 2: cargo nextest run fails cli::dispatch::tests::skills::skill_references_under_line_ceiling: claude/skills/tomlctl/references/plan.md is 605 lines, over the 600-line ceiling"
+
+[[changes]]
+at = 2026-11-20T17:44:10Z
+ref = "retarget-the-two-tests-that-still-expect-a-worker-run-building-check-to-be-refused"
+field = "*"
+old = ""
+new = "Retarget the two tests that still expect a worker-run building check to be refused"
+actor = "orchestrator"
+reason = "gate A round 2: cargo nextest run fails plan_check::check_reports_a_worker_owner_on_a_building_check (expected plan/accept-owner-invalid, got none) and plan_stage::a_spec_shape_error_names_tasks_update_and_tasks_update_clears_it (stage ready, expected prove); both raise accept-owner-invalid with run_by = worker on writes_build = true, which task 5 made valid"
+
 [[items]]
 id = 1
 ref = "add-the-plan-store-schema-7-shapes"
 title = "Add the plan store schema 7 shapes"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1222,15 +1443,15 @@ deps_note = ""
 action = "Add the gate acceptance record, the base-rerun and tree-digest fields on gate rounds, the handover blocks, ready_check and note fields, attempt sources and the approval delta waiver to the plan store, with schema version 7."
 detail = "Every shape is in design/records.md, section Plan store schema 7: read it as the contract. Follow how VisualAccept was added for the new record (the struct, its from-TOML and to-TOML conversion, its store vector, and the write_version rung). Add GATE_ACCEPT_SCHEMA_VERSION = 7 above VISUAL_ACCEPT_SCHEMA_VERSION, make SCHEMA_VERSION point at it, extend the compile-time ordering asserts, and stamp 7 by the rule records.md gives. The new fields go on existing structs that derive no Default (Approval, Handover, Attempt, GateRound, GateCommand), so initialise each new field empty at every existing struct literal, in approve.rs, records.rs, run_gate.rs (its test module included) and run_notes.rs, and change nothing else in those files: the crate must compile when this task is done. Every new field reads as absent or empty from an older store and is written only when set, so a store using none of them keeps its stamp. Document each shape in plan-store.md. Add unit tests in schema.rs: a round trip for each new shape, and a store using none of them keeping its old stamp."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 2
 ref = "add-the-milestone-a-flags-to-the-plan-cli-types"
 title = "Add the milestone A flags to the plan CLI types"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1242,15 +1463,15 @@ deps_note = ""
 action = "Add the clap arguments milestone A's verbs read, so the tasks that implement them need not touch this file."
 detail = "Add to PlanRunGateArgs: `--base` (bool: the rows or blocks are the base rerun's results, mapped to the round's failing commands by order, design/records.md#base-rerun-mapping) and `--accept` (bool) with `--json <SRC>` (the acceptance payload of design/records.md#gate-acceptance; `-` for stdin, a path, a leading `@` accepted, a `.toml` path a record file). Clap's ArgGroup has no required-unless, so add `accept` to the gate_rows group's args, keeping it required with multiple(false), so exactly one of --ndjson, --blocks or --accept is given; `--json` requires `--accept`; `--accept` conflicts with `--rerun` and `--base`; `--base` conflicts with `--rerun`. Add `--after-round <N>` (u32, optional) to PlanEmitGateListArgs. Add `--baseline-gate <COMMAND>` (repeatable) to PlanMilestoneAddArgs and PlanMilestoneUpdateArgs, and `--baseline-proof '<gate> :: <verdict>'` (repeatable) to PlanMilestoneUpdateArgs. Add `--waive-review-delta <WHY>` to PlanApproveArgs. Give each a help string in the style of its neighbours. The fields are read by later tasks of this milestone; leave the handlers alone. Also add `--ui <yes|no>` to PlanMilestoneAddArgs and PlanMilestoneUpdateArgs (the milestone's UI call, design/records.md#task-store-milestone-fields)."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 3
 ref = "record-base-reruns-and-tree-digests-in-plan-run-gate"
 title = "Record base reruns and tree digests in plan run gate"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1270,15 +1491,15 @@ deps_note = ""
 action = "Implement `plan run gate --base`, and write the tree digest on every failing run."
 detail = "With `--base`, the rows (or `--blocks`, parsed as today) are the base rerun of the round's latest run's failing commands, mapped by order as design/records.md#base-rerun-mapping says: refuse a count that differs from the number of failing commands, and refuse when the round has no run, naming the command to record it first. For each failing command set `base_checked = true`, `base_failed_ids` to the base result's failed ids that are among the command's own, and `base_whole_failed` as records.md says. Without `--base`, when the recorded run's outcome is `fail`, compute `tree` per design/records.md#tree-digest-on-a-gate-round: every path in the files of the milestone's rows, read from disk with no git call, each with its raw and whitespace-stripped SHA-256, `deleted` for a missing path. Put the digest helper in run_gate.rs as `pub(super) fn whitespace_digest`, returning both digests, since plan emit gate-list reads it. Tests in plan_run_records.rs: a base rerun marks base and partial base failures; a whole command (no failed_ids) that fails at base is a base failure with base_whole_failed = true; a whole command that fails in the round but passes at base is not a base failure, though its empty base_failed_ids equals its empty failed_ids; base ids outside the command's failed_ids are ignored; a base call on a round with no run is refused; a base call with the wrong count is refused; a failing run records its tree; a passing run records none. Document `--base`, its order mapping and `tree` in plan-run.md."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 4
 ref = "record-gate-acceptances-with-plan-run-gate-accept"
 title = "Record gate acceptances with plan run gate --accept"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1294,15 +1515,15 @@ deps_note = ""
 action = "Implement `plan run gate --accept --json <payload>`, upserting a gate acceptance keyed on (milestone, round)."
 detail = "The payload and its rules are design/records.md#gate-acceptance: kind accept or extra-round, why required, backlog required for accept and empty for extra-round, each command a `fail` in the round's latest run with failed_ids a subset of that run's, and for accept every failing command named. Refuse anything else with a message naming the field. Mirror plan run visual --accept (run_visual.rs) for payload parsing, the upsert and the output envelope. Tests in plan_run_records.rs: an accept that names every failing command is recorded; one that omits a failing command is refused; an extra-round needs no backlog; an accept with an empty backlog is refused; a command that passed, or failed_ids not a subset of the run's, is refused; a second record for the same round replaces the first. Document the leaf mode in plan-run.md. Also accept kind = base per design/records.md#gate-acceptance: each entry names a base or partial base failure of that run with failed_ids a subset of its base_failed_ids (or the command alone when base_whole_failed is true), backlog required, every failing command not required; key base records on (milestone, round, kind). Test a base record naming a non-base id is refused."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 5
 ref = "accept-a-building-reproducer-run-by-the-worker"
 title = "Accept a building reproducer run by the worker"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1318,15 +1539,15 @@ deps_note = ""
 action = 'Drop the refusal of an accept entry with run_by = "worker" and writes_build = true.'
 detail = "Remove the branch of the accept validation that refuses run_by worker with writes_build true; owner() and every other rule stay. Flip the test in tasks_spec_add.rs that asserts the refusal into one that asserts the row is accepted and shows `Run by: worker`. In tasks-store.md, say that a worker-owned check may build: the worker runs it, the gate does not list it, and probes skip it."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 6
 ref = "store-baseline-gates-and-their-proofs-on-milestones"
 title = "Store baseline gates and their proofs on milestones"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1347,15 +1568,15 @@ deps_note = ""
 action = "Add baseline_gates and baseline_proofs to milestones and wire --baseline-gate and --baseline-proof into plan milestone add and update."
 detail = "Shapes and the schema stamp are design/records.md#task-store-milestone-fields; follow how external_gates and gate_probes were added (MilestoneSpec, its TOML read and write, and milestone.rs). MilestoneSpec derives no Default, so initialise the new fields empty at every existing literal, including the one in lane.rs's test module, changing nothing else in lane.rs. `--baseline-gate` must name a command already in the milestone's gates or external_gates, else refuse naming it. `--baseline-proof '<gate> :: <verdict>'` must name a baseline gate and a verdict of pass, fail or null-control; it upserts by gate and stamps `at`. Tests in plan_milestone.rs: add and update with a baseline gate; a baseline gate naming no gate is refused; a proof upserts; a bad verdict is refused; a milestone holding a baseline gate stamps the new task-store schema version and a store without one keeps its stamp. Also store the milestone's `ui` call from `--ui yes|no` on add and update (records.md#task-store-milestone-fields), stamped on the same task-store rung; test it."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 7
 ref = "narrow-gate-list-after-a-whitespace-round-and-mark-launch-args-builds-and-handover-holds"
 title = "Narrow gate-list after a whitespace round and mark launch-args builds and handover holds"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1376,15 +1597,15 @@ deps_note = ""
 action = "Implement gate-list --after-round, the builds flag in launch-args and the handover withholding in launch-args."
 detail = "All three outputs are design/records.md#emit-outputs, which is the exact rule. gate-list --after-round <n>: compare every path in the files of the milestone's rows now with round n's latest run's tree through run_gate.rs's whitespace_digest; narrow only when every path is unchanged or whitespace-only and not whitespace-significant and every path has a tree entry; print the failed commands under commands, the passed ones under carried, and narrowed = true; else the full list with narrowed = false; held stays as today. launch-args: a task holding an accept entry with run_by = worker and writes_build = true gets builds = true; a task named in the blocks of a handover whose done is false is withheld with reason handover:<id>, in the same shape the premise withholding uses. Tests in plan_emit.rs for each branch: a whitespace-only change to a .rs file narrows; a whitespace change to a .md file, a token change, a path with no tree entry and a round with no tree each keep the full list; a building task is marked; a blocked task is withheld. Document all three in plan-engine.md."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 8
 ref = "accept-blocks-ready_check-and-note-on-plan-handover-set"
 title = "Accept blocks, ready_check and note on plan handover set"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1399,15 +1620,15 @@ deps_note = ""
 action = "Add blocks, ready_check and note to the keys plan handover set accepts."
 detail = "Extend HANDOVER_SET_KEYS and upsert_handover per design/records.md#handover-blocks-ready-check-and-note: blocks is an array of task ids, each of which must exist in the task store, else refuse naming it; ready_check and note are strings. done stays refused on set. Tests in plan_records.rs: set with blocks and ready_check; a blocks id naming no task is refused; note updates on an existing handover."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 9
 ref = "list-affected-decisions-in-plan-drift"
 title = "List affected decisions in plan drift"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1422,15 +1643,15 @@ deps_note = ""
 action = "Add affected_decisions to plan drift's output."
 detail = "Per design/records.md#emit-outputs: one {id, binds_hit, commits} entry per decision whose file binds (entries that are not all digits) intersect changed_files, where commits are the unowned commits since approval that touched those files, in the order git log gives. A decision with no hit is left out. Test in plan_drift.rs: a hand commit touching a bound file lists the decision with its commit; an untouched bind lists nothing."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 10
 ref = "carry-a-task-id-bind-to-rows-on-the-bound-tasks-files"
 title = "Carry a task-id bind to rows on the bound task's files"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1445,15 +1666,15 @@ deps_note = ""
 action = "Make a decision bound to a task id also bind every row that holds one of that task's files."
 detail = "In view.rs bind_names, an all-digit bind entry matches the row with that id, as today, and also any row whose files share a path with the bound task's files. Add the test a_task_bind_reaches_a_row_on_the_bound_tasks_files to plan_view.rs: a decision bound to task 1 appears in the worker view of a fix row holding one of task 1's files, and not in a row sharing none."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 11
 ref = "parse-a-sources-table-in-run-notes"
 title = "Parse a sources table in run notes"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1468,15 +1689,15 @@ deps_note = ""
 action = "Accept a [[sources]] table in the run-note block and record it on the attempt."
 detail = "Per design/records.md#run-note-sources: each entry needs claim and one of url or query; how_verified is optional. A malformed entry drops that entry with a reason, as an unknown check result does today, rather than making the whole note malformed; any other unknown key stays malformed. run_notes.rs carries the parsed sources onto the Attempt. Unit tests in run_note.rs: a note with sources parses; an entry without claim is dropped and the rest kept. Also parse `fetched_at` (a date, required) and `version` (optional) on each source, per design/records.md#run-note-sources; an entry without fetched_at is dropped with a reason."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 12
 ref = "stamp-a-plan-digest-on-review-runs-and-gate-approval-on-the-delta"
 title = "Stamp a plan digest on review runs and gate approval on the delta"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1501,15 +1722,15 @@ deps_note = ""
 action = "Record a per-target plan digest at review run start, compute the review delta, show it in plan stage and plan gate, and refuse approve --review ran on a non-empty delta unless --waive-review-delta is given."
 detail = "design/records.md#review-run-plan-digest is the contract. In plan/target.rs add a function mapping every plan target, in the target grammar of claude/skills/review-v2-method/references/plan-records.md, to the SHA-256 of its current value, and a delta function. review run start, on a flow with plan.toml and a plan-family run, stores plan_digest on the run row: add the optional field to the typed Run in review/store.rs, and to the run key list review/fields.rs validates against if it has one. Compute the delta in PlanReviewState (plan/store.rs), the one review view plan gate, approve and stage share, so they cannot disagree. plan stage reports review_delta (the targets), plan gate adds a risks row of kind review-delta, and plan approve --review ran refuses while the delta is non-empty unless --waive-review-delta <why> is given, which is stored as the approval's delta_waiver. A run with no plan_digest (older stores) yields no delta. Tests: in review_runs.rs a plan-family start stores a digest; in plan_approve.rs an edit after the run refuses approve, the waiver approves and is stored, and an unchanged plan approves; a second finished run started after the edit clears the delta and approve then passes; a later run that is started but not finished leaves the delta in place; plan stage lists exactly the edited target in review_delta and plan gate shows a review-delta risk. The delta refuses only a first approval: under `plan approve --amend` report it in plan stage and as the review-delta risk in plan gate and never refuse (records.md#review-run-plan-digest); test an amend with a delta approves."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 13
 ref = "add-the-baseline-handover-block-and-capture-config-plan-checks"
 title = "Add the baseline, handover-block and capture-config plan checks"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1528,15 +1749,15 @@ deps_note = ""
 action = "Add four plan check classes: plan/baseline-gate-unproved, plan/handover-blocks-unknown, plan/handover-blocks-done and plan/ui-capture-missing."
 detail = "plan/baseline-gate-unproved (warning): a milestone's baseline gate with no baseline_proofs entry. plan/handover-blocks-unknown (error): a handover's blocks names no task. plan/handover-blocks-done (warning): an undone handover blocks a task already done. plan/ui-capture-missing (warning): the file root.join(ui_capture::CONFIG) does not exist while a decision has class look or a milestone declares ui_states; test the file's existence directly, since load_paths returns an empty set both for a missing file and for one without paths. Register each class where the existing classes are listed, and add a test per class in plan_check.rs, positive and negative. The finding-class parity test stays red until task 14 adds the classes to plan.md; that pair lands together at the gate. Retarget plan/ui-capture-missing: warn on a milestone whose `ui` is true and whose ui_states is empty, with or without a capture config, as design/records.md#task-store-milestone-fields now says; drop the look-decision trigger. plan/baseline-gate-unproved also fires when a baseline gate's latest proof is fail and no decision records the user accepting it, and treats a null-control proof as missing when its task is not a task of the milestone or holds no accept entry (design/records.md#task-store-milestone-fields); test both."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 14
 ref = "document-the-new-plan-flags-keys-output-and-classes-in-planmd"
 title = "Document the new plan flags, keys, output and classes in plan.md"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1554,15 +1775,15 @@ deps_note = ""
 action = "Add the milestone A surface to the plan group's reference."
 detail = "In plan.md: --baseline-gate and --baseline-proof in the milestone add and update flag tables; blocks, ready_check and note in the handover set keys, with the rule that done is still set by plan handover done; affected_decisions in plan drift's output; review_delta in plan stage, the review-delta risk in plan gate and --waive-review-delta in plan approve; the four new check classes in the check class table. Match each to the code as the earlier tasks wrote it. Include --ui on milestone add and update, and the base kind of the gate acceptance in plan-run.md is task 4s."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 15
 ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0270"
 title = "Advertise the milestone A features and bump tomlctl to 0.27.0"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -1593,8 +1814,8 @@ deps_note = ""
 action = "Add the feature names gate_base_rerun, gate_accept, gate_list_after_round, worker_build_check, baseline_gates, launch_args_builds, handover_blocks, drift_affected_decisions, run_note_sources and review_plan_digest, and bump the version to 0.27.0."
 detail = "Add each name to FEATURES in cli/types/mod.rs, to the pinned list in tests/capabilities.rs, and to the README's sample block and feature table with one line on what it enables. Bump tomlctl/Cargo.toml to 0.27.0, update the version tests/capabilities.rs pins (it asserts 0.26.0 today), and refresh the tomlctl entry in the root Cargo.lock."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
 
 [[items]]
 id = 16
@@ -1942,3 +2163,138 @@ detail = "implement-v2.md: gate_base_rerun, gate_accept, gate_list_after_round, 
 acceptance = ""
 agent = ""
 commit = ""
+
+[[items]]
+id = 32
+ref = "describe-baseline-gates-and-proofs-accurately-in-the-cli-help-and-planmd"
+title = "Describe baseline gates and proofs accurately in the CLI help and plan.md"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [
+    2,
+    14,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
+
+[[items]]
+id = 33
+ref = "document-recheck_scope-plan_digest-and-review_delta-in-review-runsmd"
+title = "Document recheck_scope, plan_digest and review_delta in review-runs.md"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/review-runs.md"]
+needs = [12]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
+
+[[items]]
+id = 34
+ref = "fix-the-recordsrs-test-call-to-upsert_handover-and-its-collapsible-if"
+title = "Fix the records.rs test call to upsert_handover and its collapsible if"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/records.rs"]
+needs = [8]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
+
+[[items]]
+id = 35
+ref = "collapse-the-nested-if-clippy-flags-in-plandriftrs"
+title = "Collapse the nested if clippy flags in plan/drift.rs"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/plan/drift.rs"]
+needs = [9]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
+
+[[items]]
+id = 36
+ref = "bring-planmd-under-the-600-line-reference-ceiling-by-moving-plan-drift-to-plan-enginemd"
+title = "Bring plan.md under the 600-line reference ceiling by moving plan drift to plan-engine.md"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/plan.md",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+needs = [
+    7,
+    32,
+]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"
+
+[[items]]
+id = 37
+ref = "retarget-the-two-tests-that-still-expect-a-worker-run-building-check-to-be-refused"
+title = "Retarget the two tests that still expect a worker-run building check to be refused"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/plan_check.rs",
+    "tomlctl/tests/plan_stage.rs",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = "plan-worker-lite"
+commit = "ff54cd7d70696604bb44bd498fd9938835c9180e"

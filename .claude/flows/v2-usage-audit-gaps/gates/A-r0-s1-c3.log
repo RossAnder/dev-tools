@@ -1,0 +1,24 @@
+   Compiling tomlctl v0.27.0 (C:\Users\rossa\dev\dev-tools\tomlctl)
+error[E0061]: this function takes 4 arguments but 3 arguments were supplied
+   --> tomlctl\src\plan\records.rs:937:9
+    |
+937 |         upsert_handover(plan, 1, row.as_object().expect("an object"))
+    |         ^^^^^^^^^^^^^^^---------------------------------------------- argument #4 of type `Option<&[u32]>` is missing
+    |
+note: function defined here
+   --> tomlctl\src\plan\records.rs:576:4
+    |
+576 | fn upsert_handover(
+    |    ^^^^^^^^^^^^^^^
+...
+580 |     task_ids: Option<&[u32]>,
+    |     ------------------------
+help: provide the argument
+    |
+937 |         upsert_handover(plan, 1, row.as_object().expect("an object"), /* Option<&[u32]> */)
+    |                                                                     ++++++++++++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `tomlctl` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: command `'C:\Users\rossa\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe' test --no-run --message-format json-render-diagnostics` exited with code 101
