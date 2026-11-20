@@ -1,0 +1,18 @@
+slug = "implement-v2-run-hardening"
+plan_path = "docs/flows/implement-v2-run-hardening/brief.md"
+status = "draft"
+created = 2026-11-20
+updated = 2026-11-20
+scope = []
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/implement-v2-run-hardening/review-ledger.toml"
+optimise_findings = ".claude/flows/implement-v2-run-hardening/optimise-findings.toml"
+execution_record = ".claude/flows/implement-v2-run-hardening/execution-record.toml"
+plan_review_findings = ".claude/flows/implement-v2-run-hardening/plan-review-findings.toml"
+tasks = ".claude/flows/implement-v2-run-hardening/tasks.toml"

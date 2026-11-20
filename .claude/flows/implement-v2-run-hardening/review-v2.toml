@@ -1,0 +1,2165 @@
+schema_version = 1
+last_updated = 2026-11-20
+
+[id_high_water]
+U = 1
+
+[[runs]]
+id = "U1"
+command = "review-plan-v2"
+family = "plan"
+depth = "standard"
+started = "2026-11-20T13:32:05Z"
+finished = "2026-11-20T13:46:49Z"
+base = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+scope = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+substrate = "workflow"
+agents = 26
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "6a410cc2a4a057b063614fd38192a798c6dd162864a1d25cfac2c78bf71fd770"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[[runs.signals]]
+name = "lang:rust"
+source = "detector"
+roots = [
+    ".",
+    "glimpse",
+    "lumina",
+    "lumina/companion",
+    "lumina/core",
+    "lumina/protocol",
+    "lumina/server",
+    "statusline",
+    "tomlctl",
+]
+
+[[runs.signals]]
+name = "lang:ts"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "framework:vue"
+source = "detector"
+roots = ["lumina/web"]
+
+[[runs.signals]]
+name = "runtime:tokio"
+source = "detector"
+roots = [
+    "lumina/companion",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "db:sqlx"
+source = "detector"
+roots = [
+    "lumina",
+    "lumina/core",
+    "lumina/server",
+]
+
+[[runs.signals]]
+name = "harness:claude"
+source = "detector"
+roots = [
+    ".claude/skills/adopt-flow-registry",
+    ".claude/skills/testing-discipline",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/acceptance-criteria",
+    "claude/plugins/lumina-story-blocks/skills/alternatives",
+    "claude/plugins/lumina-story-blocks/skills/approach",
+    "claude/plugins/lumina-story-blocks/skills/closure-gate",
+    "claude/plugins/lumina-story-blocks/skills/compose-sprint",
+    "claude/plugins/lumina-story-blocks/skills/create-project",
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks",
+    "claude/plugins/lumina-story-blocks/skills/edge-cases",
+    "claude/plugins/lumina-story-blocks/skills/epic-close-criteria",
+    "claude/plugins/lumina-story-blocks/skills/epic-outcome",
+    "claude/plugins/lumina-story-blocks/skills/focus-framing",
+    "claude/plugins/lumina-story-blocks/skills/focus-shape",
+    "claude/plugins/lumina-story-blocks/skills/lifecycle",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/plugins/lumina-story-blocks/skills/next-block",
+    "claude/plugins/lumina-story-blocks/skills/not-doing",
+    "claude/plugins/lumina-story-blocks/skills/plan-story",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement",
+    "claude/plugins/lumina-story-blocks/skills/relevance",
+    "claude/plugins/lumina-story-blocks/skills/research-directed",
+    "claude/plugins/lumina-story-blocks/skills/research-explore",
+    "claude/plugins/lumina-story-blocks/skills/research-notes",
+    "claude/plugins/lumina-story-blocks/skills/risks",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec",
+    "claude/plugins/lumina-story-blocks/skills/story-review",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation",
+    "claude/plugins/lumina-story-blocks/skills/verification-commands",
+    "claude/plugins/lumina-story-blocks/skills/vet-research",
+    "claude/plugins/lumina-story-blocks/skills/wire-task-deps",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/research-methods",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-method",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/ui-capture",
+]
+
+[[runs.signals]]
+name = "doc-growth"
+source = "detector"
+roots = [
+    ".",
+    ".claude/flows/eventual-churning-sunrise",
+    ".claude/flows/federated-beaming-hollerith",
+    ".claude/flows/giggly-conjuring-brook",
+    ".claude/flows/glimpse-ux-backlog",
+    ".claude/flows/glimpse-v2-visibility",
+    ".claude/flows/human-only-handovers",
+    ".claude/flows/jiggly-exploring-robin",
+    ".claude/flows/lively-twirling-babbage",
+    ".claude/flows/mid-run-requests",
+    ".claude/flows/milestone-cadence",
+    ".claude/flows/milestones-by-dependency",
+    ".claude/flows/polymorphic-wondering-magpie",
+    ".claude/flows/proud-leaping-conway",
+    ".claude/flows/review-system-v2",
+    ".claude/flows/review-system-v2/archive",
+    ".claude/flows/review-v2-cells-and-handoff",
+    ".claude/flows/review-v2-first-run-repairs",
+    ".claude/flows/shimmying-marinating-bumblebee",
+    ".claude/flows/temporal-snuggling-pnueli",
+    ".claude/flows/toasty-wobbling-stonebraker",
+    ".claude/flows/tomlctl-backlog-capture",
+    ".claude/flows/tomlctl-followups",
+    ".claude/flows/tomlctl-followups-round-2",
+    ".claude/flows/tomlctl-items-sweep-clusters",
+    ".claude/flows/tomlctl-test-and-gate-cost",
+    ".claude/flows/twinkling-hopping-otter",
+    ".claude/flows/unified-singing-gem",
+    ".claude/flows/v2-apply",
+    ".claude/flows/v2-harness-tuning",
+    ".claude/flows/v2-planning",
+    ".claude/flows/v2-ui-fidelity",
+    ".claude/flows/we-ve-just-implement-the-shimmying-kettle",
+    ".claude/flows/whimsical-hugging-puppy",
+    ".claude/flows/woolly-greeting-rainbow",
+    ".claude/rules",
+    ".github/agents",
+    ".github/skills/backlog-capture",
+    ".github/skills/flow-contract-apply-constraints",
+    ".github/skills/flow-contract-apply-dependency-sort",
+    ".github/skills/flow-contract-apply-pipeline",
+    ".github/skills/flow-contract-apply-pipeline/references",
+    ".github/skills/flow-contract-apply-rollback-protocol",
+    ".github/skills/flow-contract-apply-vet-implement-lite",
+    ".github/skills/flow-contract-execution-record-schema",
+    ".github/skills/flow-contract-flow-context",
+    ".github/skills/flow-contract-ledger-disposition-sweep",
+    ".github/skills/flow-contract-ledger-schema",
+    ".github/skills/flow-contract-plan-output-format",
+    ".github/skills/flow-contract-plan-restructure",
+    ".github/skills/flow-contract-plansdirectory-prompt",
+    ".github/skills/flow-contract-reconciler",
+    ".github/skills/flow-contract-task-store",
+    ".github/skills/flow-contract-vet-research",
+    ".github/skills/tomlctl",
+    ".github/skills/tomlctl/references",
+    "claude/agents",
+    "claude/commands",
+    "claude/plugins/lumina-story-blocks/skills/mcp",
+    "claude/skills/apply-v2-engine",
+    "claude/skills/backlog-capture",
+    "claude/skills/backlog-clear",
+    "claude/skills/commit-conventions",
+    "claude/skills/documentation-conventions",
+    "claude/skills/documentation-conventions/references",
+    "claude/skills/flow-contract-apply-constraints",
+    "claude/skills/flow-contract-apply-dependency-sort",
+    "claude/skills/flow-contract-apply-pipeline",
+    "claude/skills/flow-contract-apply-pipeline/references",
+    "claude/skills/flow-contract-apply-rollback-protocol",
+    "claude/skills/flow-contract-apply-vet-implement-lite",
+    "claude/skills/flow-contract-execution-record-schema",
+    "claude/skills/flow-contract-flow-context",
+    "claude/skills/flow-contract-ledger-disposition-sweep",
+    "claude/skills/flow-contract-ledger-schema",
+    "claude/skills/flow-contract-plan-output-format",
+    "claude/skills/flow-contract-plan-output-format/references",
+    "claude/skills/flow-contract-plan-restructure",
+    "claude/skills/flow-contract-plansdirectory-prompt",
+    "claude/skills/flow-contract-reconciler",
+    "claude/skills/flow-contract-showcase-bundle",
+    "claude/skills/flow-contract-task-store",
+    "claude/skills/flow-contract-task-visibility",
+    "claude/skills/flow-contract-user-inputs",
+    "claude/skills/flow-contract-vet-research",
+    "claude/skills/implement-v2-engine",
+    "claude/skills/implement-v2-engine/references",
+    "claude/skills/plan-v2-engine",
+    "claude/skills/plan-v2-engine/references",
+    "claude/skills/research-methods",
+    "claude/skills/research-methods/references",
+    "claude/skills/review-v2-engine",
+    "claude/skills/review-v2-engine/references",
+    "claude/skills/review-v2-lenses",
+    "claude/skills/review-v2-lenses/checks",
+    "claude/skills/review-v2-lenses/facets",
+    "claude/skills/review-v2-lenses/lenses",
+    "claude/skills/review-v2-lenses/methods",
+    "claude/skills/review-v2-method",
+    "claude/skills/review-v2-method/references",
+    "claude/skills/test-author",
+    "claude/skills/tomlctl",
+    "claude/skills/tomlctl/references",
+    "claude/skills/ui-capture",
+    "claude/skills/ui-capture/references",
+    "config/nvim",
+    "docs/flows/glimpse-v2-visibility",
+    "docs/flows/glimpse-v2-visibility/design",
+    "docs/flows/glimpse-v2-visibility/notes",
+    "docs/flows/glimpse-v2-visibility/notes/run",
+    "docs/flows/human-only-handovers",
+    "docs/flows/human-only-handovers/design",
+    "docs/flows/human-only-handovers/notes",
+    "docs/flows/human-only-handovers/notes/run",
+    "docs/flows/mid-run-requests",
+    "docs/flows/mid-run-requests/design",
+    "docs/flows/mid-run-requests/notes",
+    "docs/flows/mid-run-requests/notes/run",
+    "docs/flows/milestone-cadence",
+    "docs/flows/milestone-cadence/notes",
+    "docs/flows/milestone-cadence/notes/run",
+    "docs/flows/milestones-by-dependency",
+    "docs/flows/milestones-by-dependency/design",
+    "docs/flows/milestones-by-dependency/notes",
+    "docs/flows/milestones-by-dependency/notes/run",
+    "docs/flows/review-v2-cells-and-handoff",
+    "docs/flows/review-v2-cells-and-handoff/design",
+    "docs/flows/review-v2-cells-and-handoff/notes",
+    "docs/flows/review-v2-cells-and-handoff/notes/run",
+    "docs/flows/tomlctl-test-and-gate-cost",
+    "docs/flows/tomlctl-test-and-gate-cost/design",
+    "docs/flows/tomlctl-test-and-gate-cost/notes",
+    "docs/flows/tomlctl-test-and-gate-cost/notes/run",
+    "docs/flows/v2-apply",
+    "docs/flows/v2-apply/design",
+    "docs/flows/v2-apply/notes",
+    "docs/flows/v2-apply/notes/run",
+    "docs/flows/v2-harness-tuning",
+    "docs/flows/v2-harness-tuning/design",
+    "docs/flows/v2-harness-tuning/notes",
+    "docs/flows/v2-harness-tuning/notes/run",
+    "docs/flows/v2-ui-fidelity",
+    "docs/flows/v2-ui-fidelity/design",
+    "docs/flows/v2-ui-fidelity/notes",
+    "docs/flows/v2-ui-fidelity/notes/run",
+    "docs/ideas",
+    "docs/plans",
+    "glimpse",
+    "lumina",
+    "lumina/docs/runbooks",
+    "scripts/templates",
+    "statusline",
+    "themes",
+    "themes/firefox",
+    "themes/nvim",
+    "tomlctl",
+    "tomlctl/tests/fixtures/tasks",
+]
+
+[[runs.signals]]
+name = "backlog-cluster"
+source = "detector"
+roots = [".claude"]
+
+[[runs.signals]]
+name = "trust-boundary"
+source = "judged"
+accepted = true
+evidence = ["docs/flows/implement-v2-run-hardening/brief.md"]
+
+[runs.baselines]
+break-set-baseline = "none — v2 flow carries no predicted break sets"
+
+[runs.counts]
+cells = 9
+uncovered = 0
+defect = 10
+cleanup = 8
+advisory = 1
+refuted = 0
+suppressed = 0
+
+[runs.audit]
+sampled = 4
+overturned = 0
+
+[[runs]]
+id = "U2"
+command = "review-plan-v2"
+family = "plan"
+depth = "quick"
+started = "2026-11-20T13:46:49Z"
+finished = "2026-11-20T13:57:21Z"
+base = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+scope = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+substrate = "workflow"
+agents = 15
+rechecks = "U1"
+
+[runs.models]
+surveyor = "haiku"
+sweeper = "haiku"
+checker = "haiku"
+finder = "opus"
+finder-cf = "opus"
+verifier = "opus"
+executor = "opus"
+lead = "opus"
+
+[runs.catalogue]
+project = ".claude/review-lenses"
+tree_sha = "6a410cc2a4a057b063614fd38192a798c6dd162864a1d25cfac2c78bf71fd770"
+config_sha = "43eed0e78dc0dd0c218061c5c3815a24759d33c893287e7aeb2feb5b593f9463"
+
+[runs.counts]
+cells = 5
+uncovered = 0
+defect = 2
+cleanup = 3
+advisory = 0
+refuted = 0
+suppressed = 0
+
+[runs.audit]
+sampled = 2
+overturned = 0
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (15 tasks, 14 decisions), drain.md steps 3/7/10, verification.md stop rules. Grounding: 9 citations checked (lane-check, gate_probes, run records, drift skip, uncommitted_files, finding-class lint, skill links), 0 missing; premises 6 checked, 2 contradicted. Dependencies: 14 shared-file pairs walked, all pathed; store-check fence info only. Structure: 8 intent goals map to 8 criteria; Summary/format checks do not apply on a v2 flow. 3 sites ruled out."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Scope budget"
+reason = "Budget omits tomlctl/src/tasks/ and several engine references the tasks edit; an approximate budget, not an executor input, and changes no task."
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+reason = "Criterion 3 is broader than D6's same-milestone scope; a section contradiction is feasibility's, not this cell's lenses."
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "'Three tasks add to cli/types/plan.rs': tasks 1, 3, 6 in A, chained 1->3->6; task 11 is in B. Claim holds."
+
+[[cells]]
+id = "C2"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read brief.md, design/direction.md, all 15 specs and task bodies 1,5-9,11,12,14,15 in full. plan check: no probe-unhealthy or probe-absent; 31 read-only entries healthy. 13 writes_build entries judged by reading (test modules and nextest filters confirmed); 9 brief criteria and both milestone gate lists compared to entries. Acceptance-contradiction: 11 shared-file and edge pairs examined, 1 contradiction found. Break sets judged statically, none predicted. 3 sites ruled out."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-the-engine-commit-and-report-an-accepted-visual-failure"
+reason = "accept[1] and [2] grep the generic word 'accepted', but drain.md and report.md hold 0 today and no upstream task's detail adds it; visual_accept in SKILL.md discriminates"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "advertise-the-plan_run_visual-feature"
+reason = "accept[0] capabilities filter is green after task 8, but accept[1] greps plan_run_visual in mod.rs and the carrier, which discriminates a no-op"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+reason = "criterion 3 is broader than task 5's same-milestone rule, but a cross-milestone need sees the earlier gate's effect, so no order fails"
+
+[[cells]]
+id = "C3"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = [
+    "security",
+    "feasibility",
+    "plan-risk",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (14 decisions, 2 milestones, 15 tasks), drain.md step 7, verification.md stop rules. Traced gate holding, install gates across 10 flow stores, pre-flight feature list, schema stamps, capture and --blocks inputs for trust boundaries (none crossed). 3 findings, 3 sites ruled out."
+
+[[cells.bound]]
+concern = "security"
+hash = "f68292fa8f5d406e1445e1a49c52bbaabf71ecbd1d6f346ba3f25b67c48f29c0"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/security.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Scope budget"
+reason = "Budget omits tomlctl/src/tasks/, several engine references and ui-capture SKILL.md that tasks edit; wording only, nothing reads it to bound work"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "Three tasks on cli/types/plan.rs in A (1, 3, 6) are ordered by needs as stated; 11 is in B after 6"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Non-goals"
+reason = "Audit regex evasion by an obfuscated import is accepted by D8 and the threat is accident detection, not an adversarial worker"
+
+[[cells]]
+id = "C4"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = ["test-gaps"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (15 tasks, 14 decisions), plus drift.rs, plan_drift.rs, emit.rs gate_list, tasks/schema.rs stamps, verification.md Output and drain.md step 10 to test each Success criterion and task test list against the risks it carries. 9 criteria mapped to tests; 2 test-list gaps written (tasks 1, 6); 5 sites ruled out."
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-the-plan-emit-commit-paths-leaf"
+reason = "drift/lane-check skip regression is pinned: tests/plan_drift.rs an_uncommitted_edit_to_a_pending_rows_file_is_reported asserts notes/run and tasks.toml stay out"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "store-the-external-effect-mark-on-accept-entries-and-milestones"
+reason = "v3 store restamp risk is pinned by existing schema.rs unit tests asserting schema_version = 3 output"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-plan-run-visual-accept-and-its-plan-store-record"
+reason = "looks index matches gate-list's per-row accept index (emit.rs gate_list enumerate); non-look refusal test covers the likely mismatch"
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+reason = "globs loaded once in findings, so a malformed config cannot warn twice by construction; untested branch is low value"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+reason = "criteria 2,3,5,8 each map to a task test (tasks 4,5,7,12); 7 and 9 are prose or capability-pinned"
+
+[[cells]]
+id = "C5"
+run = "U1"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Sweep, ripple, slice brief.md and design/direction.md (read whole; slice diff empty, flow untracked, so NAMES taken from plan view and the slice). 9 removed or replaced prose strings searched tree-wide with tomlctl sweep and git grep; 4 probes. Every hit sits in a plan task's Files line: drain.md, apply-rows.md, questions.md, run-milestone.md (task 923), plan-engine.md (446, 643), tomlctl plan.md (1133). Hits read: drain.md 57, 281, 332, 443, 472, 483, 182-508 record blocks, run-milestone.md 24, plan.md 518, plan-engine.md 180. Slice-cited paths and check names resolve (13). Clean: no st…(+64)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C6"
+run = "U1"
+wave = 1
+pass = 2
+slice = [
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+    "docs/flows/implement-v2-run-hardening/brief.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (all 15 tasks, D1-D14, milestones, H1), drain.md step 7 and verification.md keep_going. Grounding: 6 direction premises/precedents checked, 1 contradicted (unheld install under keep_going). Goal coverage: 8 Intent goals mapped to SCs, all covered, 1 SC over-broad against D6. Scope budget compared with task files: 1 drift. Dependencies: same-file pairs and direction's ordering claim checked by hand, clean. STORE CHECK info-only. 2 sites ruled out."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "The 'three tasks on cli/types/plan.rs' claim holds in A (1->3->6, file-only). Task 11 in B also edits it and reaches it through 6."
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "overarching"
+reason = "Precedents exist: LaneCheck in PlanEmitOp, gate_probes on MilestoneSpec, run-record arrays in plan/schema.rs. Engine refs and worker agents are linked, so 'live as soon as written' holds."
+
+[[cells]]
+id = "C7"
+run = "U1"
+wave = 1
+slice = [
+    "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks",
+    "let-a-visual-fix-tasks-worker-capture-its-own-states",
+    "add-the-plan-emit-commit-paths-leaf",
+    "store-the-external-effect-mark-on-accept-entries-and-milestones",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (1,2,9,15) via worker views + brief/design. Read drift.rs, emit.rs, cli/types/plan.rs, tasks/schema.rs, add.rs, plan/store.rs, milestone.rs, view.rs, drain.md, visual.md, run-milestone/apply-rows/questions.md, worker-deep.md, shared-blocks.toml. Ran 12 worker grep accepts for polarity (all fail today as forward should); 6 premises confirmed; gate-run accepts judged by reading. Task 9 clean. 4 findings."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells]]
+id = "C8"
+run = "U1"
+wave = 1
+slice = [
+    "let-plan-run-gate-read-the-verification-agents-blocks",
+    "add-plan-run-visual-accept-and-its-plan-store-record",
+    "let-the-engine-commit-and-report-an-accepted-visual-failure",
+    "report-scripts-run-through-bun-e-or-node-e-in-agents-audit",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (6, 7, 11, 14) from worker views plus brief and direction.md. Read run_gate.rs, verification.md output, audit.rs, cmd.rs audit args, emit.rs gate-list, schema.rs version tiers, 6 PlanStore literal sites, visual.md, drain.md and SKILL.md headings, report.md. Probed items list on plan.toml arrays (int --where, missing array), backlog kind vocab, polarity of 6 grep accepts (all fail today). 3 findings; 1 rule-out."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells.ruled_out]]
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-the-engine-commit-and-report-an-accepted-visual-failure"
+reason = "--round <r> on accept and the re-entry read agree: visual.md step 2 derives <r> from minted rounds, and no task is minted for the accepted round, so re-entry recomputes the same <r>"
+
+[[cells]]
+id = "C9"
+run = "U1"
+wave = 1
+slice = [
+    "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260",
+    "teach-plan-authoring-the-external-effect-mark",
+    "exempt-rows-off-the-capture-paths-from-planui-accept-structural",
+    "advertise-the-plan_run_visual-feature",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks via plan view --for worker plus brief and design/direction.md. Task 8: 6 files read; premises hold; 1 defect (version-pin tests). Task 10: write-and-prove.md sections 1, 3 and 4a located; 3 accepts judged; clean. Task 12: check.rs findings, ui_findings, ui_scope_findings, ui_capture::load_paths and the plan_check.rs helpers confirmed; 1 accept judged; clean. Task 13: FEATURES, capabilities test and carrier list confirmed; clean. File overlaps checked across all 15 tasks' needs."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[cells]]
+id = "C10"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/direction.md",
+]
+concerns = [
+    "plan-dependencies",
+    "plan-grounding",
+    "plan-structure",
+]
+agent = "review-finder"
+reason = "recheck: sliced to the edited files; re-checks brief#Scope budget, brief#Success criteria, design/direction.md#milestone-a and design/direction.md#overarching"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (16 tasks, D1-D14), pack fences. Goal coverage: 8 intent bullets mapped to 9 criteria, none uncovered. Premises checked against tree: 9 (drain step 3/7/10 headings and judgement hold, drift skip, gate_probes, run-record arrays and write_version, lane-check, flag lint, cited files), 0 contradicted. Edge walk over all file intersections: no missing edge; 1 count drift raised. Format contract n/a (v2 flow). Ruled out 3."
+
+[[cells.bound]]
+concern = "plan-dependencies"
+hash = "9089785602b0543b25d6250d57e92421e8481a00e172a0841a5128641d0a8fe5"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-dependencies.md"
+
+[[cells.bound]]
+concern = "plan-grounding"
+hash = "c1bb5e742f421490b368f9a34717fb9761016edf03a18ef10c84b254fdba434b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-grounding.md"
+methods = [
+    "sweep",
+    "trace",
+]
+
+[[cells.bound]]
+concern = "plan-structure"
+hash = "560267297438cfbc751712728baa5905475de166a2a2bf66fc51e4d333384a65"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-structure.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Scope budget"
+reason = "Omits tomlctl/Cargo.toml, Cargo.lock and the tomlctl SKILL.md task 8/1 edit, and says three milestones vs D2's two; the budget is not machine-read and F11 already reworked it"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "A edits the live tomlctl skill references too, but only documents verbs; A's drain reads drain.md, which keeps the judgement hold at step 7 until B rewrites it"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-b"
+reason = "B's gate runs only dispatch tests and shared blocks; no tomlctl integration test reads a file B edits (rg over tomlctl/tests), so SC9 holds after B"
+
+[[cells]]
+id = "C11"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/*.md",
+]
+concerns = [
+    "check:acceptance-contradiction",
+    "check:falsifiability",
+    "check:two-control-probe",
+]
+agent = "review-finder"
+reason = "recheck: plan-checks cell kept as proposed; re-checks the edited accept entries task:advertise-the-milestone-a-features-and-bump-tomlctl-to-0260.spec.accept[2] and task:exempt-rows-off-the-capture-paths-from-planui-accept-structural.spec.accept[+], and brief#Success criteria"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, design/direction.md, plan view (16 tasks, 2 milestone gate lists, 14 decisions). plan check: no probe-unhealthy or probe-absent. 9 success criteria mapped to recorded accept entries and gates; all bound, gates cover the suite and dispatch lints for each milestone's files. Acceptance-contradiction: end-state criteria and design expectations vs task removals, no pair contradicts. Break sets judged statically (no baseline log). 3 rule-outs; 1 mechanical cleanup."
+
+[[cells.bound]]
+concern = "check:acceptance-contradiction"
+hash = "4985093da6fef6abeafcca320af7ec8da1bfc118fb984f13b4da2fcda0209b05"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/acceptance-contradiction.md"
+
+[[cells.bound]]
+concern = "check:falsifiability"
+hash = "7de096e64b9ea41b357986229d38a551976371cfc00fd0da97d22e8898aacf09"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/falsifiability.md"
+
+[[cells.bound]]
+concern = "check:two-control-probe"
+hash = "9bf3f291401cba73b8a53117119812c481ac9dc127b04783160450f6196787bc"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/checks/two-control-probe.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+reason = "Suite runs only at A's gate, but every suite test reading B's files (command_lint, carrier skills) is in cli::dispatch::tests, which B's gate runs"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+reason = "Waiver's backlog clause has no prose grep, but task 11's verb refuses a blank backlog id, so omitting the capture fails at use"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "No milestone A task edits engine, worker or carrier files; checked every A task's files list"
+
+[[cells]]
+id = "C12"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/direction.md",
+]
+concerns = [
+    "feasibility",
+    "plan-risk",
+    "test-gaps",
+]
+agent = "review-finder"
+reason = "recheck: sliced to the edited files; re-checks brief#Scope budget, brief#Success criteria, design/direction.md#milestone-a and design/direction.md#overarching"
+status = "covered"
+sealed = true
+note = "Read in full: brief.md, direction.md, plan view (16 tasks, 14 decisions, 2 milestones, H1), pack. Traced plan-engine.md gate-list, drain.md step 7, verification.md .ids, plan/schema.rs write_version and tier tests, tasks schema stamp, struct-literal sites, glimpse store reads, command_lint placement, items list --where on integer round. Every success criterion maps to a task. 3 findings (1 coherence defect, 2 stamp test gaps); 5 sites ruled out."
+
+[[cells.bound]]
+concern = "feasibility"
+hash = "dc1a293342e78b61aa982b6092375bf977170d57a047abfea29891ea6ef61f9f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/feasibility.md"
+methods = ["trace"]
+
+[[cells.bound]]
+concern = "plan-risk"
+hash = "3ffdf49eb449c3182a94b5becc8f24be319d258d67ed89fd32389ead42a8f58f"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-risk.md"
+
+[[cells.bound]]
+concern = "test-gaps"
+hash = "e50a44ddcbcf1985988dd67c56f0ceb0274e7835d2c6b992056bb56e64cb901b"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/test-gaps.md"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+reason = "'Three tasks' edit cli/types/plan.rs; tasks 1, 3, 6 and 11 do, but all four are chained by needs, so the stale count changes nothing an executor builds"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Scope budget"
+reason = "'About three milestones' worth' is a sizing remark beside D2's two-milestone cut, not a milestone count; no executor effect"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "overarching"
+reason = "tomlctl skill references milestone A edits are live before the install, but only describe new verbs; no store carries a mark, so A's drain is unaffected"
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Background"
+reason = """D7's <log>.ids read is feasible: verification.md writes "$L.ids" beside each log today, so --blocks can take full failed ids"""
+
+[[cells.ruled_out]]
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-b"
+reason = "B's gate runs cli::dispatch::tests, which holds command_lint and the skill lints, so B's new fenced tomlctl commands are flag-checked"
+
+[[cells]]
+id = "C13"
+run = "U2"
+wave = 1
+slice = [
+    "docs/flows/implement-v2-run-hardening/brief.md",
+    "docs/flows/implement-v2-run-hardening/design/direction.md",
+]
+concerns = ["ripple"]
+agent = "review-sweeper"
+reason = "recheck: sliced to the edited files; greps for names the edits to brief#Scope budget, brief#Success criteria, design/direction.md#milestone-a and design/direction.md#overarching removed or renamed"
+status = "covered"
+sealed = true
+note = "Read in full: docs/flows/implement-v2-run-hardening/brief.md (81 lines), design/direction.md (28 lines). Plan records read via plan view --for human. Slice diff empty (files untracked); NAMES taken from plan records: no existing name renamed or removed in the slice; new verbs only. Probes: 5 tomlctl sweep searches for names the slice cites (lane-check, gate_probes, ui-accept-structural, uncommitted_files, paths_capture) plus 3 more (plan run visual, agents audit, bun -e). 24 cited paths checked for existence: all present except notes/run (created by the run) and .claude/commands/impleme…(+196)"
+
+[[cells.bound]]
+concern = "ripple"
+hash = "2ea56e25c8e6ec6fd719397e0b3ef7bab7a35dd20fe64aec4aa80baa05e6c02d"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/ripple.md"
+methods = ["sweep"]
+
+[[cells]]
+id = "C14"
+run = "U2"
+wave = 1
+slice = [
+    "add-plan-run-visual-accept-and-its-plan-store-record",
+    "let-a-visual-fix-tasks-worker-capture-its-own-states",
+    "add-the-plan-emit-commit-paths-leaf",
+    "store-the-external-effect-mark-on-accept-entries-and-milestones",
+]
+concerns = ["plan-executor"]
+agent = "plan-executor"
+reason = "recheck: re-checks the targets task:add-plan-run-visual-accept-and-its-plan-store-record.files, task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail, task:add-the-plan-emit-commit-paths-leaf.detail and task:store-the-external-effect-mark-on-accept-entries-and-milestones.files; quick allows 4 tasks, so the M tasks among the targets come first and the other targeted tasks get no dry run"
+status = "covered"
+sealed = true
+note = "Dry-ran 4 tasks (1, 2, 11, 15) from brief, direction.md and worker views. Read drift.rs, emit.rs gate_list, tasks/schema.rs (Accept, owner_problem, holds_v3_keys, stamp), plan/schema.rs (write_version, PlanStore), cli/types/plan.rs, dispatch.rs, visual.md, plan-worker block, shared-blocks.toml. Grepped Accept, MilestoneSpec and PlanStore literals and SCHEMA_VERSION users tree-wide; 6 premises confirmed; 13 accept checks judged by reading. 1 defect (task 15 fix-task scope)."
+
+[[cells.bound]]
+concern = "plan-executor"
+hash = "8ed9686fe20cd07ec74dc00bab8517268a55f04b768ae3377cefbdcc8a9d8ebe"
+path = "C:/Users/rossa/.claude/skills/review-v2-lenses/lenses/plan-executor.md"
+methods = ["dry-run"]
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C9"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+summary = "Bumping to 0.26.0 breaks two version-pin tests the Detail never tells the worker to update, so the capabilities:: accept fails"
+severity = "major"
+failure_scenario = """The worker follows Detail (1)-(6) and the 'Add no code beyond the feature strings' constraint: Cargo.toml becomes 0.26.0, but capabilities_version_matches_cargo_toml still asserts the literal "0.25.0" and the README sample block still says "version": "0.25.0", so readme_sample_version_matches_cargo_toml fails too. The accept `cargo nextest run ... -E 'test(/^capabilities::/)'` and milestone A's suite gate fail, costing a fix round."""
+fix = """In Detail (2) also change the literal in capabilities_version_matches_cargo_toml to "0.26.0" (and its message), and in (3) also change the README sample block's "version" to "0.26.0"."""
+effort = "trivial"
+counter = "A worker that reads the whole capabilities test file before editing might bump the pins anyway, despite the constraint; the plan text still does not ask for it."
+grade = "high"
+evidence = [
+    """tomlctl/tests/capabilities.rs:1918 asserts version == "0.25.0" (literal, 'Bump both in lockstep')""",
+    "tomlctl/tests/capabilities.rs:2667 readme_sample_version_matches_cargo_toml compares README sample version with CARGO_PKG_VERSION",
+    'tomlctl/README.md:337 sample block holds "version": "0.25.0"',
+]
+fix_files = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+target = "task:advertise-the-milestone-a-features-and-bump-tomlctl-to-0260.detail"
+expect = '''"Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append the three strings to `FEATURES`, after `plan_emit_lane_check`'s neighbours in the plan block. (2) tomlctl/tests/capabilities.rs: add the three strings to the list in `capabilities_features_contains_every_plan_feature`. (3) tomlctl/README.md: add the three to the sample capabilities block and the feature table, and name `commit-paths` wherever the `plan emit` leaves are listed. (4) claude/commands/implement-v2.md: add the three to the feature list the pre-flight refuses a binary without, and to the sentence naming what the refusal covers. (5) tomlctl/Cargo.toml: `version = \"0.26.0\"`. (6) Cargo.lock: the tomlctl package entry's version to 0.26.0, by running `cargo update --manifest-path tomlctl/Cargo.toml -p tomlctl --offline` from the repo root, or by editing that one line. The verbs themselves are other tasks' work; this task adds only the strings."'''
+new = '''"Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append the three strings to `FEATURES`, after `plan_emit_lane_check`'s neighbours in the plan block. (2) tomlctl/tests/capabilities.rs: add the three strings to the list in `capabilities_features_contains_every_plan_feature`, and change the pinned literal in `capabilities_version_matches_cargo_toml` (and its message) from `0.25.0` to `0.26.0`. (3) tomlctl/README.md: add the three to the sample capabilities block and the feature table, change the sample block's `\"version\"` to `0.26.0` (`readme_sample_version_matches_cargo_toml` compares it with Cargo.toml), and name `commit-paths` wherever the `plan emit` leaves are listed. (4) claude/commands/implement-v2.md: add the three to the feature list the pre-flight refuses a binary without, and to the sentence naming what the refusal covers. (5) tomlctl/Cargo.toml: `version = \"0.26.0\"`. (6) Cargo.lock: the tomlctl package entry's version to 0.26.0, by running `cargo update --manifest-path tomlctl/Cargo.toml -p tomlctl --offline` from the repo root, or by editing that one line. The verbs themselves are other tasks' work; this task adds only the strings and the version pins."'''
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:advertise-the-milestone-a-features-and-bump-tomlctl-to-0260.detail"]
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-the-plan-emit-commit-paths-leaf"
+summary = "commit-paths tests skip the --for flow review-store, inputs and ignored branches that task 9 makes the only staging route"
+effort = "small"
+counter = "An existing test elsewhere could already drive these branches; commit_paths is a new module and the only tests named for it are tests/plan_commit_paths.rs, whose listed cases omit them."
+edit = "Extend the detail's test list: --for flow lists a changed review store named by a row's [[finding_links]] outside the flow dir with its sidecar, and a changed inputs.toml pair; an ignored changed row file lands in ignored with its rule and in no paths; a deleted row file is in --for work paths."
+direction = "change"
+target = "task:add-the-plan-emit-commit-paths-leaf.detail"
+expect = """"Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` as above over that set. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`.""""
+new = """"Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` as above over that set. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused; `--for flow` lists a changed review store that a row's `[[finding_links]]` entry names outside the flow directory, with its sidecar, and a changed `.claude/inputs.toml` pair; a changed row file the ignore rules hide is in `ignored` with its rule and in no `paths`; a deleted row file is in `--for work`'s `paths`. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`.""""
+tier = "cited"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|add-the-plan-emit-commit-paths-leaf"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:add-the-plan-emit-commit-paths-leaf.detail"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.6098746Z"
+tier = "cited"
+target = "task:add-the-plan-emit-commit-paths-leaf.detail"
+old = """"Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` as above over that set. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`.""""
+new = """"Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` as above over that set. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused; `--for flow` lists a changed review store that a row's `[[finding_links]]` entry names outside the flow directory, with its sidecar, and a changed `.claude/inputs.toml` pair; a changed row file the ignore rules hide is in `ignored` with its rule and in no `paths`; a deleted row file is in `--for work`'s `paths`. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`.""""
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F3"
+run = "U1"
+cell = "C4"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-plan-run-gate-read-the-verification-agents-blocks"
+summary = "--blocks tests omit the flaky block, the pass exit 0 (D7) and a pass line ending | retried: transient, all in verification.md's format"
+effort = "small"
+counter = "The listed fail-block test might also hold a flaky block; the detail names only a fail block, a quoted command, a .ids file and the flag conflict."
+edit = "Extend the detail's test list with the pass-then-flaky-then-fail example from verification.md (three rows: pass with exit 0 and empty summary, flaky with failed_ids, fail with tail; no key from rerun:, TANGENTIAL:, not_run:) and a pass line ending | retried: transient whose log excludes the tail."
+direction = "change"
+target = "task:let-plan-run-gate-read-the-verification-agents-blocks.detail"
+expect = """"`--blocks` takes a file path or `-` for stdin and excludes `--ndjson`; exactly one of the two is required. The parser lives in the new plan/gate_blocks.rs and yields the same row shape `parse_row` reads, so everything after parsing (the `--rerun` merge, the kept log tail) is unchanged. The format is fixed by claude/agents/verification.md, which this task does not edit. A pass is one line `outcome: pass | command: <command> | duration: <n> | summary: <text> | log: <path>` with an optional ` | retried: transient` tail; read `command` from after `command: ` up to the last ` | duration: ` that is followed by an integer and ` | summary: `, and `summary` up to the last ` | log: `, because a command may hold a shell pipe and a vitest summary holds ` | `. A pass row gets `exit = 0`; `summary: none` is the empty summary. A fail, timeout or flaky result is a block opening with a `command: <command>` line directly followed by a line starting `outcome: `, then `exit:` (`none` means absent), `duration_s:`, `log:`, `summary:` and optional `failed_ids:`, `retried:`, `rerun:` and a final `tail:` followed by raw log lines. A tail runs until a `command: ` line directly followed by an `outcome: ` line, a line starting `outcome: pass | command: `, a line starting `not_run:`, or the end; `retried:`, `rerun:`, `tail:`, `TANGENTIAL:` and `not_run:` lines produce no row key. For `failed_ids`, when `<log>.ids` exists beside the block's log (read through the same temp-directory allowance `read_temp_log` uses), take its lines, one id each; otherwise split the block's `failed_ids:` value on spaces and drop a trailing `(+<n> more)`. A refused-command block carrying only `command`, `outcome`, `exit: none` and `tail:` parses with the verb's defaults. Text that yields no row is refused. Document the flag in the `plan run gate` flag table and synopsis of references/plan-run.md, with the failed-ids rule. Tests in tests/plan_run_records.rs: a pass line whose command holds a pipe and whose summary holds ` | `; a fail block whose tail contains a line starting `command:`; a command with both quote kinds and a backslash stored byte for byte and replaced, not duplicated, under `--rerun`; ids read from a `.ids` file with a space inside an id; `--blocks` with `--ndjson` refused.""""
+new = """"`--blocks` takes a file path or `-` for stdin and excludes `--ndjson`; exactly one of the two is required. The parser lives in the new plan/gate_blocks.rs and yields the same row shape `parse_row` reads, so everything after parsing (the `--rerun` merge, the kept log tail) is unchanged. The format is fixed by claude/agents/verification.md, which this task does not edit. A pass is one line `outcome: pass | command: <command> | duration: <n> | summary: <text> | log: <path>` with an optional ` | retried: transient` tail; read `command` from after `command: ` up to the last ` | duration: ` that is followed by an integer and ` | summary: `, and `summary` up to the last ` | log: `, because a command may hold a shell pipe and a vitest summary holds ` | `. A pass row gets `exit = 0`; `summary: none` is the empty summary. A fail, timeout or flaky result is a block opening with a `command: <command>` line directly followed by a line starting `outcome: `, then `exit:` (`none` means absent), `duration_s:`, `log:`, `summary:` and optional `failed_ids:`, `retried:`, `rerun:` and a final `tail:` followed by raw log lines. A tail runs until a `command: ` line directly followed by an `outcome: ` line, a line starting `outcome: pass | command: `, a line starting `not_run:`, or the end; `retried:`, `rerun:`, `tail:`, `TANGENTIAL:` and `not_run:` lines produce no row key. For `failed_ids`, when `<log>.ids` exists beside the block's log (read through the same temp-directory allowance `read_temp_log` uses), take its lines, one id each; otherwise split the block's `failed_ids:` value on spaces and drop a trailing `(+<n> more)`. A refused-command block carrying only `command`, `outcome`, `exit: none` and `tail:` parses with the verb's defaults. Text that yields no row is refused. Document the flag in the `plan run gate` flag table and synopsis of references/plan-run.md, with the failed-ids rule. Tests in tests/plan_run_records.rs: a pass line whose command holds a pipe and whose summary holds ` | `; a fail block whose tail contains a line starting `command:`; a command with both quote kinds and a backslash stored byte for byte and replaced, not duplicated, under `--rerun`; ids read from a `.ids` file with a space inside an id; `--blocks` with `--ndjson` refused; the pass-then-flaky-then-fail example in the Output section of claude/agents/verification.md, with its log paths moved into the test's temp directory, yields three rows (the pass with `exit = 0` and an empty `summary`, the flaky with its `failed_ids` and `exit = 100`, the fail with its tail) and no row or key from the `rerun:`, `TANGENTIAL:` or `not_run:` lines; a pass line ending ` | retried: transient` stores its `log` without that tail.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|let-plan-run-gate-read-the-verification-agents-blocks"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:let-plan-run-gate-read-the-verification-agents-blocks.detail"]
+
+[[findings]]
+id = "F4"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-risk"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "overarching"
+summary = "Dropping the drain's judgement hold leaves every unmarked cargo install gate, this plan's own A and B included, run under keep_going from a failing tree"
+severity = "major"
+failure_scenario = "Task 9 rewrites drain step 7 so held commands are only gate-list's `held` rows and 'no longer the orchestrator's to judge'. Milestone B's gate (and A's, once drain.md is re-read; gate-list then comes from the old binary) stores `cargo install --path tomlctl --locked` as a plain gate, so held is empty and the install runs in the first keep_going dispatch. When nextest fails, the global tomlctl is replaced from a failing tree, the hazard drain.md:334 exists to stop. Every existing flow with an unmarked install gate loses its hold too."
+fix = "Keep the judgement hold as the fallback for unmarked commands: in task 9's detail, replace 'which commands are held is no longer the orchestrator's to judge' with: the `held` rows are always held, and a command the plan did not mark that installs, links or deploys is still held by judgement, as today. Add that as an Overarching expectation in direction.md (new text below). For milestone A's own gate, whose installed binary predates the mark and `--blocks`, say in Milestone A that its install is held by hand and a failed first dispatch is recorded with `--ndjson`. Once A is installed, re-mark B's install gate with `plan milestone update --external-gate`."
+effort = "small"
+counter = "If the engine re-read drain.md never happens mid-milestone and B's gate were re-marked before its drain, only older flows would be hit; I found no task or handover that re-marks B's install gate, and the task 9 detail removes the fallback outright."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:333-334: keep_going is always passed, and an install is held because under keep_going it would install from a tree another command just failed",
+    ".claude/flows/implement-v2-run-hardening/tasks.toml:975,987: milestones A and B store `cargo install --path tomlctl --locked` as a plain gate with no external mark",
+    "task 9 detail: 'which commands are held is no longer the orchestrator's to judge'",
+    ".claude/flows/v2-harness-tuning/tasks.toml:2397, mid-run-requests/tasks.toml:1471, human-only-handovers/tasks.toml:704: existing plain `cargo install` gates",
+    "direction.md Overarching: 'Nothing changes for a store that uses none of the new keys'",
+]
+fix_files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    ".claude/flows/implement-v2-run-hardening/tasks.toml",
+]
+target = "design/direction.md#overarching"
+expect = '"Nothing changes for a store that uses none of the new keys: no new stamp, no new output key, no new finding."'
+new = '"Nothing changes for a store that uses none of the new keys: no new stamp, no new output key, no new finding, and the drain still holds, by judgement, an unmarked gate command that installs, links or deploys; `held` adds to that judgement and never replaces it."'
+tier = "cited"
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|overarching"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to design/direction.md#overarching"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.6467025Z"
+tier = "cited"
+target = "design/direction.md#overarching"
+old = '"Nothing changes for a store that uses none of the new keys: no new stamp, no new output key, no new finding."'
+new = '"Nothing changes for a store that uses none of the new keys: no new stamp, no new output key, no new finding, and the drain still holds, by judgement, an unmarked gate command that installs, links or deploys; `held` adds to that judgement and never replaces it."'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F5"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "feasibility"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+summary = "Success criterion promises plan check reports any need on a gate-run external row; D6 and task 5 report only same-milestone needs"
+effort = "trivial"
+counter = "If the user meant the criterion to cover cross-milestone needs, D6 is the side to change; D6 is user-confirmed and gives the reason (an earlier milestone's held commands run before the dependent row)."
+edit = "Narrow the criterion to the same milestone, matching D6 and task 5, so a review holding the built check against the brief does not read the cross-milestone silence as a miss."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"`plan check` reports a task that needs a row whose external accept check is run by the gate."'
+new = '"`plan check` warns on a task that needs a row of the same milestone whose external accept check is run by the gate."'
+tier = "user"
+anchor = "plan|docs/flows/implement-v2-run-hardening/brief.md|Success criteria"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to brief#Success criteria"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.8784474Z"
+tier = "user"
+target = "brief#Success criteria"
+old = '"`plan check` reports a task that needs a row whose external accept check is run by the gate."'
+new = '"`plan check` warns on a task that needs a row of the same milestone whose external accept check is run by the gate."'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F6"
+run = "U1"
+cell = "C3"
+seen_in = ["U1"]
+family = "plan"
+kind = "advisory"
+lens = "plan-risk"
+route = "none"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+summary = "A failed or uncommitted milestone A cannot be resumed: the live carrier pre-flight requires features only A's held install provides"
+angle = "risk"
+rationale = "Task 8 adds plan_emit_commit_paths, effect_mark and plan_run_gate_blocks to /implement-v2's pre-flight list, and the carrier is a symlink, so the edit is live during A. If A's gate fails its rounds or times out with the install held, A stays uncommitted and the next /implement-v2 refuses the old binary; resuming needs a hand `cargo install` from the very tree that failed its gate, and the live drain.md already calls --blocks and commit-paths. Direction says the install covers A's own commit step, not this re-entry path."
+alternative = "Move task 8's claude/commands/implement-v2.md edit into task 13 in milestone B."
+adoption_cost = "One sentence in direction.md Milestone A (and the closing report) naming the re-entry path: run `cargo install --path tomlctl --locked` by hand before resuming A, or move the pre-flight list edit from task 8 into task 13 so only B's re-entry depends on A's install."
+tier = "advisory"
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["design/direction.md#milestone-a"]
+
+[[findings]]
+id = "F7"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+summary = "Drain stops judging held commands, but every stored install gate, this flow's own included, is unmarked, so cargo install runs under keep_going"
+severity = "major"
+failure_scenario = "After task 9, drain step 7 holds only gate-list's held rows. Milestone B's gates (and every approved flow's, e.g. v2-ui-fidelity, mid-run-requests) store `cargo install --path tomlctl --locked` as a plain gate with no external_gates mark. A B gate where nextest fails dispatches the install in the same keep_going call, so it installs tomlctl from a tree a gate just failed, which today's drain line 334 holds back by judgement. Contradicts the direction's 'Nothing changes for a store that uses none of the new keys'."
+fix = "Keep the orchestrator's hold for unmarked commands: held = gate-list's held rows plus any unmarked gate that installs, links or deploys, judged as today. In direction.md#milestone-a replace 'no judgement of which command deploys' with the text in `new`; in task 9's detail replace 'which commands are held is no longer the orchestrator's to judge' with 'the held rows are always held, and an unmarked command that installs, links or deploys is still held by judgement as today'."
+effort = "small"
+counter = "If the engine re-marked existing install gates on load, or task 9's rewrite kept the judgement clause; task 9's detail says the opposite and no task touches stored gates."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:332-334: verb holds nothing back; install is held by the orchestrator because keep_going would install from a failed tree",
+    "plan view milestone B gates: 'cargo install --path tomlctl --locked' stored via plain gates, no external_gates (store predates the key)",
+    "rg 'cargo install' .claude/flows/*/tasks.toml: plain install gates in v2-ui-fidelity, v2-apply, mid-run-requests, milestone-cadence, v2-harness-tuning",
+    "task 9 detail: 'which commands are held is no longer the orchestrator's to judge'",
+    "design/direction.md#overarching: 'Nothing changes for a store that uses none of the new keys'",
+]
+fix_files = [".claude/flows/implement-v2-run-hardening/tasks.toml"]
+target = "design/direction.md#milestone-a"
+expect = '"no judgement of which command deploys"'
+new = '"no judgement of which marked command deploys (an unmarked gate that installs, links or deploys, as every stored `cargo install` gate is, is still held by judgement as today)"'
+tier = "cited"
+same_as = "F9"
+related = ["F6"]
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-20
+merged_into = "F9"
+
+[[findings]]
+id = "F8"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-dependencies"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+summary = "Milestone A's own drain follows the rewritten step 7 with the pre-A binary: a gate run that fails before the install cannot be recorded with --blocks"
+severity = "major"
+failure_scenario = "Task 9 rewrites drain.md in A's run and the direction says it is live at once. A's gate then fails before cargo install succeeds (a compile or clippy failure, or the install held per drain line 334). Step 7 says to record the run before acting, and the rewritten step's only recipe is `plan run gate --blocks`; the installed binary predates task 6 and refuses --blocks, and the --ndjson staging recipe was removed, so the failed gate cannot be recorded as written. The direction's install-first argument covers step 10 only."
+fix = "Pick one: move task 9 to milestone B so A's drain runs the base drain on the base binary; or have task 9 keep the --ndjson record recipe as the path used when `tomlctl capabilities` lacks plan_run_gate_blocks, and say in direction.md#milestone-a that A's own gate step records that way."
+effort = "small"
+counter = "If the engine re-read drain.md only at the next invocation, A's drain would use the base text; the direction and D13 both assert it is live as soon as written."
+grade = "high"
+evidence = [
+    "design/direction.md#milestone-a: 'the rewritten drain.md is live as soon as it is written' (~/.claude/skills/implement-v2-engine is a symlink to the repo)",
+    "claude/agents/verification.md:119 and drain.md:333: keep_going; install held to a second call only after every block passes",
+    "task 9 detail: replace the hand-staged [[record]] block and field mapping with --blocks",
+    "task 6 adds --blocks; the binary that has it exists only after A's install gate",
+]
+fix_files = [".claude/flows/implement-v2-run-hardening/tasks.toml"]
+fix_sketch = "Amend task 9's detail (tasks.toml) and direction.md#milestone-a: drain step 7 records with `--blocks <path>`; add one sentence that when `tomlctl capabilities --get features` lacks the `--blocks` feature string task 8 adds (true only during milestone A's own run, since the /implement-v2 pre-flight refuses such a binary afterwards), the orchestrator records the same blocks as `--ndjson` rows per the `plan run gate` table in claude/skills/tomlctl/references/plan-run.md, with no field-mapping recipe kept in drain.md. Direction new text: append to the install sentence 'Its own gate runs are recorded on the pre-A binary, so the rewritten step 7 keeps a capability-gated pointer to --ndjson.' Files: tasks.toml (task 9 detail), design/direction.md."
+unblocked_by = "verifier"
+unblocked_from = "alternatives"
+target = "design/direction.md#milestone-a"
+expect = """"The milestone's gate ends by installing the binary, because the rewritten `drain.md` is live as soon as it is written and this milestone's own commit step will call `plan emit commit-paths`.""""
+tier = "advisory"
+related = ["F6"]
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["design/direction.md#milestone-a"]
+
+[[findings]]
+id = "F9"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-grounding"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+symbol = "milestone-a"
+summary = "Install gate is unmarked, so once task 9's drain is live it runs under keep_going and installs a tree whose tests just failed"
+severity = "major"
+failure_scenario = "Task 9 rewrites drain.md (linked into ~/.claude/skills, so live before A's gate) to hold only gate-list's `held` rows. Both milestones list `cargo install --path tomlctl --locked` as a plain gate with no external mark, and every gate dispatch passes keep_going: true. A round where nextest fails still runs the install, putting a binary from a failing tree on PATH for the rest of the drain and every other session. Milestone B hits the same thing."
+fix = "Hold the install out of the first verification call in both milestones, and say so in direction.md#milestone-a and D13. Milestone A cannot be marked, because no binary writes the mark yet: hold its install by hand and record any failed round with `plan run gate --ndjson`, since the installed binary has no `--blocks` until the held install runs. Milestone B: see blocked_options."
+effort = "small"
+counter = "If the orchestrator still held installs by judgement after task 9, or a gate dispatch ran without keep_going, no failing tree would be installed. drain.md:333 says keep_going is always passed, and task 9 makes holding the tool's job alone."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:332-334: verb holds nothing back; install is held by the orchestrator because keep_going would install from a failed tree",
+    "plan view milestone B gates: 'cargo install --path tomlctl --locked' stored via plain gates, no external_gates (store predates the key)",
+    "rg 'cargo install' .claude/flows/*/tasks.toml: plain install gates in v2-ui-fidelity, v2-apply, mid-run-requests, milestone-cadence, v2-harness-tuning",
+    "task 9 detail: 'which commands are held is no longer the orchestrator's to judge'",
+    "design/direction.md#overarching: 'Nothing changes for a store that uses none of the new keys'",
+]
+fix_files = [
+    ".claude/flows/implement-v2-run-hardening/plan.toml",
+    ".claude/flows/implement-v2-run-hardening/tasks.toml",
+]
+blocked_on = "decision"
+blocked_missing = "How milestone B's install gate is held. The `--external-gate` mark becomes available after A is installed, but writing it stamps the task store at schema_version 4 mid-flow, which the glimpse build linking the old library refuses."
+blocked_options = [
+    "Mark B's install with `plan milestone update --external-gate` after A commits: the drain holds it mechanically, but the store is stamped 4 and H1's glimpse reinstall must move to after milestone A.",
+    "Hold the install by hand in both milestones, named in direction.md as this flow's one exception to task 9's rule: no store change, but the orchestrator makes a call the rewritten drain says is no longer its own.",
+]
+target = "design/direction.md#milestone-a"
+expect = """"The milestone's gate ends by installing the binary, because the rewritten `drain.md` is live as soon as it is written and this milestone's own commit step will call `plan emit commit-paths`.""""
+tier = "advisory"
+related = [
+    "F6",
+    "F7",
+    "F8",
+]
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["design/direction.md#milestone-a"]
+
+[[findings]]
+id = "F10"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Success criteria"
+summary = "Success criterion 3 says plan check reports any such need; D6 scopes the check to a same-milestone need and makes it a warning"
+effort = "trivial"
+counter = "If the criterion is meant only as the headline and D6 is read as its refinement, no reader would test a cross-milestone need against it."
+edit = "Narrow the criterion to what D6 and task 5 build: a warning for a need on a row of the task's own milestone, with silence for a row in an earlier milestone. As written, a cross-milestone case reads as a failed criterion."
+direction = "change"
+target = "brief#Success criteria"
+expect = '"`plan check` reports a task that needs a row whose external accept check is run by the gate."'
+new = '"`plan check` warns on a task that needs a row of its own milestone whose external accept check is run by the gate, and stays silent when that row is in an earlier milestone."'
+tier = "user"
+same_as = "F5"
+related = ["F5"]
+anchor = "plan|docs/flows/implement-v2-run-hardening/brief.md|Success criteria"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-20
+merged_into = "F5"
+
+[[findings]]
+id = "F11"
+run = "U1"
+cell = "C6"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-structure"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/brief.md"
+symbol = "Scope budget"
+summary = "Scope budget omits tomlctl/src/tasks/ (the one-way schema_version 4 stamp, D12), cli/types, four engine references, the engine SKILL.md and ui-capture"
+effort = "trivial"
+counter = "If the budget is meant as a rough size and not an area list, the omission changes nothing an approver weighs. But it lists areas file by file and leaves out the one-way-door store."
+edit = "Name every area the tasks edit. Task 2 edits six files under tomlctl/src/tasks/ (the D12 one-way door). Tasks 1, 3, 6 and 11 edit tomlctl/src/cli/types/. Task 9 edits apply-rows.md, questions.md and run-milestone.md, and task 14 edits report.md and the implement-v2-engine SKILL.md. Task 15 edits the ui-capture skill, and tasks 8 and 13 edit README.md."
+direction = "change"
+target = "brief#Scope budget"
+expect = """"`tomlctl/src/agents/audit.rs`, their tests and the `tomlctl` skill's references; the `implement-v2-engine` references `drain.md` and `visual.md`;""""
+new = """"`tomlctl/src/tasks/` (the accept and milestone schema, stamped schema_version 4 when a mark is held), `tomlctl/src/cli/types/`, `tomlctl/src/agents/audit.rs`, their tests, the `tomlctl` skill's references and README; the `implement-v2-engine` skill and its references `drain.md`, `visual.md`, `report.md`, `apply-rows.md`, `questions.md` and `run-milestone.md`; the `ui-capture` skill;""""
+tier = "user"
+anchor = "plan|docs/flows/implement-v2-run-hardening/brief.md|Scope budget"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to brief#Scope budget"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.9219102Z"
+tier = "user"
+target = "brief#Scope budget"
+old = """"`tomlctl/src/agents/audit.rs`, their tests and the `tomlctl` skill's references; the `implement-v2-engine` references `drain.md` and `visual.md`;""""
+new = """"`tomlctl/src/tasks/` (the accept and milestone schema, stamped schema_version 4 when a mark is held), `tomlctl/src/cli/types/`, `tomlctl/src/agents/audit.rs`, their tests, the `tomlctl` skill's references and README; the `implement-v2-engine` skill and its references `drain.md`, `visual.md`, `report.md`, `apply-rows.md`, `questions.md` and `run-milestone.md`; the `ui-capture` skill;""""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F12"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-the-plan-emit-commit-paths-leaf"
+summary = "--for flow's `ignored` is computed over changed paths from a git status run without --ignored, so it is always empty and drops the drain's !! report"
+severity = "major"
+failure_scenario = "The Detail fixes each call's status read to porcelain v1 -z --no-renames --untracked-files=all (no --ignored) and defines --for flow `ignored` 'as above over that set', the changed paths. git status omits ignored untracked files, so a gate log under .claude/flows/<slug>/gates/ hidden by a *.log rule never enters the set and `ignored` is []. Task 9 replaces drain step 10's `git status --porcelain --ignored` !! handling with these rows, so the reconcile entry for an ignored gate log or backlog silently disappears."
+fix = "Say in the Detail that --for flow also runs `git status --porcelain=v1 -z --ignored=matching --untracked-files=all` (or `git check-ignore -v --stdin`) over its pathspec (.claude/flows/<slug>/, docs/flows/<slug>/notes/run/, the backlog and inputs pairs, linked review stores) and lists each ignored path with its rule; add a test with an ignored gate log under the flow directory appearing in `ignored`."
+effort = "small"
+counter = "If the implementer's status read for --for flow already passes --ignored despite the Detail's 'as uncommitted_files does' wording, ignored paths would surface; the Detail as written prescribes otherwise."
+grade = "high"
+evidence = [
+    "tomlctl/src/plan/drift.rs:174-200 uncommitted_files runs status --porcelain=v1 -z --no-renames --untracked-files=all, no --ignored",
+    "claude/skills/implement-v2-engine/references/drain.md:472-477 today stages via `git status --porcelain --ignored` and reports `!!` lines (gate log under a *.log rule) as reconcile entries",
+    "task 9 Detail: replace the `!!` handling with the `ignored` rows of --for flow",
+]
+target = "task:add-the-plan-emit-commit-paths-leaf.detail"
+tier = "advisory"
+related = ["F2"]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|add-the-plan-emit-commit-paths-leaf"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:add-the-plan-emit-commit-paths-leaf.detail"]
+
+[[findings]]
+id = "F13"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "store-the-external-effect-mark-on-accept-entries-and-milestones"
+summary = "Adding external_gates to MilestoneSpec certainly breaks the two literals in plan/milestone.rs, which the Files line omits and the Detail treats as conditional"
+effort = "trivial"
+counter = "If MilestoneSpec derived Default and the literals used ..Default::default(), no edit would be needed; neither holds at tomlctl/src/tasks/schema.rs:397 and plan/milestone.rs:208."
+edit = "Add tomlctl/src/plan/milestone.rs to the task's files and replace the hedge '(plan/milestone.rs also holds two MilestoneSpec literals and belongs to the next task: if the crate cannot compile without touching it, request it)' with 'fill the two MilestoneSpec literals in plan/milestone.rs with an empty external_gates'. MilestoneSpec has no Default and both literals (milestone.rs:208, :368) list every field, so the crate cannot compile without them; task 3 needs task 2, so the shared file is ordered."
+direction = "change"
+target = "task:store-the-external-effect-mark-on-accept-entries-and-milestones.files"
+expect = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/snapshot.rs","tomlctl/src/tasks/milestones.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/lane.rs","tomlctl/tests/tasks_spec_add.rs","claude/skills/tomlctl/references/tasks-write.md","claude/skills/tomlctl/references/tasks-store.md"]'
+new = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/snapshot.rs","tomlctl/src/tasks/milestones.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/lane.rs","tomlctl/src/plan/milestone.rs","tomlctl/tests/tasks_spec_add.rs","claude/skills/tomlctl/references/tasks-write.md","claude/skills/tomlctl/references/tasks-store.md"]'
+tier = "cited"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|store-the-external-effect-mark-on-accept-entries-and-milestones"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:store-the-external-effect-mark-on-accept-entries-and-milestones.files"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.6815065Z"
+tier = "cited"
+target = "task:store-the-external-effect-mark-on-accept-entries-and-milestones.files"
+old = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/snapshot.rs","tomlctl/src/tasks/milestones.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/lane.rs","tomlctl/tests/tasks_spec_add.rs","claude/skills/tomlctl/references/tasks-write.md","claude/skills/tomlctl/references/tasks-store.md"]'
+new = '["tomlctl/src/tasks/schema.rs","tomlctl/src/tasks/add.rs","tomlctl/src/tasks/update.rs","tomlctl/src/tasks/show.rs","tomlctl/src/tasks/snapshot.rs","tomlctl/src/tasks/milestones.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/lane.rs","tomlctl/src/plan/milestone.rs","tomlctl/tests/tasks_spec_add.rs","claude/skills/tomlctl/references/tasks-write.md","claude/skills/tomlctl/references/tasks-store.md"]'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F14"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+summary = "Accept grep for 'ui-capture' in both worker files binds wording the Detail never asks the worker carve-out to contain"
+effort = "trivial"
+counter = "An implementer may name the ui-capture skill anyway since visual.md's means detail cites its rubric; nothing in the Detail requires it in the worker files."
+edit = "In the Detail's worker-files sentence, after 'runs exactly that command, into exactly that directory, and reads the result', add 'against the `ui-capture` skill's defect rubric', so the carve-out names the skill the accept check greps for. Without it a correct carve-out ('a required means naming the capture command') can omit the literal and fail accept[1]."
+direction = "change"
+target = "task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|let-a-visual-fix-tasks-worker-capture-its-own-states"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"]
+
+[[findings]]
+id = "F15"
+run = "U1"
+cell = "C7"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+summary = "The worker carve-out says a capture failure naming no own file is 'noted and returned' but leaves the return status (done, failed, parked) unset"
+severity = "minor"
+failure_scenario = "Writing the plan-worker-procedure carve-out, the executor must state the status for a capture that fails on a sibling's file. The worker statuses carry different drain consequences: `failed` sends the row to replan, `parked` stalls dependents and asks the user, `done` lets the visual pass recapture. Neither the Detail, D10 nor the brief picks one, so two executors write different contracts into both workers."
+fix = "State in the Detail that the worker returns `done`, recording the capture failure and the file it names in the note's checks, since the edit is complete and the next visual pass recaptures; a failure naming one of its own files is fixed before returning."
+effort = "trivial"
+counter = "If the worker procedure already maps 'a check that fails on a file you do not own' to one status, the carve-out inherits it; plan-worker-deep.md's procedure was not found to say so for captures."
+grade = "medium"
+evidence = [
+    "task 15 Detail: 'when the capture fails naming no file of its own task it notes the failure and returns without repairing anything'",
+    "claude/agents/plan-worker-deep.md:42 defines parked vs failed with different consequences",
+]
+target = "task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|let-a-visual-fix-tasks-worker-capture-its-own-states"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"]
+
+[[findings]]
+id = "F16"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+summary = "Task 12's only accept entry is a plan_check suite filter that is green today, so a no-op task 12 lands green"
+severity = "critical"
+failure_scenario = "Task 12 lands with no edit to check.rs, plan_check.rs or plan.md. Its one accept entry, cargo nextest -E 'test(/^plan_check::/)' (covered_by the full suite), runs the existing plan_check tests, which pass today and after task 5; nothing asserts the exemption, so the task and the milestone B gate pass and brief criterion 8 is unmet."
+fix = """Append a forward, read-only accept entry that fails on a no-op: the reference row names the exemption and the test file gains the new ui-accept-structural assertions the detail asks for, e.g. grep -q 'exempt' claude/skills/tomlctl/references/plan.md && [ "$(grep -c 'plan/ui-accept-structural' tomlctl/tests/plan_check.rs)" -gt 2 ]."""
+effort = "trivial"
+counter = "If task 12's tests already existed and failed today the filter would discriminate; grep -c 'ui-accept-structural' tomlctl/tests/plan_check.rs prints 2 (one test) and that test passes on the current checker."
+grade = "high"
+evidence = [
+    "tasks show 12 --with spec: accept holds one entry, check cargo nextest ... -E 'test(/^plan_check::/)', writes_build true, run_by covered",
+    "tomlctl/tests/plan_check.rs:1376-1377 is the only ui-accept-structural test today; it asserts the warning fires",
+    "grep -c exempt claude/skills/tomlctl/references/plan.md -> 0; plan.md:574 is the class row task 12 rewords",
+]
+target = "task:exempt-rows-off-the-capture-paths-from-planui-accept-structural.spec.accept[+]"
+new = '''{"behaviour":"the plan reference says a row touching no capture path is exempt, and plan_check.rs gains the exemption assertions","check":"grep -q 'exempt' claude/skills/tomlctl/references/plan.md && [ \"$(grep -c 'plan/ui-accept-structural' tomlctl/tests/plan_check.rs)\" -gt 2 ]","kind":"forward","positive":"","writes_build":false}'''
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:exempt-rows-off-the-capture-paths-from-planui-accept-structural.spec.accept[+]"]
+
+[[findings]]
+id = "F17"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:falsifiability"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+summary = "Task 8's carrier check greps only effect_mark, so a pre-flight that omits plan_emit_commit_paths or plan_run_gate_blocks passes"
+severity = "major"
+failure_scenario = "Task 8 adds only effect_mark to claude/commands/implement-v2.md's pre-flight list. accept[2] (grep -q 'effect_mark') passes and the capabilities test pins only mod.rs, so the carrier still accepts a binary lacking commit-paths or --blocks; brief criterion 9 (pre-flight refuses a binary without the new verbs) is unmet and the drain then calls a missing verb."
+fix = "Make accept[2] check all three strings the action names in the carrier: grep -q 'plan_emit_commit_paths' claude/commands/implement-v2.md && grep -q 'effect_mark' claude/commands/implement-v2.md && grep -q 'plan_run_gate_blocks' claude/commands/implement-v2.md."
+effort = "trivial"
+counter = "If another entry or test read the carrier's feature list for all three strings this would be redundant; none of task 8's four entries does, and capabilities.rs reads FEATURES in mod.rs, not the carrier."
+grade = "high"
+evidence = [
+    "tasks show 8: action adds plan_emit_commit_paths, effect_mark and plan_run_gate_blocks and requires them in the /implement-v2 pre-flight",
+    "tasks show 8 accept[2]: check grep -q 'effect_mark' claude/commands/implement-v2.md",
+    "claude/commands/implement-v2.md:29 is the pre-flight feature list; none of the three strings is present today",
+]
+target = "task:advertise-the-milestone-a-features-and-bump-tomlctl-to-0260.spec.accept[2]"
+expect = """{"behaviour":"the carrier pre-flight requires effect_mark","check":"grep -q 'effect_mark' claude/commands/implement-v2.md","kind":"forward","positive":"","writes_build":false}"""
+new = """{"behaviour":"the carrier pre-flight requires plan_emit_commit_paths, effect_mark and plan_run_gate_blocks","check":"grep -q 'plan_emit_commit_paths' claude/commands/implement-v2.md && grep -q 'effect_mark' claude/commands/implement-v2.md && grep -q 'plan_run_gate_blocks' claude/commands/implement-v2.md","kind":"forward","positive":"","writes_build":false}"""
+tier = "advisory"
+related = ["F1"]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:advertise-the-milestone-a-features-and-bump-tomlctl-to-0260.spec.accept[2]"]
+
+[[findings]]
+id = "F18"
+run = "U1"
+cell = "C2"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "check:acceptance-contradiction"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
+summary = "Task 9 makes held commands only gate-list's held rows, but both milestones' unmarked cargo install gate then runs unheld under keep_going"
+severity = "major"
+failure_scenario = "Milestone A gate: task 9's drain.md is live, the installed (old) binary prints no held key and B's store marks nothing, so cargo install --path tomlctl --locked goes in the first keep_going dispatch. If nextest fails, the failing tree is still installed and every later tomlctl call in the fix round runs it. Milestone B (unmarked install) and every existing flow with an install or deploy gate lose holding the same way."
+fix = "In task 9's detail, keep drain.md's current holding rule as the fallback: when gate-list prints no held key or the milestone carries no mark, hold commands that install, link or deploy by judgement, as today; this also honours direction.md's 'Nothing changes for a store that uses none of the new keys'. And mark B's install gate once A's binary is installed: plan milestone update B --external-gate 'cargo install --path tomlctl --locked' as a task or premise in B."
+effort = "small"
+counter = "If the verification agent stopped at the first failing command the order would protect install; drain.md:333 says keep_going: true is always passed, and drain.md:334 states the install-from-a-failed-tree risk."
+grade = "high"
+evidence = [
+    "drain.md:332-334: holding is the orchestrator's judgement today because the verb holds nothing back; install is held because keep_going would install a failed tree",
+    "tasks show 9 detail: 'the held commands are gate-list's held rows ... which commands are held is no longer the orchestrator's to judge'",
+    "tomlctl plan emit gate-list --milestone A and B: cargo install --path tomlctl --locked under commands, source gate; no milestone carries external_gates",
+    "design/direction.md#overarching: 'Nothing changes for a store that uses none of the new keys'",
+]
+target = "task:rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks.detail"
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "Fixed by the author after the review: the milestones were re-cut so milestone A holds every tomlctl change and installs the binary and milestone B holds every prose and pre-flight change; unmarked install, link and deploy commands stay held by judgement; and the task rows gained the missing test cases, the version-pin edits, the ignored-path status read, a discriminating check for the ui-accept-structural task, the full feature greps and the worker return status."
+resolved = 2026-11-20
+addressed = ["task:rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks.detail"]
+
+[[findings]]
+id = "F19"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-plan-run-gate-read-the-verification-agents-blocks"
+summary = "--blocks parser leaves open how blank, fence and prose lines outside a block are treated, and whether a block's `summary: none` is empty"
+severity = "minor"
+failure_scenario = "The orchestrator saves the agent's text as returned: entries separated by blank lines (verification.md:173-175), possibly wrapped in a ``` fence or led by a sentence. The Detail names only retried/rerun/tail/TANGENTIAL/not_run as keyless and says 'Text that yields no row is refused'; one executor refuses any unrecognised line, so real output is rejected; another skips it. Likewise a fail block's `summary: none` (verification.md:190) may be stored as the literal 'none'."
+fix = "Append a constraint: blank lines, a ``` fence line and any line before the first entry or between entries that opens no block are skipped; the text is refused only when it yields no row at all. In a block, as on a pass line, `summary: none` is the empty summary."
+effort = "trivial"
+counter = "If the Detail's 'Text that yields no row is refused' is read only as whole-input-empty and every executor skips unknown lines anyway, the open choice never diverges."
+grade = "medium"
+evidence = [
+    "claude/agents/verification.md:173-175: a blank line separates the pass line from the next block in the documented output",
+    "claude/agents/verification.md:190: a fail block carries `summary: none`; the task's empty-summary rule is stated only for the pass line",
+    "task Detail names only retried:, rerun:, tail:, TANGENTIAL: and not_run: lines as producing no row key; blank and fence lines are not mentioned",
+]
+target = "task:let-plan-run-gate-read-the-verification-agents-blocks.spec.constraints[+]"
+new = '"Blank lines, a ``` fence line, and any line before the first entry or between entries that opens no block are skipped; the text is refused only when it yields no row at all. In a block, as on a pass line, `summary: none` is the empty summary."'
+tier = "cited"
+related = ["F3"]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|let-plan-run-gate-read-the-verification-agents-blocks"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:let-plan-run-gate-read-the-verification-agents-blocks.spec.constraints[+]"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.7138028Z"
+tier = "cited"
+target = "task:let-plan-run-gate-read-the-verification-agents-blocks.spec.constraints[+]"
+old = "null"
+new = '"Blank lines, a ``` fence line, and any line before the first entry or between entries that opens no block are skipped; the text is refused only when it yields no row at all. In a block, as on a pass line, `summary: none` is the empty summary."'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F20"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
+summary = "Files omits tomlctl/src/cli/types/cmd.rs, whose --pattern help describes the default patterns the task widens"
+effort = "trivial"
+counter = "If the help text is judged general enough to leave as is, the omission is harmless; the constraint 'Touch no file outside this task's files' otherwise forbids fixing it."
+edit = "Add tomlctl/src/cli/types/cmd.rs to the task's files, and have the Detail update the `agents audit` --pattern help (cmd.rs, 'Without one, the build and test-suite runs of the common toolchains are reported.') to also name a bun -e / node -e command naming a file under scripts/."
+direction = "change"
+target = "task:report-scripts-run-through-bun-e-or-node-e-in-agents-audit.files"
+expect = '["tomlctl/src/agents/audit.rs","claude/skills/tomlctl/references/agents.md"]'
+new = '["tomlctl/src/agents/audit.rs","claude/skills/tomlctl/references/agents.md","tomlctl/src/cli/types/cmd.rs"]'
+tier = "cited"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:report-scripts-run-through-bun-e-or-node-e-in-agents-audit.files"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.7466761Z"
+tier = "cited"
+target = "task:report-scripts-run-through-bun-e-or-node-e-in-agents-audit.files"
+old = '["tomlctl/src/agents/audit.rs","claude/skills/tomlctl/references/agents.md"]'
+new = '["tomlctl/src/agents/audit.rs","claude/skills/tomlctl/references/agents.md","tomlctl/src/cli/types/cmd.rs"]'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F21"
+run = "U1"
+cell = "C8"
+seen_in = ["U1"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-plan-run-visual-accept-and-its-plan-store-record"
+summary = "Files claims holders.rs and store.rs, which the work never edits: their PlanStore literals use spreads and store.rs's SCHEMA_VERSION stays the read ceiling"
+effort = "trivial"
+counter = "An executor that renames SCHEMA_VERSION itself, rather than giving the request tier the new name as the Detail says, would need to touch store.rs."
+edit = "Drop tomlctl/src/plan/holders.rs and tomlctl/src/plan/store.rs from the task's files. holders.rs:232-235 builds PlanStore with ..PlanStore::default(); store.rs:557-559 uses ..written; store.rs:609 and :634 use schema::SCHEMA_VERSION + 1 as a too-new stamp, which still holds once SCHEMA_VERSION is raised as the read ceiling."
+direction = "change"
+target = "task:add-plan-run-visual-accept-and-its-plan-store-record.files"
+expect = '["tomlctl/src/plan/run_visual.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/schema_request.rs","tomlctl/src/plan/holders.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_run_records.rs","tomlctl/tests/output_options.rs","claude/skills/tomlctl/references/plan-run.md","claude/skills/tomlctl/references/plan-store.md"]'
+new = '["tomlctl/src/plan/run_visual.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/schema_request.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_run_records.rs","tomlctl/tests/output_options.rs","claude/skills/tomlctl/references/plan-run.md","claude/skills/tomlctl/references/plan-store.md"]'
+tier = "cited"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|add-plan-run-visual-accept-and-its-plan-store-record"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:add-plan-run-visual-accept-and-its-plan-store-record.files"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:43:56.7768625Z"
+tier = "cited"
+target = "task:add-plan-run-visual-accept-and-its-plan-store-record.files"
+old = '["tomlctl/src/plan/run_visual.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/schema_request.rs","tomlctl/src/plan/holders.rs","tomlctl/src/plan/store.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_run_records.rs","tomlctl/tests/output_options.rs","claude/skills/tomlctl/references/plan-run.md","claude/skills/tomlctl/references/plan-store.md"]'
+new = '["tomlctl/src/plan/run_visual.rs","tomlctl/src/plan/schema.rs","tomlctl/src/plan/schema_request.rs","tomlctl/src/plan/mod.rs","tomlctl/src/plan/dispatch.rs","tomlctl/src/cli/types/plan.rs","tomlctl/tests/plan_run_records.rs","tomlctl/tests/output_options.rs","claude/skills/tomlctl/references/plan-run.md","claude/skills/tomlctl/references/plan-store.md"]'
+by = "tool"
+recovered = false
+
+[[findings]]
+id = "F22"
+run = "U2"
+cell = "C10"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "plan-dependencies"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+line = 22
+symbol = "milestone-a"
+summary = "Direction says three tasks add to cli/types/plan.rs; four do (1, 3, 6, 11), chained 1->3->6->11 by needs, 11->6 also over mod.rs and plan-run.md"
+effort = "trivial"
+counter = "If task 11's files did not list tomlctl/src/cli/types/plan.rs the count of three would hold; plan view lists it as an edit, and its Detail registers the leaf in PlanRunOp."
+evidence = [
+    "tasks 1, 3, 6 and 11 each list tomlctl/src/cli/types/plan.rs in files (plan view --for human)",
+    "plan check plan/file-only-chain: 1 -> 3, 3 -> 6 over cli/types/plan.rs; 6 -> 11 over plan/mod.rs, cli/types/plan.rs, plan_run_records.rs, plan-run.md",
+]
+edit = "In design/direction.md, Milestone A, replace 'Three tasks add to `tomlctl/src/cli/types/plan.rs` and are ordered by `needs` for that reason alone' with 'Four tasks (1, 3, 6 and 11) add to `tomlctl/src/cli/types/plan.rs` and are chained by `needs` for their shared files'. Task 11 registers `plan run visual` in PlanRunOp in that file and needs 6, which also shares plan/mod.rs, tests/plan_run_records.rs and references/plan-run.md with it."
+direction = "change"
+target = "design/direction.md#milestone-a"
+expect = '"Three tasks add to `tomlctl/src/cli/types/plan.rs` and are ordered by `needs` for that reason alone"'
+new = '"Four tasks (1, 3, 6 and 11) add to `tomlctl/src/cli/types/plan.rs` and are chained by `needs` for their shared files"'
+tier = "cited"
+related = [
+    "F6",
+    "F8",
+    "F9",
+]
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to design/direction.md#milestone-a"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:57:20.6110433Z"
+tier = "cited"
+target = "design/direction.md#milestone-a"
+old = '"Three tasks add to `tomlctl/src/cli/types/plan.rs` and are ordered by `needs` for that reason alone"'
+new = '"Four tasks (1, 3, 6 and 11) add to `tomlctl/src/cli/types/plan.rs` and are chained by `needs` for their shared files"'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F23"
+run = "U2"
+cell = "C11"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "ripple"
+route = "verifier"
+file = "docs/flows/implement-v2-run-hardening/design/direction.md"
+line = 22
+symbol = "milestone-a"
+summary = "Milestone A says three tasks add to cli/types/plan.rs; tasks 1, 3, 6 and 11 all claim it, chained 1->3->6->11"
+effort = "trivial"
+counter = "If task 11 did not claim tomlctl/src/cli/types/plan.rs the count would be right; tasks show 11 lists it, and plan check reports 6 -> 11 over that file."
+evidence = [
+    "tasks 1, 3, 6 and 11 each list tomlctl/src/cli/types/plan.rs in files (plan view --for human)",
+    "plan check plan/file-only-chain: 1 -> 3, 3 -> 6 over cli/types/plan.rs; 6 -> 11 over plan/mod.rs, cli/types/plan.rs, plan_run_records.rs, plan-run.md",
+]
+edit = "In design/direction.md, Milestone A, change 'Three tasks add to `tomlctl/src/cli/types/plan.rs`' to 'Four tasks add to `tomlctl/src/cli/types/plan.rs`', matching the four rows whose files claim it (1, 3, 6, 11)."
+direction = "change"
+old = "Three tasks add to `tomlctl/src/cli/types/plan.rs`"
+target = "design/direction.md#milestone-a"
+expect = '"Three tasks add to `tomlctl/src/cli/types/plan.rs`"'
+new = '"Four tasks add to `tomlctl/src/cli/types/plan.rs`"'
+tier = "cited"
+same_as = "F22"
+related = [
+    "F6",
+    "F8",
+    "F9",
+    "F22",
+]
+anchor = "plan|docs/flows/implement-v2-run-hardening/design/direction.md|milestone-a"
+outcome = "repeat"
+status = "merged"
+first_seen = 2026-11-20
+merged_into = "F22"
+
+[[findings]]
+id = "F24"
+run = "U2"
+cell = "C14"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "plan-executor"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+summary = "'look defect' in visual.md's vocabulary is one class; read so, the capture means skips rubric-class fixes like the clipped-descender case that motivated it"
+severity = "major"
+failure_scenario = "The worker edits visual.md's Fix tasks, where 'a `look` defect' (line 152, 154) is contrasted with 'any other defect' (rubric classes such as clipping). Following 'a fix task minted for a look defect' literally, it adds the capture means only to look-class fixes. A round-1 clipping fix (B-799bfc99: clipped descenders, whose fix broke an ellipsis) then gets no self-capture and the regression again surfaces only in round 2. The other reading (every non-capture fix) differs, so two workers diverge."
+fix = "Settle the scope in the Detail (and the Action's 'look-defect fix task'): every fix task minted for a defect, a `look` defect or any other, carries the outcome details and the capture means; only a capture-failure task carries none. Every such task already holds one look entry (copied or new), so 'one --only per state of the task's look entry' works for both."
+effort = "trivial"
+counter = "If the plan meant 'look defect' as any visual-pass defect, the Constraint 'Only fix tasks minted by the visual pass capture' and 'A capture-failure task carries no such entry' imply it, but the worker edits a file where the term is a defined class."
+grade = "high"
+evidence = [
+    "claude/skills/implement-v2-engine/references/visual.md:152 'for a `look` defect, ... For any other defect, the files of the milestone's rows that render the state'",
+    "claude/skills/implement-v2-engine/references/visual.md:154 'for a `look` defect, the failed entry ... for any other defect, a new entry naming the state'",
+    "brief.md Background B-799bfc99: the regression came from a clipped-descenders fix (a clipping-class defect)",
+]
+target = "task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"
+expect = '''"visual.md, `Fix tasks`: a fix task minted for a look defect also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = \"required\"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."'''
+new = '''"visual.md, `Fix tasks`: every fix task minted for a defect, a `look` defect or any other (but not a capture failure), also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = \"required\"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."'''
+tier = "advisory"
+related = [
+    "F14",
+    "F15",
+]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|let-a-visual-fix-tasks-worker-capture-its-own-states"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:57:20.6375375Z"
+tier = "advisory"
+target = "task:let-a-visual-fix-tasks-worker-capture-its-own-states.detail"
+old = '''"visual.md, `Fix tasks`: a fix task minted for a look defect also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = \"required\"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."'''
+new = '''"visual.md, `Fix tasks`: every fix task minted for a defect, a `look` defect or any other (but not a capture failure), also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = \"required\"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."'''
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F25"
+run = "U2"
+cell = "C12"
+seen_in = ["U2"]
+family = "plan"
+kind = "defect"
+lens = "feasibility"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "print-held-commands-from-plan-emit-gate-list"
+summary = "Task 4 rewrites plan-engine.md to say the held commands are the held rows, contradicting D5: unmarked installs stay held by judgement"
+severity = "minor"
+failure_scenario = "The lite worker follows task 4's Detail and replaces plan-engine.md's 'Holds and timeout:, rerun: or transient: options stay the orchestrator's to add.' with a sentence saying the held commands are the `held` rows. The gate-list reference then tells an orchestrator an unmarked `cargo install` gate (this plan's own milestone A gate, D13) is not held, contradicting D5, direction.md Overarching and task 9's step 7, and the only statement that timeout/rerun/transient options are the orchestrator's is dropped."
+fix = "Append a constraint to task 4 fixing the replacement sentence's content: the `held` rows are always held, an unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and the timeout:, rerun: and transient: options stay the orchestrator's to add."
+effort = "trivial"
+counter = "If an orchestrator only ever reads drain.md step 7 (where task 9 keeps the judgement hold) and never plan-engine.md during a drain, the contradiction is doc drift with no runtime effect."
+grade = "high"
+evidence = [
+    "claude/skills/tomlctl/references/plan-engine.md:180: 'Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.'",
+    "task 4 detail: 'replace the sentence saying holds stay the orchestrator's with one saying the held commands are the `held` rows'",
+    "decision D5 and design/direction.md#overarching: `held` adds to that judgement and never replaces it",
+    "claude/skills/implement-v2-engine/references/drain.md:332-334: holds and options are the orchestrator's; cargo install is held by judgement",
+]
+target = "task:print-held-commands-from-plan-emit-gate-list.spec.constraints[+]"
+new = """"In references/plan-engine.md, the sentence replacing 'Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.' says the `held` rows are always held, that an unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and that the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's to add.""""
+tier = "advisory"
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|print-held-commands-from-plan-emit-gate-list"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:print-held-commands-from-plan-emit-gate-list.spec.constraints[+]"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:57:20.673538Z"
+tier = "advisory"
+target = "task:print-held-commands-from-plan-emit-gate-list.spec.constraints[+]"
+old = "null"
+new = """"In references/plan-engine.md, the sentence replacing 'Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.' says the `held` rows are always held, that an unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and that the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's to add.""""
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F26"
+run = "U2"
+cell = "C12"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "add-plan-run-visual-accept-and-its-plan-store-record"
+summary = "Task 11 never tests that a store holding visual_accept gets the new stamp (D12's guard), nor that it outranks the request tier in write_version"
+effort = "trivial"
+counter = "A generic tier test in plan/schema.rs that walks every array would catch a missed tier; the tier tests read (around schema.rs:1856-1875) pin each constant by name and know no new array."
+edit = "Append a constraint to task 11 naming the stamp test: a store holding a visual_accept row is stamped the new acceptance tier, and so is one that also holds a request. write_version's if-chain tests requests first today, so a tier inserted below it would stamp such a store 5 and an older binary would silently drop the array; no listed test fails on that."
+direction = "add"
+target = "task:add-plan-run-visual-accept-and-its-plan-store-record.spec.constraints[+]"
+new = '"Test in plan::schema beside the existing tier tests: a store holding a `visual_accept` row is stamped the new acceptance tier, and so is one that also holds a request, so `write_version` tests the acceptance array before the request tier."'
+tier = "cited"
+related = ["F21"]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|add-plan-run-visual-accept-and-its-plan-store-record"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:add-plan-run-visual-accept-and-its-plan-store-record.spec.constraints[+]"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:57:20.7086157Z"
+tier = "cited"
+target = "task:add-plan-run-visual-accept-and-its-plan-store-record.spec.constraints[+]"
+old = "null"
+new = '"Test in plan::schema beside the existing tier tests: a store holding a `visual_accept` row is stamped the new acceptance tier, and so is one that also holds a request, so `write_version` tests the acceptance array before the request tier."'
+by = "user"
+recovered = false
+
+[[findings]]
+id = "F27"
+run = "U2"
+cell = "C12"
+seen_in = ["U2"]
+family = "plan"
+kind = "cleanup"
+lens = "test-gaps"
+route = "verifier"
+file = ".claude/flows/implement-v2-run-hardening/tasks.toml"
+symbol = "store-the-external-effect-mark-on-accept-entries-and-milestones"
+summary = "Task 2 tests the v4 stamp only for an effect entry; a store whose only mark is a non-empty external_gates is never tested to stamp 4"
+effort = "trivial"
+counter = "Task 3's plan_milestone tests could assert the stamp after --external-gate; its Detail lists only the stored lists and the refusal."
+edit = "Append a constraint to task 2 naming the missing case: a store whose only mark is a milestone's non-empty external_gates (no effect entry) is stamped schema_version 4. Task 3's tests check the lists, not the stamp, so a holds_v4_keys that tests only effect passes every listed test while an older binary silently drops the milestone marks (D12)."
+direction = "add"
+target = "task:store-the-external-effect-mark-on-accept-entries-and-milestones.spec.constraints[+]"
+new = '"Test in tasks::schema: a store whose only mark is a milestone with a non-empty `external_gates`, and no `effect` entry, is stamped schema_version 4."'
+tier = "cited"
+related = ["F13"]
+anchor = "plan|.claude/flows/implement-v2-run-hardening/tasks.toml|store-the-external-effect-mark-on-accept-entries-and-milestones"
+status = "resolved"
+first_seen = 2026-11-20
+resolution = "applied to task:store-the-external-effect-mark-on-accept-entries-and-milestones.spec.constraints[+]"
+resolved = 2026-11-20
+
+[findings.applied]
+at = "2026-11-20T13:57:20.7410477Z"
+tier = "cited"
+target = "task:store-the-external-effect-mark-on-accept-entries-and-milestones.spec.constraints[+]"
+old = "null"
+new = '"Test in tasks::schema: a store whose only mark is a milestone with a non-empty `external_gates`, and no `effect` entry, is stamped schema_version 4."'
+by = "user"
+recovered = false
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/tests/capabilities.rs:1918"
+rationale = 'Counter fails: Detail (2) and (3) name only feature strings, and the constraint "Add no code beyond the feature strings" steers away from the pins. capabilities_version_matches_cargo_toml pins the literal "0.25.0" (capabilities.rs:1918), and capabilities reports env!(CARGO_PKG_VERSION) (dispatch.rs:301). README:337 holds 0.25.0, which readme_sample_version_matches_cargo_toml compares against Cargo. The accept, run by the gate, fails both. `new` fixes only this, and `expect` matches the record.'
+
+[[verdicts]]
+finding = "F5"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/brief.md:33"
+rationale = "expect matches brief.md:33 verbatim. D6 (user-confirmed) scopes plan/needs-gate-effect to a row of the same milestone, and task 5's detail says rows reached in another milestone are not reported, with a test that a cross-milestone need does not warn. So the criterion overpromises what the built check does. The C4 rule-out (criteria map to task tests) supports this: task 5's test pins the narrower behaviour. new narrows only the scope and the report level to match D6. It changes nothing else."
+
+[[verdicts]]
+finding = "F2"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/implement-v2-run-hardening/tasks.toml:1019"
+rationale = "expect equals the task's current detail byte for byte; new only appends three cases to the test list. The detail specifies a finding_links review store (FindingLink.store, tasks/schema.rs:256), the inputs.toml pair, ignored [{path,rule}] and 'deletions included', yet its plan_commit_paths list tests none. No other task tests commit_paths, and task 9 (drain.md) makes it the staging route. Edit stays in the task's own detail and listed test file; no rule-out."
+
+[[verdicts]]
+finding = "F3"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/verification.md:170-195"
+rationale = "expect equals the current detail; new only appends two tests. The verification.md example has a pass with 'summary: none', a flaky block with exit 100, failed_ids, a rerun: and a TANGENTIAL: line, and a fail with tail then not_run:, matching the new text. The detail's 'summary up to the last | log:' rule leaves a trailing ' | retried: transient' (verification.md:154) in log unless stripped, so that test guards a real edge. Edit stays in plan_run_records.rs, already in files."
+
+[[verdicts]]
+finding = "F4"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:334; docs/flows/implement-v2-run-hardening/design/direction.md:12"
+rationale = """Counter fails: no task, handover or `milestone update` re-marks B's gate; plan view lists A and B's `cargo install --path tomlctl --locked` as plain gates. Task 9 makes held = gate-list `held` rows only, "no longer the orchestrator's to judge", so B's install runs in the keep_going call (drain.md:333-334 hazard), against direction.md:12. Milestone A's line "no judgement of which command deploys" is the intent, but no decision covers unmarked gates. `new` alone leaves task 9's detail contradicting it."""
+
+[[verdicts]]
+finding = "F15"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-deep.md:42 and :83; task 15 Detail (plan view line 1284)"
+rationale = "Counter tested: the procedure does not map this case to one status. Line 83 says a failure naming only files outside the task is recorded and the worker carries on (implying done on its own work), but line 42 makes a required means that is impossible a parked case, and the capture is minted as a required means. Task 15's Detail says only 'notes the failure and returns'; D10 adds nothing. Two executors can write different statuses. Fixable: name done, failure in prose and checks result fail. Minor stands."
+
+[[verdicts]]
+finding = "F10"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/brief.md:33"
+rationale = "expect is verbatim at brief.md:33. Criterion 3 asks plan check to report any task needing a gate-run external accept, but D6 limits the class to a same-milestone need, and task 5's Detail says rows reached in another milestone are not reported and pins that silence with a cross-milestone test. A tester reading the criterion would score that silence a failure. The new text matches D6 and task 5 exactly and changes nothing else. The C1/C4 rule-outs grant the gap; neither shows the criterion is right."
+
+[[verdicts]]
+finding = "F11"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/brief.md:27"
+rationale = "expect occurs once at brief.md:27. The plan's Files lists bear out each omission: task 2 edits six tomlctl/src/tasks/ files (the D12 schema_version 4 door); tasks 1/3/6/11 edit cli/types/plan.rs and 8/13 cli/types/mod.rs; task 9 apply-rows/questions/run-milestone; task 14 report.md and the engine SKILL.md; task 15 ui-capture; tasks 8/13 tomlctl/README.md. The C1/C3 rule-outs only call the budget approximate, but it is an area list. Small gaps remain: the Cargo.toml/lock bump is unnamed, and 'README' reads ambiguously."
+
+[[verdicts]]
+finding = "F12"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/drift.rs:177-185; scratch repo: git status --porcelain=v1 --untracked-files=all omits m.log, --ignored prints '!! .claude/flows/s/gates/m.log'"
+rationale = "Counter tested: task 1's detail sets the status read as uncommitted_files does (drift.rs:177-185, no --ignored) and defines --for flow `ignored` 'as above over that set', the changed paths. A scratch repo with a *.log rule: status without --ignored omits gates/m.log; with --ignored it prints '!! ...m.log'. So flow `ignored` is always empty. Task 9 swaps drain.md:472-477's !! reconcile handling for those rows, so the entry is silently lost. The C4 rule-out is about drift skips and does not apply."
+
+[[verdicts]]
+finding = "F13"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/milestone.rs:208-223"
+rationale = "MilestoneSpec (tasks/schema.rs:398-409) derives Debug, Clone, PartialEq, Eq, not Default. Both literals in plan/milestone.rs (:208 and :368) list every field with no ..base, so adding external_gates fails to compile unless that file is edited. The hedge's condition always holds. rg finds no other MilestoneSpec literal outside task 2's files. Task 3 needs task 2 and is the only other A task holding milestone.rs, so the shared file stays ordered. expect equals task 2's current files. The C4 rule-out is about v3 restamping, so it does not apply here."
+
+[[verdicts]]
+finding = "F14"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/agents/plan-worker-lite.md:79"
+rationale = "Task 15 accept[1] greps 'ui-capture' in both worker files. Neither file contains it now: line 79 says only that a look entry is never yours to run, and the probe recorded neg_rc=1. The Detail's worker-files sentence asks only for a carve-out naming 'the capture command' and 'that directory'. Only the visual.md means detail names the ui-capture skill, so a faithful carve-out can omit the literal and fail the check. Adding the rubric clause makes the Detail produce what the accept check greps for, and it matches the means detail's own wording."
+
+[[verdicts]]
+finding = "F7"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/design/direction.md:20"
+rationale = "Expect text is at direction.md:20. Task 9's detail removes the drain.md:334 judgement ('which commands are held is no longer the orchestrator's to judge'); task 4 holds only marked commands. Milestones A and B store `cargo install --path tomlctl --locked` as plain gates (plan view, no external_gates), as do v2-ui-fidelity:2324 and v2-harness-tuning:2397; no task re-marks them. Under keep_going a failed nextest is followed by the install. Rule-outs concern cli/types/plan.rs ordering, not this."
+
+[[verdicts]]
+finding = "F8"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/design/direction.md:20"
+rationale = "Expect text is at direction.md:20. Task 9 (milestone A) replaces drain.md:347-363's [[record]]/--ndjson recipe with --blocks; task 6 adds --blocks and only A's last gate installs it. A gate whose first call ends before a good install (compile failure, or install held per F7's fix, which makes it every run) records with the pre-A binary, which refuses --blocks. The block is answerable: plan-run.md:77 keeps --ndjson, so a capability-gated pointer beats moving task 9. Fix also edits task 9 detail in tasks.toml."
+unblocks = true
+fix_sketch = "Amend task 9's detail (tasks.toml) and direction.md#milestone-a: drain step 7 records with `--blocks <path>`; add one sentence that when `tomlctl capabilities --get features` lacks the `--blocks` feature string task 8 adds (true only during milestone A's own run, since the /implement-v2 pre-flight refuses such a binary afterwards), the orchestrator records the same blocks as `--ndjson` rows per the `plan run gate` table in claude/skills/tomlctl/references/plan-run.md, with no field-mapping recipe kept in drain.md. Direction new text: append to the install sentence 'Its own gate runs are recorded on the pre-A binary, so the rewritten step 7 keeps a capability-gated pointer to --ndjson.' Files: tasks.toml (task 9 detail), design/direction.md."
+
+[[verdicts]]
+finding = "F9"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:333"
+rationale = "Counter fails: task 9 says held commands are gate-list's held rows, no longer the orchestrator's judgement; drain.md:333 passes keep_going always; drain.md is junctioned live. Both gates end with an unmarked install, so a nextest failure still installs. In A the installed binary predates the mark, so only a hand hold or a capability fallback in drain.md can cover it. Block stands: for B, marking stamps tasks.toml v4, which schema.rs:730 refuses in glimpse's old library until H1; neither option is plainly dominated, and the orchestrator never reads direction.md."
+
+[[verdicts]]
+finding = "F16"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/tests/plan_check.rs:1376-1377"
+rationale = "Counter checked: the only ui-accept-structural test (plan_check.rs:1376-1377) asserts the warning fires, which a no-op keeps true; grep -c 'plan/ui-accept-structural' prints 2 and plan.md has no 'exempt'. tasks show 12: accept holds one entry, the plan_check:: filter, run_by covered by the full suite, and milestone B's gates add nothing that binds the exemption. A no-op lands green; per falsifiability, no discriminating companion on the task, so critical stands. The proposed new entry fails on a no-op."
+
+[[verdicts]]
+finding = "F17"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/commands/implement-v2.md:29"
+rationale = "tasks show 8: accept[2] greps only effect_mark in implement-v2.md; accept[0] pins capabilities.rs over FEATURES in mod.rs, accept[1] greps mod.rs, accept[3] the version. No dispatch lint reads the carrier's feature list (skills.rs:1680 checks only skill invocations). implement-v2.md:29 names none of the three today, so a partial edit adding effect_mark alone passes all four entries while the pre-flight still accepts a binary without commit-paths or --blocks. Major: the task's other entries discriminate its other targets."
+
+[[verdicts]]
+finding = "F18"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:333-334"
+rationale = "drain.md:333-334: keep_going is always passed and install is held only by the orchestrator's judgement; verification.md:21,119 confirms keep_going runs every command. Task 9's detail makes held commands only gate-list's held rows. gate-list --milestone A prints cargo install under commands with no held key, and plan.toml carries no external_gates. With drain.md live via the junction (D13), A's gate dispatches install beside nextest, so a failing tree is installed; existing flows lose holding too, against direction.md:12."
+
+[[verdicts]]
+finding = "F19"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/implement-v2-run-hardening/tasks.toml:1160"
+rationale = "Detail (tasks.toml:1160) names only retried/rerun/tail/TANGENTIAL/not_run as keyless and puts 'summary: none is the empty summary' in the pass-line sentence; verification.md:174,184 show blank lines between entries and :190 a fail block with 'summary: none'. --ndjson refuses unknown keys (plan-run.md:77), so a strict executor refusing stray lines is a live reading. Counter not met: nothing pins skipping. Minor holds. Nit: 'blank lines skipped' should exempt tail lines, which are raw log text."
+
+[[verdicts]]
+finding = "F20"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/cli/types/cmd.rs:431"
+rationale = "expect matches task 7's files (audit.rs, agents.md). cmd.rs:431-432 help says the defaults are 'the build and test-suite runs of the common toolchains'; the new default reports a scripts/ file run via bun -e/node -e (B-dcecc52a: a deploy script), neither build nor test, so the help goes incomplete. The constraint 'Touch no file outside this task's files' bars the worker from fixing it, so adding cmd.rs is right. new changes only files; the Detail still needs a line naming the help edit for the worker to act on it."
+
+[[verdicts]]
+finding = "F21"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "tomlctl/src/plan/holders.rs:232"
+rationale = "holders.rs:232-234 and store.rs:557-559 build PlanStore with spreads (..PlanStore::default(), ..written), so the new field needs no edit there; rg finds no other non-spread literal outside the task's files. store.rs uses SCHEMA_VERSION only in tests (609, 634) as SCHEMA_VERSION+1 too-new stamps, which stay too new when SCHEMA_VERSION rises to 6 as the read ceiling and the request tier takes its own name, the Detail's dominant reading. Counter (executor keeps the name on the request tier) is the minority reading. Dropping both files is safe."
+
+[[verdicts]]
+finding = "F8"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/design/direction.md:20"
+rationale = "Upheld: direction.md:20 puts the install at the end of A's gate while saying the rewritten drain.md is live at once, so a gate run failing before the install is recorded on the pre-A binary that lacks --blocks."
+
+[[verdicts]]
+finding = "F9"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:333"
+rationale = "Upheld: drain.md:333-334 always passes keep_going and holds cargo install only by orchestrator judgement, which task 9 removes, so an unmarked install gate runs beside a failing nextest."
+
+[[verdicts]]
+finding = "F17"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/commands/implement-v2.md:29"
+rationale = "Upheld: implement-v2.md:29 names none of the three features today and accept[2] greps only effect_mark, so an edit adding effect_mark alone passes while the pre-flight still accepts a binary without commit-paths or --blocks."
+
+[[verdicts]]
+finding = "F18"
+run = "U1"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/drain.md:334"
+rationale = "Upheld: drain.md:333-334 shows keep_going always passed and install held only by judgement; with task 9 making held commands gate-list's held rows and no external mark on either milestone, the install runs from a failing tree."
+
+[[verdicts]]
+finding = "F24"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/visual.md:152"
+rationale = """Holds. visual.md:152-154 contrasts "a `look` defect" with "any other defect", and ui-inspector.md:38,41 make `look` one class beside `clipping` and `truncation`; ui-inspector.md:37 cites a clipped descender as a rubric-class defect. So Task 15's detail and Action ("look-defect fix task") read literally exclude the B-799bfc99 case, while its Outcome says "a worker fixing a visual defect". `new` fits: every fix task carries a look entry (visual.md:153), so its --only states exist."""
+
+[[verdicts]]
+finding = "F25"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan-engine.md:180"
+rationale = "Task 4's Detail (plan view) says to replace the plan-engine.md:180 sentence, which covers both holds and the timeout:/rerun:/transient: options, with one saying the held commands are the held rows. D5 says an unmarked install, link or deploy stays held by judgement and held never replaces it, and task 9 keeps that in drain.md. The counter does not save it: plan-engine.md is the gate-list reference, and the options statement would be lost. The appended constraint fixes exactly this and changes nothing else. Minor stands."
+
+[[verdicts]]
+finding = "F26"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/implement-v2-run-hardening/tasks.toml:660-665"
+rationale = "Task 11's spec constraints (tasks.toml:660-665) and Detail list only 'a store without the array keeps its version'; no test pins the new tier's stamp. write_version (tomlctl/src/plan/schema.rs:548-559) tests requests first, and the tier tests at schema.rs:1854-1880 pin each constant by name, so an acceptance branch slotted below requests stamps a request+accept store 5 and an older binary would drop the array. The added constraint names exactly that test, in schema.rs, a file task 11 holds; it changes nothing else."
+
+[[verdicts]]
+finding = "F27"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = ".claude/flows/implement-v2-run-hardening/tasks.toml:1076"
+rationale = "Task 2's Detail tests are: an effect entry stamps 4, marks on non-gate owners are refused, an unmarked store keeps its stamp. None covers a store whose only mark is a non-empty external_gates, though the outcome and holds_v4_keys require it; task 3's plan_milestone tests check lists, not the stamp. tasks/schema.rs (stamp at :872-877, held by task 2) is where the test lands and the accept check already runs tasks::schema::. The constraint adds only that test."
+
+[[verdicts]]
+finding = "F22"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/design/direction.md:22"
+rationale = "expect matches direction.md:22 verbatim. plan view lists tomlctl/src/cli/types/plan.rs as an edit in four milestone-A tasks: 1, 3, 6 and 11 (11 is Milestone A, Needs 6; 6 Needs 3; 3 Needs 1, 2), so 'Three tasks' is stale and 'for that reason alone' is not exact. new corrects the count and the reason, nothing else. C12's rule-out concedes the miscount and only argues low impact, which does not defeat a prose cleanup; C11's concerns other files."
+
+[[verdicts]]
+finding = "F23"
+run = "U2"
+by = "verifier"
+verdict = "confirmed"
+citation = "docs/flows/implement-v2-run-hardening/design/direction.md:22"
+rationale = """direction.md:22 reads "Three tasks add to `tomlctl/src/cli/types/plan.rs`", matching expect. plan view --for human shows four Milestone A rows listing that file: task 1 (line 443), 3 (581), 6 (755), 11 (1052, Milestone A, Needs 6). The new value fixes only the count. C12's rule-out says the stale count changes nothing built; true, but a cleanup needs no behavioural fault, so it does not defeat this. C10's is a different site. same_as F22 is the same fault at the same sentence; kept."""
+
+[[verdicts]]
+finding = "F24"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/implement-v2-engine/references/visual.md:152"
+rationale = "Upheld: visual.md:152-155 sets a `look` defect against 'any other defect' as one class, while brief.md:67 names a clipped-descenders fix as the motivating case, so the task's 'look defect' wording excludes it read literally."
+
+[[verdicts]]
+finding = "F25"
+run = "U2"
+by = "audit"
+verdict = "confirmed"
+citation = "claude/skills/tomlctl/references/plan-engine.md:180"
+rationale = "Upheld: plan-engine.md:180 covers both holds and the timeout:/rerun:/transient: options, and task 4's detail replaces it with 'the held commands are the held rows', dropping the judgement hold D5 keeps and the options statement."

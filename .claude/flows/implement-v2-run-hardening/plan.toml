@@ -1,0 +1,429 @@
+schema_version = 4
+last_updated = 2026-11-20
+
+[binding]
+branch = "main"
+scope = []
+
+[id_high_water]
+D = 14
+H = 1
+
+[[decision]]
+id = "D1"
+decision = "Close every gap in tomlctl (verbs, the effect field, checks, the waiver record) and rewrite the engine prose to call them."
+why = "The gaps were all steps done by eye or by hand; a prose-only fix leaves them manual."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/emit.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+]
+evidence = "the eight backlog notes and the five investigation notes; asked at Directions"
+if_false = "the visual waiver and fix-capture become prose changes and the plan-store schema tier is dropped"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Tools for safety, prose for the visual pair"
+because = "a waiver stored as a run skip row is unstructured and reads as not run"
+
+[[decision.rejected]]
+option = "Prose only"
+because = "holding, staging and transcription would stay manual, which is what failed on partnerhub_pages milestone C"
+
+[[decision]]
+id = "D2"
+decision = "Cut two milestones by what runs where: A holds every tomlctl change and ends by installing the binary; B holds every engine, worker and carrier prose change, written against the installed binary."
+why = "Engine prose is live the moment it is written, so prose that calls a verb must land after the binary that has it is installed."
+provenance = "user-stated"
+door = "two-way"
+class = "structure"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/schema.rs",
+]
+evidence = "plan review U1 findings F4, F6, F8, F9 and F18; asked after the review"
+if_false = "prose tasks move back beside their verbs and need a fallback for a binary that lacks them"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = true
+
+[[decision.rejected]]
+option = "A for commit and gate work, B for the visual pass"
+because = "A's own drain would follow rewritten prose on a binary without the verbs, and a failed A could not be resumed"
+
+[[decision.rejected]]
+option = "Keep that cut with capability-gated fallbacks"
+because = "it leaves bootstrap-only prose in drain.md"
+
+[[decision.rejected]]
+option = "Three milestones"
+because = "one more drain and full-suite gate than the work needs"
+
+[[decision]]
+id = "D3"
+decision = "Add `plan emit commit-paths --milestone <id> --for work|flow`, one call before each of the drain's two commits; leave `plan drift`'s skip of the flow directories as it is."
+why = "The stamp, the backlog reconcile and the report dirty more stores between the two commits, so one up-front list would miss them; drift's skip is relied on by lane-check."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/plan/emit.rs",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "1",
+    "9",
+]
+evidence = "read tomlctl/src/plan/drift.rs uncommitted_files and its skip list; notes/commit-paths.md; confirmed at the second read-back"
+if_false = "the leaf becomes two leaves or prints both lists in one call"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Stop drift skipping docs/flows/<slug>/"
+because = "lane-check and the drift report reuse the same list and would start reporting the run's own notes"
+
+[[decision]]
+id = "D4"
+decision = """Carry the external-effect mark as `effect = "external"` on an accept entry, allowed only when the gate runs it, and as an `external_gates` list on the milestone set by `--external-gate '<cmd>'`; `plan emit gate-list` prints marked commands under `held`, only when there are any."""
+why = "Milestone gates are plain strings read in many places; a sibling list keyed by the command string follows the gate_probes precedent and touches only the milestone path and gate-list."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "2",
+    "3",
+    "4",
+]
+evidence = "read tomlctl/src/tasks/schema.rs Accept, MilestoneSpec and gate_probes; notes/effect-mark.md; confirmed at triage and the second read-back"
+if_false = "the mark moves to another shape and gate-list, the milestone flags and the check change with it"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "A gate entry that is a string or a table"
+because = "every reader of gates would have to change"
+
+[[decision.rejected]]
+option = "A boolean held flag"
+because = "it names the mechanism, leaving the authoring check nothing to reason from"
+
+[[decision.rejected]]
+option = "Infer from the command text"
+because = "it misses project scripts such as bun run preview:deploy, the case seen"
+
+[[decision.rejected]]
+option = "Allow the mark on worker-run checks"
+because = "plan probes runs worker-owned read-only checks at authoring time and would run the deploy"
+
+[[decision]]
+id = "D5"
+decision = "Held commands still run automatically, in a second verification call, once every other gate command has passed; an unmarked gate command that installs, links or deploys is still held by the orchestrator's judgement, so `held` adds to that judgement and never replaces it."
+why = "The plan's approval already covers the deploy; the mark only makes the holding mechanical."
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "9",
+]
+evidence = "asked in the interview and again after plan review U1 (F4, F18)"
+if_false = "drain step 7 gains a question before the held dispatch"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Ask before each external command"
+because = "every gated milestone and fix round would need the user present at that moment"
+
+[[decision]]
+id = "D6"
+decision = "Report `plan/needs-gate-effect` as a warning, for a row whose needs reach a row of the same milestone holding a gate-run external accept."
+why = "A needs edge often exists for file order alone, so an error would block sound plans; a need in an earlier milestone is committed after its held commands ran."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "5",
+    "10",
+]
+rejected = []
+evidence = "notes/effect-mark.md; confirmed at the second read-back"
+if_false = "the class becomes an error or also covers cross-milestone needs"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D7"
+decision = "`plan run gate` takes the verification agent's returned text through `--blocks <path>`, parsed in Rust; the agent is unchanged. The verb reads the full failed ids from `<log>.ids` beside a block's log when that file exists, and stores exit 0 for a pass."
+why = "Hand-staged TOML is where quoted commands get mangled, and the agent's failed_ids line is capped at 20 and splits ids that contain spaces."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/run_gate.rs",
+    "claude/agents/verification.md",
+    "6",
+    "9",
+]
+evidence = "read claude/agents/verification.md Step 0 and the output format; tomlctl/src/plan/run_gate.rs ROW_KEYS; notes/gate-blocks.md; confirmed at triage and the second read-back"
+if_false = "the parser accepts the capped failed_ids as returned, or the agent's format changes"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "The verification agent writes the record file"
+because = "a Haiku agent would hand-write TOML with nested quoting and needs Write and a path contract"
+
+[[decision.rejected]]
+option = "Change the agent's output to NDJSON"
+because = "every v1 and v2 carrier reads the current block format"
+
+[[decision]]
+id = "D8"
+decision = "`agents audit` reports, by default, any `bun -e`, `bun --eval`, `node -e` or `node --eval` command that names a file under `scripts/`; no package.json script resolution."
+why = "It covers the case seen at a fraction of the cost, and the worker contract now forbids the act itself."
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "tomlctl/src/agents/audit.rs",
+    "7",
+]
+evidence = "read tomlctl/src/agents/audit.rs default patterns; B-dcecc52a; confirmed at triage"
+if_false = "the audit gains a script resolver"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Resolve each gate command's package.json script to its file"
+because = "it needs a per-ecosystem resolver for one observed case"
+
+[[decision]]
+id = "D9"
+decision = "Record an accepted visual failure with `plan run visual --accept`, into a `[[visual_accept]]` plan-store array keyed by milestone and round; the engine captures one backlog item per waiver first and stores its id, the commit step proceeds on the record, the report prints it under kind `gate` with needs_person false, and on re-entry an accepted round skips the visual pass."
+why = "Nothing in the store recorded that look criteria were waived, and the orchestrator improvised the commit, the stamp and the report."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/schema.rs",
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+    "11",
+    "14",
+]
+evidence = "read claude/skills/implement-v2-engine/references/visual.md Two rounds at most; notes/visual-accept.md; asked at triage, the interview and the second read-back"
+if_false = "the waiver moves to another record or the re-entry rule re-runs the pass"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "A decision row"
+because = "a decision has no milestone, round or state fields, and a waiver is a run outcome"
+
+[[decision.rejected]]
+option = "A run skip row"
+because = "it is unstructured and reads as not run"
+
+[[decision.rejected]]
+option = "Re-run the pass on re-entry and pass waived failures"
+because = "it re-captures and re-judges a result the user already accepted"
+
+[[decision.rejected]]
+option = "A new report kind"
+because = "an older binary fails the kind vocabulary instead of the clean version refusal"
+
+[[decision]]
+id = "D10"
+decision = "Only fix tasks minted by the visual pass capture: the mint writes the capture command, a per-task output directory, the states and the defect into the task's spec, and the worker procedure permits that one capture and a read of its result. A capture failure naming no file of the task's own is noted and returned."
+why = "A look fix that regresses a sibling look otherwise surfaces only at the next pass and can spend the last round; original UI rows would add captures against a tree siblings are still editing."
+provenance = "user-confirmed"
+door = "two-way"
+class = "ux"
+binds = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "15",
+]
+evidence = "read claude/agents/plan-worker-deep.md shared procedure; notes/fix-capture.md; asked at triage and the interview"
+if_false = "the worker view gains a capture block, or original UI rows capture too"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision.rejected]]
+option = "Any task with a look entry captures"
+because = "more captures run against a shared tree mid-edit and every UI task costs more"
+
+[[decision.rejected]]
+option = "Run look-fix tasks one at a time"
+because = "slower rounds; the user chose own-states-only with the sibling rule"
+
+[[decision.rejected]]
+option = "Print the capture details in the worker view"
+because = "the mint already writes the row, so no tomlctl change is needed"
+
+[[decision]]
+id = "D11"
+decision = "`plan/ui-accept-structural` skips a row whose files match none of `.claude/ui-capture.toml`'s `paths`; with no file or no `paths` it behaves as today."
+why = "Fix tasks minted into a UI milestone that touch no UI file drew the warning; treating absent paths as match-none would silence it everywhere."
+provenance = "user-confirmed"
+door = "two-way"
+class = "architecture"
+binds = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/src/ui_capture.rs",
+    "12",
+]
+rejected = []
+evidence = "read tomlctl/src/plan/check.rs ui_findings; notes/fix-capture.md; confirmed at the second read-back"
+if_false = "the warning goes silent in projects without capture paths"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D12"
+decision = "A task store holding an effect mark is stamped schema_version 4, and a plan store holding a visual acceptance takes the next write tier, so an older binary refuses the store instead of dropping the keys."
+why = "Both stores are re-emitted from their typed shape on every write, so an older binary silently drops unknown keys."
+provenance = "user-confirmed"
+door = "one-way"
+class = "compromise"
+binds = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/plan/schema.rs",
+    "2",
+    "11",
+]
+rejected = []
+evidence = "read tomlctl/src/tasks/schema.rs SCHEMA_VERSION and holds_v3_keys, tomlctl/src/plan/schema.rs write_version; confirmed at the second read-back"
+if_false = "marks and waivers written by a new binary vanish on the next write by an old one"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[decision]]
+id = "D13"
+decision = "Milestone A's gate ends with `cargo install --path tomlctl --locked`, a plain gate held by judgement; milestone B changes no binary and has no install gate."
+why = "The mark does not exist in the binary this plan is authored with, and B's prose needs A's binary installed before it is written."
+provenance = "agent-assumed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "9",
+    "16",
+]
+rejected = []
+evidence = "CLAUDE.md Deploy sections: skills are junctions into the config dir; plan review U1 findings F8 and F9"
+if_false = "milestone B's rewritten drain calls a verb the installed binary lacks"
+revisit_if = ""
+check = ""
+surfaced = false
+vetoed = false
+
+[[decision]]
+id = "D14"
+decision = "Done is the tomlctl suite and dispatch gates passing, the binary reinstalled, and the /implement-v2 pre-flight refusing a binary without the new features; nothing is replayed against partnerhub_pages."
+why = "The next real milestone run is the field test."
+provenance = "user-confirmed"
+door = "two-way"
+class = "cost"
+binds = [
+    "claude/commands/implement-v2.md",
+    "8",
+    "13",
+    "16",
+]
+rejected = []
+evidence = "asked in the interview"
+if_false = "a replay task against the stored milestone C is added"
+revisit_if = ""
+check = ""
+surfaced = true
+vetoed = false
+
+[[run]]
+step = "investigate"
+workflow = "plan-v2-investigate"
+args_hash = "00a1cf9f788fc5912e3fb7dc9992bb0fb95df0afd4a4871cb858608dcaf8f1ae"
+run_id = "wf_76fd546b-fe2"
+session = "c622969d-1a47-4b58-ab1c-c7f5a2d0494e"
+started = 2026-11-20T13:14:33Z
+finished = 2026-11-20T13:18:03Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "challenge"
+run_id = ""
+started = 2026-11-20T13:18:45Z
+finished = ""
+skip_reason = "eight independent fixes whose file sets and registration points the investigation located; each follows an existing precedent (lane-check leaf, gate_probes sibling list, run-record array), leaving no structure to draft blind"
+
+[[run]]
+step = "surface"
+run_id = ""
+session = "c622969d-1a47-4b58-ab1c-c7f5a2d0494e"
+started = 2026-11-20T13:22:44Z
+finished = 2026-11-20T13:22:44Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "cold-read"
+workflow = "plan-v2-prove"
+args_hash = "97244bf4659ed26c754e0790cdfca02daf24a94571b8e9471fdca33a19426c60"
+run_id = "wf_c8955591-58a"
+session = "c622969d-1a47-4b58-ab1c-c7f5a2d0494e"
+started = 2026-11-20T13:27:34Z
+finished = 2026-11-20T13:30:53Z
+skip_reason = ""
+outcome = "ok"
+
+[[run]]
+step = "review"
+workflow = "plan-v2-review"
+run_id = "wf_0e5833f2-b02"
+session = "c622969d-1a47-4b58-ab1c-c7f5a2d0494e"
+started = 2026-11-20T13:32:43Z
+finished = 2026-11-20T13:57:21Z
+skip_reason = ""
+outcome = "ok"
+
+[[handover]]
+id = "H1"
+reason = "restart"
+action = "Close the glimpse pane, run `cargo install --path glimpse --locked` from the repo root, and reopen the pane, so glimpse links the tomlctl library that reads the new store keys."
+when = "After milestone B's commit."
+done_when = "The reopened glimpse pane shows the implement-v2-run-hardening flow without a store version error."
+source_task = 11
+done = false

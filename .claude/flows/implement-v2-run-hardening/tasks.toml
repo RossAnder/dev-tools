@@ -1,0 +1,1474 @@
+schema_version = 2
+last_updated = 2026-11-20
+plan_path = ""
+last_import_refs = []
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Every tomlctl change, gated and installed: plan emit commit-paths, the external-effect mark with held gate commands and its checks, plan run gate --blocks, the audit pattern, plan run visual --accept, the ui-accept-structural exemption and the feature strings"
+
+[[checkpoints]]
+id = "B"
+rationale = "Engine, worker and carrier prose, written against the installed binary: the drain rewrite, the authoring rules, the accepted-visual-failure path, the fix-task capture and the pre-flight feature list"
+
+[[file_notes]]
+ref = "add-the-plan-emit-commit-paths-leaf"
+file = "tomlctl/src/plan/commit_paths.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-plan-emit-commit-paths-leaf"
+file = "tomlctl/tests/plan_commit_paths.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "let-plan-run-gate-read-the-verification-agents-blocks"
+file = "tomlctl/src/plan/gate_blocks.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-plan-run-visual-accept-and-its-plan-store-record"
+file = "tomlctl/src/plan/run_visual.rs"
+note = "(new)"
+
+[[backlog_links]]
+ref = "report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
+closes = ["B-dcecc52a"]
+refs = []
+
+[[backlog_links]]
+ref = "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
+closes = [
+    "B-cbda2a4f",
+    "B-d1b276a6",
+    "B-2a33255a",
+]
+refs = []
+
+[[backlog_links]]
+ref = "teach-plan-authoring-the-external-effect-mark"
+closes = ["B-0f9fc8b5"]
+refs = []
+
+[[backlog_links]]
+ref = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+closes = ["B-d09117ec"]
+refs = []
+
+[[backlog_links]]
+ref = "let-the-engine-commit-and-report-an-accepted-visual-failure"
+closes = ["B-22eca7ef"]
+refs = []
+
+[[backlog_links]]
+ref = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+closes = ["B-799bfc99"]
+refs = []
+
+[[specs]]
+ref = "add-the-plan-emit-commit-paths-leaf"
+outcome = "One command prints, for a milestone, exactly the paths to stage for the milestone commit, row files under the flow's docs directory included, and a second call prints the paths for the flow-store commit."
+constraints = [
+    "`plan drift` and `plan emit lane-check` print what they print today.",
+    "Add no capability string here; the capabilities task holds that list.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = [
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/tests/plan_emit.rs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan emit commit-paths --for work lists a changed row file under docs/flows/<slug>/ and --for flow lists the flow stores, run notes and backlog pair"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the leaf is registered in the plan emit subcommand enum"
+check = "grep -q 'CommitPaths' tomlctl/src/cli/types/plan.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the leaf has its section in the plan-engine reference"
+check = "grep -q 'plan emit commit-paths' claude/skills/tomlctl/references/plan-engine.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "uncommitted_files in drift.rs is the status reader that skips the flow directories"
+check = "grep -q 'fn uncommitted_files' tomlctl/src/plan/drift.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "store-the-external-effect-mark-on-accept-entries-and-milestones"
+outcome = "A plan can mark a gate-run accept check, and a milestone can list gates, as having an external effect, and an older binary refuses a store that carries a mark."
+constraints = [
+    "A store that holds no mark is written byte for byte as today, stamp included.",
+    "Add no CLI flag, no emit output and no check class here.",
+    "Touch no file outside this task's files.",
+    "Test in tasks::schema: a store whose only mark is a milestone with a non-empty `external_gates`, and no `effect` entry, is stamped schema_version 4.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/tasks/schema.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "an accept entry marked effect = external is stored only when the gate runs it, and a marked store is stamped schema_version 4"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^tasks_spec_add::/) | test(/tasks::schema::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the milestone record carries the external_gates list"
+check = "grep -q 'external_gates' tomlctl/src/tasks/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the accept parser accepts the effect key"
+check = """grep -q '"effect"' tomlctl/src/tasks/add.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the store reference documents external_gates"
+check = "grep -q 'external_gates' claude/skills/tomlctl/references/tasks-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the task store's schema version is 3"
+check = "grep -q 'const SCHEMA_VERSION: i64 = 3' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "Accept::owner_problem is the one validator of an accept entry's owner keys"
+check = "grep -q 'fn owner_problem' tomlctl/src/tasks/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "add-external-gate-to-plan-milestone-add-and-update"
+outcome = "A planner marks a milestone gate as external with one flag, writing the command once."
+constraints = [
+    "On a milestone with no marked gate, a call without `--external-gate` behaves and prints as today.",
+    "Add no check class here; the plan check task holds check.rs.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/plan/milestone.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan milestone add --external-gate stores the command as a gate and marks it, and update replaces gates and marks together"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_milestone::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the flag is declared on the milestone arguments"
+check = "grep -q 'external-gate' tomlctl/src/cli/types/plan.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the flag is in the plan reference's flag tables"
+check = "grep -q -- '--external-gate' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "gate_probes_for validates a list that names gates by command string"
+check = "grep -q 'fn gate_probes_for' tomlctl/src/plan/milestone.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the milestone record carries external_gates"
+check = "grep -q 'external_gates' tomlctl/src/tasks/schema.rs"
+at = "after:2"
+
+[[specs]]
+ref = "print-held-commands-from-plan-emit-gate-list"
+outcome = "The gate command list says which commands to hold out of the first verification dispatch."
+constraints = [
+    "A milestone with no mark prints the keys it prints today.",
+    "Touch no file outside this task's files.",
+    "In references/plan-engine.md, the sentence replacing 'Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.' says the `held` rows are always held, that an unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and that the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's to add.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "gate-list prints a marked gate and a marked gate-run accept check under held and leaves them out of commands"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_emit::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "gate_list builds a held key"
+check = """grep -q '"held"' tomlctl/src/plan/emit.rs"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "gate_list in emit.rs builds the gate command list"
+check = "grep -q 'fn gate_list' tomlctl/src/plan/emit.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the milestone record carries external_gates"
+check = "grep -q 'external_gates' tomlctl/src/tasks/schema.rs"
+at = "after:2"
+
+[[specs]]
+ref = "add-the-needs-gate-effect-and-external-gate-unknown-plan-checks"
+outcome = "Authoring flags a task that depends on an effect only the gate produces, and a mark that names no gate."
+constraints = [
+    "`plan/needs-gate-effect` is a warning and never fails `plan check`.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = ["tomlctl/src/plan/check.rs"]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan check warns on a same-milestone need that reaches a gate-run external accept and errors on an external gate that names no gate"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the needs-gate-effect class exists in the checker"
+check = "grep -q 'plan/needs-gate-effect' tomlctl/src/plan/check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the class table documents needs-gate-effect"
+check = "grep -q 'plan/needs-gate-effect' claude/skills/tomlctl/references/plan.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "plan/gate-probe-unknown is the precedent class for a milestone list that must name gates"
+check = "grep -q 'plan/gate-probe-unknown' tomlctl/src/plan/check.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "let-plan-run-gate-read-the-verification-agents-blocks"
+outcome = "A gate run is recorded from the verification agent's output exactly as it was returned, with no hand-written record file."
+constraints = [
+    "claude/agents/verification.md is not edited.",
+    "`plan run gate --ndjson` behaves as today.",
+    "Add no capability string here.",
+    "Touch no file outside this task's files.",
+    "Blank lines, a ``` fence line, and any line before the first entry or between entries that opens no block are skipped; the text is refused only when it yields no row at all. In a block, as on a pass line, `summary: none` is the empty summary.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = [
+    "tomlctl/src/plan/run_gate.rs",
+    "claude/agents/verification.md",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan run gate --blocks records pass lines and non-pass blocks, quoted commands byte for byte and failed ids from the .ids file"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_run_records::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the block parser has its own module"
+check = "test -f tomlctl/src/plan/gate_blocks.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the flag is in the plan-run reference"
+check = "grep -q -- '--blocks' claude/skills/tomlctl/references/plan-run.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "run_gate.rs fixes the row keys plan run gate accepts"
+check = "grep -q 'ROW_KEYS' tomlctl/src/plan/run_gate.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
+outcome = "The worker audit reports a script under scripts/ run by evaluating an import of it."
+constraints = [
+    "A `--pattern` given on the command line still replaces the defaults.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the default patterns report a bun -e or node -e command naming a file under scripts/ and pass a direct bun run of one"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/agents::audit::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the agents reference names the scripts pattern"
+check = "grep -q 'scripts/' claude/skills/tomlctl/references/agents.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "compile in audit.rs builds the default pattern list"
+check = "grep -q 'fn compile' tomlctl/src/agents/audit.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+outcome = "A session can tell from `tomlctl capabilities` whether the installed binary has the commit-paths leaf, the effect mark and the gate block reader."
+constraints = [
+    "Add no code beyond the feature strings.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "tomlctl capabilities lists the three features and the capability test pins them"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the feature list holds all three strings"
+check = "grep -q 'plan_emit_commit_paths' tomlctl/src/cli/types/mod.rs && grep -q 'effect_mark' tomlctl/src/cli/types/mod.rs && grep -q 'plan_run_gate_blocks' tomlctl/src/cli/types/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the crate version is 0.26.0"
+check = """grep -q '^version = "0.26.0"' tomlctl/Cargo.toml"""
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "the feature list names plan_emit_lane_check"
+check = "grep -q 'plan_emit_lane_check' tomlctl/src/cli/types/mod.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
+outcome = "Following the drain, a milestone commit includes every changed row file, the held gate commands come from the tool's output, and a gate run is recorded without retyping."
+constraints = [
+    "Held commands still run automatically after the rest pass, and an unmarked install, link or deploy is still held by judgement; add no question before them.",
+    "Change nothing about the visual pass or the waiver; milestone B owns those paragraphs.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the commit step stages from plan emit commit-paths"
+check = "grep -q 'plan emit commit-paths' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the gate step records a run with --blocks"
+check = "grep -q -- '--blocks' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the gate step no longer says the verb holds nothing back"
+check = "! grep -q 'holds nothing back' claude/skills/implement-v2-engine/references/drain.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the carrier, flag-table and skill lints pass over the edited references"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/cli::dispatch::tests::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs.premises]]
+claim = "drain.md step 10 is the commit step"
+check = "grep -q '^## 10. Commit' claude/skills/implement-v2-engine/references/drain.md"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "drain.md says the gate-list verb holds nothing back"
+check = "grep -q 'holds nothing back' claude/skills/implement-v2-engine/references/drain.md"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "teach-plan-authoring-the-external-effect-mark"
+outcome = "A planner following the engine marks external gate commands and acts on the warning for a task that depends on a gate-only effect."
+constraints = [
+    "Change no other rule in the file.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the Design rules name --external-gate"
+check = "grep -q -- '--external-gate' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the store-check list covers plan/needs-gate-effect"
+check = "grep -q 'plan/needs-gate-effect' claude/skills/plan-v2-engine/references/write-and-prove.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the skill lints pass over the edited reference"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/cli::dispatch::tests::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs]]
+ref = "add-plan-run-visual-accept-and-its-plan-store-record"
+outcome = "One command records that the user accepted a failed visual round, with the states and look criteria waived and the follow-up backlog item."
+constraints = [
+    "A plan store with no acceptance is written byte for byte as today, stamp included.",
+    "Add no new report kind and no capability string here.",
+    "Touch no file outside this task's files.",
+    "Test in plan::schema beside the existing tier tests: a store holding a `visual_accept` row is stamped the new acceptance tier, and so is one that also holds a request, so `write_version` tests the acceptance array before the request tier.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = [
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/plan/run_report.rs",
+]
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "plan run visual --accept stores the acceptance, refuses a state or look the milestone does not hold, and a later plan write keeps the record"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_run_records::/) | test(/plan::schema/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the verb has its own module"
+check = "test -f tomlctl/src/plan/run_visual.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the plan store carries the visual_accept array"
+check = "grep -q 'visual_accept' tomlctl/src/plan/schema.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the verb and the array are documented"
+check = "grep -q 'plan run visual' claude/skills/tomlctl/references/plan-run.md && grep -q 'visual_accept' claude/skills/tomlctl/references/plan-store.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "write_version tiers the plan store's stamp on which arrays are present"
+check = "grep -q 'fn write_version' tomlctl/src/plan/schema.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "PlanRunOp is where a plan run leaf registers"
+check = "grep -q 'enum PlanRunOp' tomlctl/src/cli/types/plan.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+outcome = "The structural-accept warning fires only for rows that can change the look."
+constraints = [
+    "A project with no capture `paths` sees the warning exactly as today.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "plan check stays silent on ui-accept-structural for a row whose files match no capture path and still warns for one that matches"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_check::ui_accept_structural_skips_a_row_off_the_capture_paths$/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the test for a row off the capture paths exists"
+check = "grep -q 'fn ui_accept_structural_skips_a_row_off_the_capture_paths' tomlctl/tests/plan_check.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the class table says a row off the capture paths is exempt"
+check = "grep 'plan/ui-accept-structural' claude/skills/tomlctl/references/plan.md | grep -q 'exempt'"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.premises]]
+claim = "ui_scope_findings already matches row files against the capture paths"
+check = "grep -q 'fn ui_scope_findings' tomlctl/src/plan/check.rs && grep -q 'fn load_paths' tomlctl/src/ui_capture.rs"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "advertise-the-plan_run_visual-feature"
+outcome = "A session can tell from `tomlctl capabilities` whether the installed binary can record a visual acceptance."
+constraints = [
+    "Add no code beyond the feature string.",
+    "Touch no file outside this task's files.",
+]
+premises = []
+means = []
+design = ["design/direction.md#milestone-a"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "tomlctl capabilities lists plan_run_visual and the capability test pins it"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^capabilities::/)'"
+kind = "forward"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+
+[[specs.accept]]
+behaviour = "the feature list holds plan_run_visual"
+check = "grep -q 'plan_run_visual' tomlctl/src/cli/types/mod.rs"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs]]
+ref = "let-the-engine-commit-and-report-an-accepted-visual-failure"
+outcome = "After a visual pass fails its last round the user can accept it: the acceptance is recorded with one backlog item, the milestone commits, the report prints the waiver, and a later session does not re-run the pass."
+constraints = [
+    "The inspector stays the only judge: the acceptance records the user's decision and changes no verdict and no round count.",
+    "Leave drain.md's commit-paths, held-command and --blocks paragraphs as milestone A wrote them.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the visual reference tells the orchestrator to record an acceptance with plan run visual"
+check = "grep -q 'plan run visual' claude/skills/implement-v2-engine/references/visual.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the commit step proceeds on an accepted round"
+check = "grep -q 'accepted' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual_accept' claude/skills/implement-v2-engine/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the report template has the accepted-round line"
+check = "grep -q 'accepted' claude/skills/implement-v2-engine/references/report.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the carrier and skill lints pass over the edited files"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/cli::dispatch::tests::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs.premises]]
+claim = "visual.md holds the Two rounds at most rule"
+check = "grep -q 'Two rounds at most' claude/skills/implement-v2-engine/references/visual.md"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "the plan store carries the visual_accept array"
+check = "grep -q 'visual_accept' tomlctl/src/plan/schema.rs"
+at = "after:11"
+
+[[specs]]
+ref = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+outcome = "A worker fixing a visual defect sees a capture of its own states before it returns, so a fix that regresses a neighbouring look is caught inside the round."
+constraints = [
+    "Only fix tasks minted by the visual pass capture; an original UI row's look entry is still never the worker's to run.",
+    "The two worker files' shared blocks stay byte-identical.",
+    "Leave the acceptance paragraphs of visual.md as the previous task wrote them.",
+    "Touch no file outside this task's files.",
+]
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "deep"
+
+[[specs.accept]]
+behaviour = "the Fix tasks rule gives each look-defect fix task its own capture directory"
+check = "grep -q -- '-task-<n>' claude/skills/implement-v2-engine/references/visual.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "both worker procedures permit the one capture a fix task's spec names"
+check = "grep -q 'ui-capture' claude/agents/plan-worker-lite.md && grep -q 'ui-capture' claude/agents/plan-worker-deep.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the capture contract notes concurrent runs"
+check = "grep -qi 'concurrent' claude/skills/ui-capture/SKILL.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the shared worker blocks stay byte-identical"
+check = "bash scripts/verify-shared-blocks.sh"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "bash scripts/verify-shared-blocks.sh"
+
+[[specs.premises]]
+claim = "the worker procedure says a look entry is never the worker's to run"
+check = "grep -q 'is never yours to run' claude/agents/plan-worker-deep.md"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs.premises]]
+claim = "plan-worker-procedure is a shared block"
+check = "grep -q 'plan-worker-procedure' scripts/shared-blocks.toml"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[specs]]
+ref = "require-the-new-features-in-the-implement-v2-pre-flight"
+outcome = "/implement-v2 refuses an installed binary that lacks any verb the rewritten engine calls."
+constraints = ["Touch no file outside this task's files."]
+means = []
+design = ["design/direction.md#milestone-b"]
+precedent = []
+executor = "lite"
+
+[[specs.accept]]
+behaviour = "the pre-flight requires all four features"
+check = "grep -q 'plan_emit_commit_paths' claude/commands/implement-v2.md && grep -q 'effect_mark' claude/commands/implement-v2.md && grep -q 'plan_run_gate_blocks' claude/commands/implement-v2.md && grep -q 'plan_run_visual' claude/commands/implement-v2.md"
+kind = "forward"
+positive = ""
+writes_build = false
+
+[specs.accept.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 1
+verdict = "healthy"
+
+[[specs.accept]]
+behaviour = "the carrier lints pass over the edited command"
+check = "cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/cli::dispatch::tests::/)'"
+kind = "guard"
+positive = ""
+writes_build = true
+run_by = "covered"
+covered_by = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+
+[[specs.premises]]
+claim = "the carrier pre-flight names plan_emit_lane_check"
+check = "grep -q 'plan_emit_lane_check' claude/commands/implement-v2.md"
+at = "base"
+
+[specs.premises.probe]
+at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+neg_rc = 0
+verdict = "holds"
+
+[[milestones]]
+id = "A"
+gates = [
+    "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check",
+    "cargo clippy --workspace --locked --all-targets",
+    "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast",
+    "bash scripts/verify-shared-blocks.sh",
+    "cargo install --path tomlctl --locked",
+]
+elaboration = "upfront"
+defer_reason = ""
+
+[[milestones]]
+id = "B"
+gates = [
+    "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests",
+    "bash scripts/verify-shared-blocks.sh",
+]
+elaboration = "upfront"
+defer_reason = ""
+after = ["A"]
+
+[[items]]
+id = 1
+ref = "add-the-plan-emit-commit-paths-leaf"
+title = "Add the plan emit commit-paths leaf"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/commit_paths.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/src/plan/drift.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_commit_paths.rs",
+    "tomlctl/tests/it.rs",
+    "tomlctl/tests/output_options.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work|flow`, which prints the paths one of the drain's two commits stages."
+detail = "Each call does its own `git status` read (porcelain v1, -z, --no-renames, --untracked-files=all, as `uncommitted_files` in drift.rs does) with NO flow-directory skip; give `uncommitted_files` a skip parameter or add a second caller of `parse_status`, and leave what `plan drift` and `plan emit lane-check` print unchanged. `--for work` prints `{paths, ignored, unmatched}`: `paths` is every changed path, in git's spelling, that a row with `checkpoint = <id>` names in `files` (matched through `normal_path`, deletions included); `unmatched` is the row files that matched no changed path; `ignored` is `[{path, rule}]` for row files the ignore rules hide, `rule` being what `git check-ignore -v` prints. `--for flow` prints `{paths, ignored}`: every changed path under `.claude/flows/<slug>/` and `docs/flows/<slug>/notes/run/`, plus `.claude/backlog.toml` and `.claude/inputs.toml` with their `.sha256` sidecars when changed, plus each review store that the `[[finding_links]]` entry of a row of this milestone (matched by `ref`) names outside the flow directory with its sidecar when changed, less any path `--for work` would print; `ignored` for this form comes from a second status read with `--ignored=matching` over the same pathspecs (the flow store directory, `docs/flows/<slug>/notes/run/`, the backlog and inputs pairs, the linked review stores), since a plain status read omits ignored files: each `!!` path is listed with its `git check-ignore -v` rule. Every list is a JSON array so `--get paths` prints one unquoted path per line. Register like `lane-check`: a `CommitPaths` variant and args struct in `PlanEmitOp` (cli/types/plan.rs), an arm in `emit::dispatch`, the `mod` line, loading through `load_milestone_store` so an unknown milestone is refused. Add the case in tests/output_options.rs beside the other emit leaves (it needs `.git()`), the new test module's `mod` line in tests/it.rs, and a `## plan emit commit-paths` section with flag table and output keys in references/plan-engine.md plus its synopsis and contents entries, and the `plan emit` routing row and reference blurb in the tomlctl SKILL.md. Tests in tests/plan_commit_paths.rs cover: a changed row file under `docs/flows/<slug>/notes/` appears in `--for work`; a row file with no change is `unmatched`; `--for flow` lists the store, a run note and the backlog pair and omits a path the work list holds; an unknown milestone is refused; `--for flow` lists a changed review store that a row's `[[finding_links]]` entry names outside the flow directory, with its sidecar, and a changed `.claude/inputs.toml` pair; a changed row file the ignore rules hide is in `ignored` with its rule and in no `paths`; a deleted row file is in `--for work`'s `paths`. Run your own narrow check with `cargo nextest run --manifest-path tomlctl/Cargo.toml -E 'test(/^plan_commit_paths::/)'`. Add a test where a gate log under the flow directory, hidden by an ignore rule, appears in `--for flow`'s `ignored` with its rule."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "store-the-external-effect-mark-on-accept-entries-and-milestones"
+title = "Store the external-effect mark on accept entries and milestones"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/tasks/milestones.rs",
+    "tomlctl/src/plan/store.rs",
+    "tomlctl/src/plan/lane.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/tasks_spec_add.rs",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add an optional `effect` key to an accept entry and an `external_gates` list to a milestone, and stamp a store that holds either at schema_version 4."
+detail = """`Accept` gains `effect` (empty or `external`), wired wherever `covered_by` is: the `ACCEPT_FIELDS` whitelist and `accept_entry` in tasks/add.rs, `accept_from_toml` and `accept_to_toml` (written only when set), the `accept_json` projection in tasks/show.rs, tasks/snapshot.rs, and `entry_matches` in plan/store.rs. An unknown `effect` value is refused naming the vocabulary. `Accept::owner_problem` gains an arm refusing `effect = "external"` unless the entry's owner is `gate`, so the parser and `plan check` both enforce it and `plan probes` can never run a marked command. `MilestoneSpec` gains `external_gates: Vec<String>`, read and written by `milestone_from_toml` and `milestone_to_toml` only when non-empty; no CLI flag sets it in this task. Every `Accept` and `MilestoneSpec` struct literal in this task's files gains the new field (plan/milestone.rs holds two more `MilestoneSpec` literals: give each the empty list and change nothing else in that file, which the next task extends). Raise `SCHEMA_VERSION` to 4 and add a `holds_v4_keys` predicate beside `holds_v3_keys` so only a store holding an `effect` or a non-empty `external_gates` is stamped 4; a store holding neither keeps the stamp it has today. Document the `effect` key in the `spec` row of references/tasks-write.md and the accept-owner section of references/tasks-store.md, and `external_gates` and the version-4 stamp in tasks-store.md's store shape. Tests: an `effect = "external"` entry with `run_by = "gate"` round-trips and stamps 4; the same mark on a worker-owned, `covered` or `look` entry is refused; a store with no mark keeps its stamp. Keep a separate constant for the version-3 stamp that `holds_v3_keys` selects, so raising `SCHEMA_VERSION` (the newest version read) to 4 does not restamp a version-3 store."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "add-external-gate-to-plan-milestone-add-and-update"
+title = "Add --external-gate to plan milestone add and update"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/src/plan/milestone.rs",
+    "tomlctl/tests/plan_milestone.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Add a repeatable `--external-gate '<command>'` flag to `plan milestone add` and `plan milestone update` that stores the command as a gate and marks it in `external_gates`."
+detail = """On `add`, each `--external-gate` command is appended to the milestone's `gates` after the `--gate` commands, in the order given, and recorded in `external_gates`; a command given as both `--gate` and `--external-gate` is stored once, marked. On `update`, passing `--gate`, `--external-gate` or both replaces the whole gate list and the whole mark list with what the call gives, so `--gate` alone leaves no gate marked; `--clear-gate` empties both and is refused alongside `--external-gate`; an update that passes neither keeps both. A `--gate-probe` may name an external gate. On an audited store an update that changes the marks appends a `[[changes]]` row with `field = "external_gates"`, `old` and `new` as compact JSON, as `gate_probes` does. Fill the two `MilestoneSpec` literals in plan/milestone.rs. Add the flag to both flag tables and synopsis lines in references/plan.md, name `external_gates` in the update section's list of changed fields, and correct the `## plan emit` pointer there so it names every emit leaf including `commit-paths`. Tests in tests/plan_milestone.rs: add stores the gate once and marks it; update replaces both lists; `--clear-gate` with `--external-gate` is refused."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "print-held-commands-from-plan-emit-gate-list"
+title = "Print held commands from plan emit gate-list"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/emit.rs",
+    "tomlctl/tests/plan_emit.rs",
+    "claude/skills/tomlctl/references/plan-engine.md",
+]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = ""
+action = "Make `plan emit gate-list` print each marked command under a `held` key instead of `commands`."
+detail = "In `gate_list`, a milestone gate listed in `external_gates`, and a gate-owned accept check whose `effect` is `external`, goes to `held: [{command, source}]` with the `source` value it would have had in `commands`, in the same order. Test the mark before the duplicate test, so a command that is marked anywhere is held and never also listed under `commands`. Print `held` only when it is not empty, as `visual` is, so the output of a milestone with no mark is unchanged and the existing key-set test stands. Rewrite the function's doc comment, which says no hold is printed. In references/plan-engine.md, add `held` to the gate-list output keys and replace the sentence saying holds stay the orchestrator's with one saying the held commands are the `held` rows. Tests in tests/plan_emit.rs: an external gate and an external gate-run accept check both land in `held` and not in `commands`; an unmarked milestone still prints exactly `commands` and `skipped`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "add-the-needs-gate-effect-and-external-gate-unknown-plan-checks"
+title = "Add the needs-gate-effect and external-gate-unknown plan checks"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [
+    2,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Add two `plan check` classes: `plan/needs-gate-effect` (warning) and `plan/external-gate-unknown` (error)."
+detail = """`plan/needs-gate-effect`: for each pending row R, walk `needs` transitively with a visited set; report R once, as a warning, when a reached row E other than R has the same `checkpoint` as R and holds an accept entry with `effect = "external"` whose owner is `gate`. The detail names R, E and the check command, and says the effect exists only after the milestone's gate, so R cannot observe it while it runs. Rows reached in another milestone are not reported. `plan/external-gate-unknown`: an `external_gates` entry that equals none of the milestone's `gates` is an error, beside `plan/gate-probe-unknown` and worded like it. Add both rows to the check-class table in references/plan.md. Tests in tests/plan_check.rs: a same-milestone need on a row with a gate-run external accept warns; the same need across milestones does not; a row with no such need does not; a hand-edited `external_gates` entry naming no gate errors."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "let-plan-run-gate-read-the-verification-agents-blocks"
+title = "Let plan run gate read the verification agent's blocks"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/gate_blocks.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/run_gate.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Add `--blocks <path>` to `plan run gate`, which parses the `verification` agent's returned text into the rows `--ndjson` takes."
+detail = "`--blocks` takes a file path or `-` for stdin and excludes `--ndjson`; exactly one of the two is required. The parser lives in the new plan/gate_blocks.rs and yields the same row shape `parse_row` reads, so everything after parsing (the `--rerun` merge, the kept log tail) is unchanged. The format is fixed by claude/agents/verification.md, which this task does not edit. A pass is one line `outcome: pass | command: <command> | duration: <n> | summary: <text> | log: <path>` with an optional ` | retried: transient` tail; read `command` from after `command: ` up to the last ` | duration: ` that is followed by an integer and ` | summary: `, and `summary` up to the last ` | log: `, because a command may hold a shell pipe and a vitest summary holds ` | `. A pass row gets `exit = 0`; `summary: none` is the empty summary. A fail, timeout or flaky result is a block opening with a `command: <command>` line directly followed by a line starting `outcome: `, then `exit:` (`none` means absent), `duration_s:`, `log:`, `summary:` and optional `failed_ids:`, `retried:`, `rerun:` and a final `tail:` followed by raw log lines. A tail runs until a `command: ` line directly followed by an `outcome: ` line, a line starting `outcome: pass | command: `, a line starting `not_run:`, or the end; `retried:`, `rerun:`, `tail:`, `TANGENTIAL:` and `not_run:` lines produce no row key. For `failed_ids`, when `<log>.ids` exists beside the block's log (read through the same temp-directory allowance `read_temp_log` uses), take its lines, one id each; otherwise split the block's `failed_ids:` value on spaces and drop a trailing `(+<n> more)`. A refused-command block carrying only `command`, `outcome`, `exit: none` and `tail:` parses with the verb's defaults. Text that yields no row is refused. Document the flag in the `plan run gate` flag table and synopsis of references/plan-run.md, with the failed-ids rule. Tests in tests/plan_run_records.rs: a pass line whose command holds a pipe and whose summary holds ` | `; a fail block whose tail contains a line starting `command:`; a command with both quote kinds and a backslash stored byte for byte and replaced, not duplicated, under `--rerun`; ids read from a `.ids` file with a space inside an id; `--blocks` with `--ndjson` refused. Also test: a flaky block (its `rerun:` and `TANGENTIAL:` lines produce no key); a pass line stores `exit = 0`; a pass line ending ` | retried: transient` keeps its log path clean."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "report-scripts-run-through-bun-e-or-node-e-in-agents-audit"
+title = "Report scripts run through bun -e or node -e in agents audit"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/audit.rs",
+    "claude/skills/tomlctl/references/agents.md",
+    "tomlctl/src/cli/types/cmd.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a default `agents audit` pattern matching a `bun -e`, `bun --eval`, `node -e` or `node --eval` command that names a file under `scripts/`."
+detail = """Add one regex to the default pattern list in audit.rs, matching `bun` or `node`, then `-e` or `--eval`, then, later in the same command, a path segment `scripts/` followed by a file name. It must match `bun -e "await import('./scripts/preview-deploy.ts')"` and `node --eval "require('./scripts/x.js')"`, and must not match `bun run scripts/x.ts`, `bun -e "console.log(1)"` or `rg -n foo scripts/`. Extend the two unit tests of the default patterns in the same file with those five commands. In references/agents.md, add the pattern to the description of the defaults."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "advertise-the-milestone-a-features-and-bump-tomlctl-to-0260"
+title = "Advertise the milestone A features and bump tomlctl to 0.26.0"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "Cargo.lock",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the feature strings `plan_emit_commit_paths`, `effect_mark` and `plan_run_gate_blocks`, and bump the crate to 0.26.0."
+detail = """Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append the three strings to `FEATURES`, after `plan_emit_lane_check`'s neighbours in the plan block. (2) tomlctl/tests/capabilities.rs: add the three strings to the list in `capabilities_features_contains_every_plan_feature`, and change the version literal `capabilities_version_matches_cargo_toml` pins, and its message, from 0.25.0 to 0.26.0. (3) tomlctl/README.md: add the three to the sample capabilities block and the feature table, change that sample block's `"version"` to 0.26.0 (`readme_sample_version_matches_cargo_toml` compares it with Cargo.toml), and name `commit-paths` wherever the `plan emit` leaves are listed. (4) tomlctl/Cargo.toml: `version = "0.26.0"`. (5) Cargo.lock: the tomlctl package entry's version to 0.26.0, by running `cargo update --manifest-path tomlctl/Cargo.toml -p tomlctl --offline` from the repo root, or by editing that one line. The verbs themselves are other tasks' work; this task adds only the strings."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
+title = "Rewrite the drain to use commit-paths, held commands and gate blocks"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+]
+needs = [
+    1,
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite drain.md steps 3, 7 and 10 so the orchestrator stages from `plan emit commit-paths`, holds the commands `gate-list` prints under `held`, and records a gate run with `plan run gate --blocks`."
+detail = "Step 10 (Commit): the milestone commit stages exactly `tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work --get paths`; say what `unmatched` and `ignored` mean and that an ignored row file is reported, never force-added. The flow-store commit, after the stamp, the backlog reconcile and the report, stages `--for flow --get paths`, replacing the hand-written `git status --porcelain --ignored` pathspec and its `!!` handling with the `ignored` rows. Remove the `plan drift --uncommitted --get uncommitted_files` staging recipe and the byte-for-byte comparison from step 10; `plan drift` stays wherever the drain uses it for drift. Update `Stamping on re-entry` to test with the same verb. Keep the rules against `git add -A`, `git add .` and `commit -a`. Step 7 (Gate): replace the sentence that the verb holds nothing back; the held commands are `gate-list`'s `held` rows, dispatched in a second verification call only once every command of the first call passed, and are always held. A gate command the plan did not mark that installs, links or deploys is still held by the orchestrator's judgement, exactly as today: `held` adds to that judgement and never replaces it. Timeouts and the `rerun:` and `transient:` options stay the orchestrator's. Replace the hand-staged `[[record]]` block and its field-mapping paragraph with: write the verification agent's returned text unchanged to a file under `<scratch>` and pass it as `--blocks <path>`. Step 3 (What the run's agents ran): pass a `--gate` to `agents audit` for each `held` command as well as each `commands` entry. In apply-rows.md, questions.md and run-milestone.md, replace each paragraph that restates which paths a commit stages (the external review stores, the inputs store, the pre-flight's clean-tree pathspec where it repeats the list) with a pointer to the two `commit-paths` calls; leave every other paragraph as it is. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "teach-plan-authoring-the-external-effect-mark"
+title = "Teach plan authoring the external-effect mark"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+needs = [
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Add the external-effect mark to the plan-v2 engine's Design and Write rules and the `plan/needs-gate-effect` warning to its store-check list."
+detail = """Three edits to write-and-prove.md. (1) Section 1, Milestones, after the gate-probe paragraph: a gate that changes something outside the build, such as an install, a link or a deploy, is added with `--external-gate '<command>'` instead of `--gate`, so the drain holds it until the other gate commands pass. (2) Section 3, the spec rules, in the `run_by` bullet: a gate-run accept check that deploys or installs carries `effect = "external"`; the mark is refused on any entry the gate does not run. (3) Section 4a, in the paragraph listing how each finding is handled: a `plan/needs-gate-effect` warning names a row that needs a same-milestone row whose external check only the gate runs; the effect will not exist while the row runs, so move the dependent row to a later milestone, or have it produce the effect itself and say so in its `detail`, unless the need is for file order alone. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "add-plan-run-visual-accept-and-its-plan-store-record"
+title = "Add plan run visual --accept and its plan-store record"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/run_visual.rs",
+    "tomlctl/src/plan/schema.rs",
+    "tomlctl/src/plan/schema_request.rs",
+    "tomlctl/src/plan/mod.rs",
+    "tomlctl/src/plan/dispatch.rs",
+    "tomlctl/src/cli/types/plan.rs",
+    "tomlctl/tests/plan_run_records.rs",
+    "tomlctl/tests/output_options.rs",
+    "claude/skills/tomlctl/references/plan-run.md",
+    "claude/skills/tomlctl/references/plan-store.md",
+]
+needs = [6]
+coupling = []
+deps_note = ""
+action = "Add `tomlctl plan run visual --slug <slug> --milestone <id> --round <n> --accept --json '@<path>'`, which records the user's acceptance of a failed visual round in a new `[[visual_accept]]` array of plan.toml."
+detail = """The record holds `milestone`, `round`, `at` (stamped by the verb), `why`, `states`, `looks` (`[{task, accept}]`), `defects` (`[{state, class, location, detail, note}]`, `state` required and one of the record's `states`, the other four strings that may be empty) and `backlog`. The payload carries `why`, `states`, `looks`, `defects` and `backlog`; an unknown key is refused naming the accepted set. `--accept` is a required bare flag, leaving room for another mode. Refuse: a blank `why`; an empty `states`; a state that is not in the milestone's `ui_states` (a control is not a state); a `looks` entry that is not a `run_by = "look"` accept entry, by the 0-based index `gate-list`'s `visual.looks` prints as `accept`, on a row whose `checkpoint` is the milestone; a `backlog` that is not a non-blank id; an unknown milestone. The verb cannot know which states failed and does not try. A second call for the same milestone and round replaces that record. Add the array to `PlanStore`, its `from_toml` and `to_toml` and its `Default`, written only when non-empty, and give `write_version` a tier above the current highest that applies only when the array is non-empty, so a store without an acceptance keeps its stamp; fill every `PlanStore` literal in this task's files. Register the leaf in `PlanRunOp` and the plan run dispatch, with its `mod` line. Prints `{"ok":true,"milestone":"<id>","round":<n>}`. Add the case to tests/output_options.rs, a `## plan run visual` section with flag table, payload keys and output to references/plan-run.md, and the array with its keys and the new stamp to references/plan-store.md. Tests in tests/plan_run_records.rs: a valid acceptance is stored and round-trips, and a later unrelated plan write keeps it; a control named as a state, a non-look entry and a blank why are each refused; a second call for the same round replaces the first; a store without the array keeps its version. `SCHEMA_VERSION` in plan/schema.rs is both the newest stamp read and the request tier: raise the read ceiling by one for the acceptance tier and keep the request tier at its present number under its own name."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "exempt-rows-off-the-capture-paths-from-planui-accept-structural"
+title = "Exempt rows off the capture paths from plan/ui-accept-structural"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/plan/check.rs",
+    "tomlctl/tests/plan_check.rs",
+    "claude/skills/tomlctl/references/plan.md",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = "Make `plan/ui-accept-structural` skip a row whose `files` match none of `.claude/ui-capture.toml`'s `paths`."
+detail = "`ui_capture::load_paths` already returns the `paths` globs and `ui_scope_findings` already matches a row's `files` against them through `normal_path`. Load the globs once in `findings`, pass them to `ui_findings` as well, and add to the `plan/ui-accept-structural` condition that at least one of the row's files matches a glob. When the glob set is empty, because the file or its `paths` key is absent, apply no filter, so the warning fires as today. A malformed config still yields the one warning `ui_scope_findings` already reports for it, not a second one, and applies no filter. Reword the class's row in references/plan.md to say a row touching no capture path is exempt when the project declares `paths`. Tests in tests/plan_check.rs beside the existing ui-accept-structural test, using `write_capture_config`: a row whose files match no path draws no warning; a row whose file matches still does; with no config the existing test's result stands. Name the first of those tests `ui_accept_structural_skips_a_row_off_the_capture_paths`, and use the word `exempt` in the reworded class row."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "advertise-the-plan_run_visual-feature"
+title = "Advertise the plan_run_visual feature"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Add the feature string `plan_run_visual`."
+detail = "Targets, each edited once: (1) tomlctl/src/cli/types/mod.rs: append `plan_run_visual` to `FEATURES` beside `plan_run_records`. (2) tomlctl/tests/capabilities.rs: add it to the list in `capabilities_features_contains_every_plan_feature`. (3) tomlctl/README.md: add it to the sample capabilities block and the feature table, and name `plan run visual` wherever the run-record leaves are listed."
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "let-the-engine-commit-and-report-an-accepted-visual-failure"
+title = "Let the engine commit and report an accepted visual failure"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+needs = [
+    9,
+    11,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite the engine's visual-pass stop so the user can accept a failed last round, and the commit, the report and re-entry all read the recorded acceptance."
+detail = """visual.md, `Two rounds at most`: when a pass still finds a defect after the last round, ask the user through `AskUserQuestion` whether to accept the look as it is or leave the milestone uncommitted; the question names each failing state, its look criterion and the defect. On acceptance, in this order: capture one backlog item for the waived defects by the `backlog-capture` skill (`backlog check`, then `backlog add`, kind `debt`, the flow as `flow`, the states and criteria in the context), then stage a payload under `<scratch>` and run `tomlctl plan run visual --slug <slug> --milestone <id> --round <r> --accept --json '@<path>'` with the user's words as `why`, the failing states, their look entries as `{task, accept}` exactly as `gate-list`'s `visual.looks` prints them, the defects and the backlog id. Each defect is `{state, class, location, detail, note}`: `class`, `location` and `detail` copied from the index entry's defect and `note` the state's inspector note path; a state the orchestrator settled from `unsure` to `fail` has no index defect and is recorded with `class = "unsure"`, an empty `location`, `detail` the one sentence saying what the note left unsettled, and the same note path; then go to the commit. An unsound run (a control that passed) and a capture failure have no verdict to waive and are never offered for acceptance. visual.md, step 2 and `Re-entry`: before capturing, read `tomlctl items list .claude/flows/<slug>/plan.toml --array visual_accept --where milestone=<id> --where round=<r> --get round`; a row for the current round means the pass is skipped and the milestone goes to the commit. drain.md, step 10's entry condition, `Stamping on re-entry` and `Next`: the commit runs once the visual pass has passed or its last round is accepted; a failed round without an acceptance still reaches the report with no commit. SKILL.md: the step table's visual and commit rows and `Unstamped milestones` say the same. report.md: add a `gate:` line template `milestone <id> visual round <r> accepted: <states>; backlog <B-id>`, recorded under kind `gate` with `needs_person = false`. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "let-a-visual-fix-tasks-worker-capture-its-own-states"
+title = "Let a visual fix task's worker capture its own states"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/skills/ui-capture/SKILL.md",
+]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Have the visual pass write the capture details into each look-defect fix task, and permit that task's worker to run the capture for its own states and read the result before returning done."
+detail = """visual.md, `Fix tasks`: every fix task minted for a defect, a `look` defect or any other (but not a capture failure), also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = "required"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "require-the-new-features-in-the-implement-v2-pre-flight"
+title = "Require the new features in the /implement-v2 pre-flight"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/commands/implement-v2.md"]
+needs = [
+    8,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add `plan_emit_commit_paths`, `effect_mark`, `plan_run_gate_blocks` and `plan_run_visual` to the features the /implement-v2 pre-flight refuses a binary without."
+detail = "In claude/commands/implement-v2.md, add the four strings to the feature list the pre-flight checks, and extend the sentence that says what the refusal covers with: the `plan emit commit-paths` leaf, the external-effect mark, `plan run gate --blocks` and `plan run visual`. Change nothing else. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
+acceptance = ""
+agent = ""
+commit = ""
