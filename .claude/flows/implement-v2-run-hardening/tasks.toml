@@ -599,7 +599,7 @@ check = "grep -q '^## 10. Commit' claude/skills/implement-v2-engine/references/d
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -609,7 +609,7 @@ check = "grep -q 'holds nothing back' claude/skills/implement-v2-engine/referenc
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -894,7 +894,7 @@ check = "grep -q 'Two rounds at most' claude/skills/implement-v2-engine/referenc
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -902,6 +902,11 @@ verdict = "holds"
 claim = "the plan store carries the visual_accept array"
 check = "grep -q 'visual_accept' tomlctl/src/plan/schema.rs"
 at = "after:11"
+
+[specs.premises.probe]
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
+neg_rc = 0
+verdict = "holds"
 
 [[specs]]
 ref = "let-a-visual-fix-tasks-worker-capture-its-own-states"
@@ -968,7 +973,7 @@ check = "grep -q 'is never yours to run' claude/agents/plan-worker-deep.md"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -978,7 +983,7 @@ check = "grep -q 'plan-worker-procedure' scripts/shared-blocks.toml"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1018,7 +1023,7 @@ check = "grep -q 'plan_emit_lane_check' claude/commands/implement-v2.md"
 at = "base"
 
 [specs.premises.probe]
-at = "1502e6b420be81caac7bc44ae0e369dc20e461c9"
+at = "89d464228e198a865b16e3436a61f2af5f7567f8"
 neg_rc = 0
 verdict = "holds"
 
@@ -1420,7 +1425,7 @@ id = 9
 ref = "rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"
 title = "Rewrite the drain to use commit-paths, held commands and gate blocks"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1441,15 +1446,15 @@ deps_note = ""
 action = "Rewrite drain.md steps 3, 7 and 10 so the orchestrator stages from `plan emit commit-paths`, holds the commands `gate-list` prints under `held`, and records a gate run with `plan run gate --blocks`."
 detail = "Step 10 (Commit): the milestone commit stages exactly `tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for work --get paths`; say what `unmatched` and `ignored` mean and that an ignored row file is reported, never force-added. The flow-store commit, after the stamp, the backlog reconcile and the report, stages `--for flow --get paths`, replacing the hand-written `git status --porcelain --ignored` pathspec and its `!!` handling with the `ignored` rows. Remove the `plan drift --uncommitted --get uncommitted_files` staging recipe and the byte-for-byte comparison from step 10; `plan drift` stays wherever the drain uses it for drift. Update `Stamping on re-entry` to test with the same verb. Keep the rules against `git add -A`, `git add .` and `commit -a`. Step 7 (Gate): replace the sentence that the verb holds nothing back; the held commands are `gate-list`'s `held` rows, dispatched in a second verification call only once every command of the first call passed, and are always held. A gate command the plan did not mark that installs, links or deploys is still held by the orchestrator's judgement, exactly as today: `held` adds to that judgement and never replaces it. Timeouts and the `rerun:` and `transient:` options stay the orchestrator's. Replace the hand-staged `[[record]]` block and its field-mapping paragraph with: write the verification agent's returned text unchanged to a file under `<scratch>` and pass it as `--blocks <path>`. Step 3 (What the run's agents ran): pass a `--gate` to `agents audit` for each `held` command as well as each `commands` entry. In apply-rows.md, questions.md and run-milestone.md, replace each paragraph that restates which paths a commit stages (the external review stores, the inputs store, the pre-flight's clean-tree pathspec where it repeats the list) with a pointer to the two `commit-paths` calls; leave every other paragraph as it is. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "df04166aa98a5b89db29a04db337dc28b0ca2ab7"
 
 [[items]]
 id = 10
 ref = "teach-plan-authoring-the-external-effect-mark"
 title = "Teach plan authoring the external-effect mark"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1464,8 +1469,8 @@ deps_note = ""
 action = "Add the external-effect mark to the plan-v2 engine's Design and Write rules and the `plan/needs-gate-effect` warning to its store-check list."
 detail = """Three edits to write-and-prove.md. (1) Section 1, Milestones, after the gate-probe paragraph: a gate that changes something outside the build, such as an install, a link or a deploy, is added with `--external-gate '<command>'` instead of `--gate`, so the drain holds it until the other gate commands pass. (2) Section 3, the spec rules, in the `run_by` bullet: a gate-run accept check that deploys or installs carries `effect = "external"`; the mark is refused on any entry the gate does not run. (3) Section 4a, in the paragraph listing how each finding is handled: a `plan/needs-gate-effect` warning names a row that needs a same-milestone row whose external check only the gate runs; the effect will not exist while the row runs, so move the dependent row to a later milestone, or have it produce the effect itself and say so in its `detail`, unless the need is for file order alone. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "df04166aa98a5b89db29a04db337dc28b0ca2ab7"
 
 [[items]]
 id = 11
@@ -1551,7 +1556,7 @@ id = 14
 ref = "let-the-engine-commit-and-report-an-accepted-visual-failure"
 title = "Let the engine commit and report an accepted visual failure"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1571,15 +1576,15 @@ deps_note = ""
 action = "Rewrite the engine's visual-pass stop so the user can accept a failed last round, and the commit, the report and re-entry all read the recorded acceptance."
 detail = """visual.md, `Two rounds at most`: when a pass still finds a defect after the last round, ask the user through `AskUserQuestion` whether to accept the look as it is or leave the milestone uncommitted; the question names each failing state, its look criterion and the defect. On acceptance, in this order: capture one backlog item for the waived defects by the `backlog-capture` skill (`backlog check`, then `backlog add`, kind `debt`, the flow as `flow`, the states and criteria in the context), then stage a payload under `<scratch>` and run `tomlctl plan run visual --slug <slug> --milestone <id> --round <r> --accept --json '@<path>'` with the user's words as `why`, the failing states, their look entries as `{task, accept}` exactly as `gate-list`'s `visual.looks` prints them, the defects and the backlog id. Each defect is `{state, class, location, detail, note}`: `class`, `location` and `detail` copied from the index entry's defect and `note` the state's inspector note path; a state the orchestrator settled from `unsure` to `fail` has no index defect and is recorded with `class = "unsure"`, an empty `location`, `detail` the one sentence saying what the note left unsettled, and the same note path; then go to the commit. An unsound run (a control that passed) and a capture failure have no verdict to waive and are never offered for acceptance. visual.md, step 2 and `Re-entry`: before capturing, read `tomlctl items list .claude/flows/<slug>/plan.toml --array visual_accept --where milestone=<id> --where round=<r> --get round`; a row for the current round means the pass is skipped and the milestone goes to the commit. drain.md, step 10's entry condition, `Stamping on re-entry` and `Next`: the commit runs once the visual pass has passed or its last round is accepted; a failed round without an acceptance still reaches the report with no commit. SKILL.md: the step table's visual and commit rows and `Unstamped milestones` say the same. report.md: add a `gate:` line template `milestone <id> visual round <r> accepted: <states>; backlog <B-id>`, recorded under kind `gate` with `needs_person = false`. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "df04166aa98a5b89db29a04db337dc28b0ca2ab7"
 
 [[items]]
 id = 15
 ref = "let-a-visual-fix-tasks-worker-capture-its-own-states"
 title = "Let a visual fix task's worker capture its own states"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1596,15 +1601,15 @@ deps_note = ""
 action = "Have the visual pass write the capture details into each look-defect fix task, and permit that task's worker to run the capture for its own states and read the result before returning done."
 detail = """visual.md, `Fix tasks`: every fix task minted for a defect, a `look` defect or any other (but not a capture failure), also carries (a) in `spec.outcome`, the defect as the inspector located it: the state, the defect class, the location and the inspector note's path, since the `reason` that holds them is not shown to a worker; and (b) one `spec.means` entry, `binding = "required"`, whose `text` is the exact command `<command> --out <out>/<id>-<r>-task-<n>/ --only <state>` with one `--only` per state of the task's look entry, `<command>` and `<out>` read from `.claude/ui-capture.toml`, and whose `detail` says to run it after the edit, read each `<state>.png` or `<state>.txt` and `geometry.json` against the look criterion and the `ui-capture` skill's defect rubric, and fix what it shows before returning done. Because `<n>` is the id `add-many` prints, the mint adds the row first and sets the means with a `tasks update` naming that id. A capture-failure task carries no such entry. State that `<out>/<id>-<r>-task-<n>/` is the worker's own directory, exempt from the clean-tree and out-of-lane checks like every path under `<out>`, and that the worker's capture changes no verdict and no round count. Worker files: inside the shared `plan-worker-procedure` block, byte-identical in both files, narrow the rule that a `Run by: look` entry is never the worker's to run with one exception: a task whose spec carries a required means naming the capture command runs exactly that command, into exactly that directory, and reads the result; it runs no other capture, judges no other state, and when the capture fails naming no file of its own task it repairs nothing, names the failed capture in its run note, and returns the status its own edit and other checks earned, since the inspector's next pass still judges the state. The exception names the `ui-capture` skill as where the command's contract and the defect rubric live. Add the matching carve-out to the forbidden-operations rule about writing outside the task's files, for that directory only. ui-capture/SKILL.md: add a short note that a visual fix worker may run the command for its own states while other workers do the same, so a capture command should tolerate concurrent runs, for example by not binding a fixed port. After editing, run `bash scripts/verify-shared-blocks.sh` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."""
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-deep"
+commit = "df04166aa98a5b89db29a04db337dc28b0ca2ab7"
 
 [[items]]
 id = 16
 ref = "require-the-new-features-in-the-implement-v2-pre-flight"
 title = "Require the new features in the /implement-v2 pre-flight"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -1619,8 +1624,8 @@ deps_note = ""
 action = "Add `plan_emit_commit_paths`, `effect_mark`, `plan_run_gate_blocks` and `plan_run_visual` to the features the /implement-v2 pre-flight refuses a binary without."
 detail = "In claude/commands/implement-v2.md, add the four strings to the feature list the pre-flight checks, and extend the sentence that says what the refusal covers with: the `plan emit commit-paths` leaf, the external-effect mark, `plan run gate --blocks` and `plan run visual`. Change nothing else. After editing, run `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests`."
 acceptance = ""
-agent = ""
-commit = ""
+agent = "plan-worker-lite"
+commit = "df04166aa98a5b89db29a04db337dc28b0ca2ab7"
 
 [[items]]
 id = 17

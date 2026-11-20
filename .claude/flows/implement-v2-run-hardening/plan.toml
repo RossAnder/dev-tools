@@ -504,6 +504,32 @@ rest = "dae2fcd93482fcc9"
 rows = "cdfcf3509e450411"
 specs = "29c2002c8b552dfd"
 
+[[run]]
+step = "implement:B"
+workflow = "implement-v2-milestone"
+args_hash = "609c30bce67111d95d51f558b56d53651c5b281ef4b0e3a97e4051403fb96620"
+run_id = "wf_e3fe0068-ad0"
+session = "7291449b-6562-415b-beb5-2fe1019e38dc"
+started = 2026-11-20T15:11:13Z
+finished = 2026-11-20T15:16:34Z
+skip_reason = ""
+outcome = "ok"
+tasks = [
+    9,
+    10,
+    14,
+    15,
+    16,
+]
+digest_at = 2026-11-20T15:10:58Z
+
+[run.store_digest]
+changes = "e3d5e5340862de8a"
+milestones = "4b39cacdd0051bb9"
+rest = "dae2fcd93482fcc9"
+rows = "0d345f834f3ce361"
+specs = "2a9c8d1200a17f31"
+
 [[handover]]
 id = "H1"
 reason = "restart"
@@ -1048,6 +1074,156 @@ tangential = []
 command = "rustfmt --edition 2024 --check tomlctl/tests/agents_audit.rs"
 result = "pass"
 
+[[attempt]]
+task = 9
+run_id = "wf_e3fe0068-ad0"
+milestone = "B"
+status = "done"
+summary = "drain steps 3, 7 and 10 now use commit-paths, gate-list's held rows and plan run gate --blocks"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/references/apply-rows.md",
+    "claude/skills/implement-v2-engine/references/questions.md",
+    "claude/skills/implement-v2-engine/references/run-milestone.md",
+]
+tangential = []
+
+[[attempt.deviations]]
+what = "The flow-store commit tells the orchestrator to read commit-paths' ignored list before recording the report and take paths from a call made after it"
+why = "The report must be recorded before the paths are listed, since it writes plan.toml, yet the ignored rows become reconcile entries in that same report; the old porcelain recipe had the same ordering gap unstated"
+means = "detail: replace the porcelain pathspec and its !! handling with the ignored rows"
+
+[[attempt.checks]]
+command = "grep -q 'plan emit commit-paths' claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q -- '--blocks' claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "! grep -q 'holds nothing back' claude/skills/implement-v2-engine/references/drain.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 10
+run_id = "wf_e3fe0068-ad0"
+milestone = "B"
+status = "done"
+summary = "external-effect mark and plan/needs-gate-effect added to write-and-prove.md"
+block = "present"
+files_touched = ["claude/skills/plan-v2-engine/references/write-and-prove.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q -- '--external-gate' write-and-prove.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'plan/needs-gate-effect' write-and-prove.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 14
+run_id = "wf_e3fe0068-ad0"
+milestone = "B"
+status = "done"
+summary = "the engine asks to accept a failed last visual round, records it with plan run visual, commits on it, reports it and skips it on re-entry"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/skills/implement-v2-engine/references/drain.md",
+    "claude/skills/implement-v2-engine/SKILL.md",
+    "claude/skills/implement-v2-engine/references/report.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q 'plan run visual' claude/skills/implement-v2-engine/references/visual.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'accepted' claude/skills/implement-v2-engine/references/drain.md && grep -q 'visual_accept' claude/skills/implement-v2-engine/SKILL.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'accepted' claude/skills/implement-v2-engine/references/report.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt.checks]]
+command = "tomlctl items list .claude/flows/implement-v2-run-hardening/plan.toml --array visual_accept --where milestone=B --where round=1 --get round"
+result = "pass"
+
+[[attempt]]
+task = 15
+run_id = "wf_e3fe0068-ad0"
+milestone = "B"
+status = "done"
+summary = "visual fix tasks carry a required capture means into their own directory, and both worker procedures permit exactly that capture"
+block = "present"
+files_touched = [
+    "claude/skills/implement-v2-engine/references/visual.md",
+    "claude/agents/plan-worker-deep.md",
+    "claude/agents/plan-worker-lite.md",
+    "claude/skills/ui-capture/SKILL.md",
+]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep -q -- '-task-<n>' claude/skills/implement-v2-engine/references/visual.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -q 'ui-capture' claude/agents/plan-worker-lite.md && grep -q 'ui-capture' claude/agents/plan-worker-deep.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "grep -qi 'concurrent' claude/skills/ui-capture/SKILL.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "bash scripts/verify-shared-blocks.sh"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
+[[attempt]]
+task = 16
+run_id = "wf_e3fe0068-ad0"
+milestone = "B"
+status = "done"
+summary = "pre-flight feature list and refusal sentence extended with the four new features"
+block = "present"
+files_touched = ["claude/commands/implement-v2.md"]
+deviations = []
+tangential = []
+
+[[attempt.checks]]
+command = "grep for the four feature strings in claude/commands/implement-v2.md"
+result = "pass"
+
+[[attempt.checks]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+result = "pass"
+
 [[gate_round]]
 milestone = "A"
 round = 0
@@ -1189,3 +1365,173 @@ duration_s = 232
 summary = ""
 failed_ids = []
 log = ""
+
+[[gate_round]]
+milestone = "B"
+round = 0
+seq = 1
+at = 2026-11-20T15:17:20Z
+outcome = "pass"
+
+[[gate_round.commands]]
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+exit = 0
+duration_s = 5
+summary = "libtest x1: 56 passed; 0 failed"
+failed_ids = []
+log = ""
+
+[[gate_round.commands]]
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+exit = 0
+duration_s = 1
+summary = ""
+failed_ids = []
+log = ""
+
+[[report]]
+at = 2026-11-20T15:18:20Z
+milestone = "B"
+why = "every milestone committed; the flow status is still to be moved"
+
+[[report.entries]]
+kind = "handover"
+task = 11
+text = "H1 from task 11 (restart): Close the glimpse pane, run `cargo install --path glimpse --locked` from the repo root, and reopen the pane, so glimpse links the tomlctl library that reads the new store keys. — when: After milestone B's commit.; done when: The reopened glimpse pane shows the implement-v2-run-hardening flow without a store version error."
+path = ""
+needs_person = true
+
+[[report.entries]]
+kind = "gate"
+task = 1
+text = "milestone A did not run task 1 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 2
+text = "milestone A did not run task 2 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 3
+text = "milestone A did not run task 3 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 4
+text = "milestone A did not run task 4 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 5
+text = "milestone A did not run task 5 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 6
+text = "milestone A did not run task 6 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 7
+text = "milestone A did not run task 7 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 8
+text = "milestone A did not run task 8 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 11
+text = "milestone A did not run task 11 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 12
+text = "milestone A did not run task 12 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 13
+text = "milestone A did not run task 13 accept 0: covered_by cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 9
+text = "milestone B did not run task 9 accept 3: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 10
+text = "milestone B did not run task 10 accept 2: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 14
+text = "milestone B did not run task 14 accept 3: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 15
+text = "milestone B did not run task 15 accept 3: covered_by bash scripts/verify-shared-blocks.sh"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "gate"
+task = 16
+text = "milestone B did not run task 16 accept 1: covered_by cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "run wf_2b813c25-3ee (A round 1): 14 commands from 6 agents, all allowed: cli::dispatch::tests subset, clippy compile checks, and lib or nextest filters narrowing the tasks' own accept checks"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "runs wf_6a659b70-127 and wf_e47100e9-fd8 (A fix rounds): no build or suite command reported"
+path = ""
+needs_person = false
+
+[[report.entries]]
+kind = "audit"
+task = 0
+text = "run wf_e3fe0068-ad0 (B): 7 commands from 5 agents, all allowed: the cli::dispatch::tests subset and bash scripts/verify-shared-blocks.sh, which task 15's accept check is covered by"
+path = ""
+needs_person = false

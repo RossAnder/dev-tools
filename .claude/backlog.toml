@@ -13818,7 +13818,7 @@ tags = [
     "implement-v2",
     "commit",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13830,6 +13830,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-091e2d4f"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-d1b276a6"
@@ -13840,7 +13845,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13852,6 +13857,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-92183e4a"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-5a1c96eb"
@@ -13958,7 +13968,7 @@ tags = [
     "implement-v2",
     "visual",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13970,6 +13980,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-5680c91a"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks let-the-engine-commit-and-report-an-accepted-visual-failure)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["let-the-engine-commit-and-report-an-accepted-visual-failure"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-799bfc99"
@@ -13980,7 +13995,7 @@ tags = [
     "implement-v2",
     "visual",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -13992,6 +14007,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-5680c91a"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks let-a-visual-fix-tasks-worker-capture-its-own-states)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["let-a-visual-fix-tasks-worker-capture-its-own-states"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-ac9b8d59"
@@ -14052,7 +14072,7 @@ tags = [
     "implement-v2",
     "gate",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14064,6 +14084,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-8fb6b503"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["rewrite-the-drain-to-use-commit-paths-held-commands-and-gate-blocks"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-0f9fc8b5"
@@ -14074,7 +14099,7 @@ tags = [
     "plan-v2",
     "review",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-11-20T12:05:53Z
 last_seen = 2026-11-20T12:05:53Z
 seen_count = 1
@@ -14086,6 +14111,11 @@ base_sha = "2d87b19c61a59692b5123c4d3108dfc0b037d78c"
 related = ["B-651f0ed2"]
 promoted = 2026-11-20
 promoted_to = "implement-v2-run-hardening"
+resolved = 2026-11-20
+resolution = "resolved by flow `implement-v2-run-hardening` (tasks teach-plan-authoring-the-external-effect-mark)"
+resolved_flow = "implement-v2-run-hardening"
+resolved_tasks = ["teach-plan-authoring-the-external-effect-mark"]
+resolved_commits = ["df04166aa98a5b89db29a04db337dc28b0ca2ab7"]
 
 [[backlog]]
 id = "B-7dc0645c"
@@ -14799,3 +14829,324 @@ dedup_id = "34d901f99ba81275"
 origin = "v2-usage-audit"
 context = "Census 2026-11-14..20: investigators made 0 Context7 calls against 101 WebFetch and about 92 curl lookups; 15 of 126 calls missed or 404'd on guessed Cloudflare and Strapi URLs. Plan workers do follow Context7-first. Decide whether investigators should try Context7 (or a search) before guessing URLs."
 base_sha = "d840a59bdbfab07012e476f5ec5ed163c7026426"
+
+[[backlog]]
+id = "B-d7f07e99"
+kind = "bug"
+summary = "a gate failure that already reproduces at the milestone's base commit costs a fix round, since nothing reruns failed tests at the base"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "d7f07e999cf7bba9"
+origin = "v2-usage-audit"
+context = "2026-11-20: dev-tools implement-v2-run-hardening milestone A spent a round on a test already red at HEAD (commit 2b9163ff made outside the gate ran only unit tests); partnerhub_pages preview-cpu-trim made a deep fix task of a live-Strapi test that failed on changed data. Rerun failed ids at the base commit and route pre-existing failures to the backlog or the user without spending a round."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = ["B-686f291e"]
+
+[[backlog]]
+id = "B-5826b324"
+kind = "debt"
+summary = "fix and accept workers are forbidden to run their own reproducing check, so fix tasks fix tests they never ran and diagnose tasks cannot reproduce the failure"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "worker",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "5826b324c44b698f"
+origin = "v2-usage-audit"
+context = "drain.md:266 and the plan-worker contract forbid running an accept check that builds, while drain.md:381 makes the narrowest reproducing command the fix row's accept and CLAUDE.md allows a worker's own narrow test. dev-tools tasks 4 and 11 shipped broken tests and fix tasks 18/19 never ran theirs; partnerhub task 12 reads node_modules to find a 500 it may not reproduce (C's task 43, which did reproduce, found four causes). License a serial own-reproducer run."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+evidence = [
+    "claude/skills/implement-v2-engine/references/drain.md:266",
+    "claude/skills/implement-v2-engine/references/drain.md:381",
+]
+
+[[backlog]]
+id = "B-95a60315"
+kind = "debt"
+summary = "a fix round reruns the whole gate even when the fix rows' change is whitespace only; --rerun covers held commands and timeouts alone"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "gate",
+    "perf",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "95a603153e916642"
+origin = "v2-usage-audit"
+context = "dev-tools milestone A round 2 reran clippy and the full nextest suite (about 8 min) for a rustfmt-only fix. If git diff -w over the fix rows' files is empty, rerun only the failed commands."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = ["B-9fd68fe3"]
+
+[[backlog]]
+id = "B-21a538e7"
+kind = "debt"
+summary = "the drain gives no narrow-rerun pattern for bun test, so a slow or flaky bun property test becomes a fix task instead of a rerun"
+area = "claude/agents/verification.md"
+tags = [
+    "v2",
+    "verification",
+    "bun",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "21a538e702e69e14"
+origin = "v2-usage-audit"
+context = "partnerhub_pages preview-cpu-trim gate round 0 (2026-11-20): a property-test timeout was minted as a fix task; the gate prompt carried no rerun: for bun. Add per-runner rerun examples (bun test -t, vitest, nextest) to drain.md and verification.md."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-ec551154"
+kind = "debt"
+summary = "a replan fix task can contradict a recorded plan decision without the user being asked or the decision amended"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "replan",
+    "decisions",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "ec551154beb90367"
+origin = "v2-usage-audit"
+context = "partnerhub_pages preview-cpu-trim fix task 11 masks island uids, against D8 ('normalise exactly those and nothing else'). The replan should route a conflicting fix through plan decide and a user question (questions.md), never silently."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-2053e101"
+kind = "debt"
+summary = "plan-v2 Prove never runs a comparison gate on the unchanged tree, so a gate that fails at baseline is found only at the milestone gate"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "gate-probe",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "2053e10198517e3a"
+origin = "v2-usage-audit"
+context = "partnerhub_pages preview-cpu-trim: the static-identity gate (718 s) reported 401 differing files from build-noise island uids already known in commit 7be8b96, after D8 was written to forbid masking them. A negative-control run of each comparison gate on the base tree during Prove would have exposed it."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-db839166"
+kind = "debt"
+summary = "CLAUDE.md tells workers to leave rustfmt to the gate for a file with mod children, so format slips fail whole gate rounds"
+area = "CLAUDE.md"
+tags = [
+    "v2",
+    "rustfmt",
+    "worker",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "db83916683deb46b"
+origin = "v2-usage-audit"
+context = "dev-tools milestone A failed fmt in rounds 0 and 1: task 12 edited plan/check.rs (has mod children) and skipped the check per CLAUDE.md, fix task 18 skipped it on a leaf. rustfmt --check writes nothing, so a worker can run it on a parent file and read only the 'Diff in <own file>' lines (task 17 did). Optionally a worker-run fmt accept entry per .rs file, or an agents audit flag."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-10f25c40"
+kind = "question"
+summary = "CLAUDE.md requires a worker to run cli::dispatch::tests after a claude/**/*.md edit, but the plan marks it covered_by the gate, which the worker contract forbids running"
+area = "CLAUDE.md"
+tags = [
+    "v2",
+    "dispatch-tests",
+    "worker",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "10f25c40d2d91ecd"
+origin = "v2-usage-audit"
+context = "dev-tools implement-v2-run-hardening: task 7's worker skipped the dispatch subset for that reason; milestone B (all markdown under claude/) has the same split. Pick one owner and state it in both places."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = ["B-1f641966"]
+
+[[backlog]]
+id = "B-caa21ce6"
+kind = "bug"
+summary = "handover done-marks written by plan handover set --done are never committed, so they drift into an unrelated later commit"
+area = "claude/skills/implement-v2-engine"
+tags = [
+    "v2",
+    "implement-v2",
+    "handover",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "caa21ce69a19e46e"
+origin = "v2-usage-audit"
+context = "partnerhub_pages 2026-11-20: H9's done-mark rode into the user's unrelated commit 20d7159; H5's is still uncommitted and must be kept out of another flow's milestone commit. Add a flow-store commit after marking handovers done (report.md / handover step)."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-7414f8bb"
+kind = "debt"
+summary = "a plan worker may kill processes it did not start, and agents audit does not report it"
+area = "claude/agents/plan-worker-deep.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "worker",
+    "agents-audit",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "7414f8bb0e921096"
+origin = "v2-usage-audit"
+context = "partnerhub_pages site-worker-new-strapi task 31 ran taskkill /F /IM workerd.exe, killing every local workerd including other workers' and the user's. Add a rule (kill only PIDs you started) and an audit pattern for taskkill/pkill/Stop-Process."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = ["B-dcecc52a"]
+
+[[backlog]]
+id = "B-0e2db574"
+kind = "question"
+summary = "a later visual round re-judges every state and can fail one an earlier round passed, so inspector variance alone can spend the last round"
+area = "claude/skills/implement-v2-engine/references/visual.md"
+tags = [
+    "v2",
+    "visual",
+    "ui-inspector",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "0e2db574a2038353"
+origin = "v2-usage-audit"
+context = "partnerhub_pages milestone C round 2 failed a 180 px brand-selector defect that round 1 passed on the same code. Options: re-judge only states the fix tasks touch, or carry a passed state's verdict unless its capture changed."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = [
+    "B-6024ee29",
+    "B-799bfc99",
+]
+
+[[backlog]]
+id = "B-746defef"
+kind = "debt"
+summary = "the drain's fix-row template shows no run_by or covered_by, and tasks add-many refuses covered_by with run_by gate, so the orchestrator patches staged fix rows by hand"
+area = "claude/skills/implement-v2-engine/references/drain.md"
+tags = [
+    "v2",
+    "implement-v2",
+    "tomlctl",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "746defef9df6e547"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-20 14:46: add-many refused the fix rows and the orchestrator patched the staged file with sed; carry-forward of run_by never reached rows minted in the same round. State the reproducer's owner in the template."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+evidence = ["claude/skills/implement-v2-engine/references/drain.md:236"]
+
+[[backlog]]
+id = "B-a5ffe79b"
+kind = "debt"
+summary = "tomlctl shape refusals the docs do not warn about cost orchestrator retries: string spec.design, tasks list --with, plan check --get on a header field, files outside set, no verb to edit a milestone rationale"
+area = "claude/skills/tomlctl/references/tasks-write.md"
+tags = [
+    "v2",
+    "tomlctl",
+    "docs",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "a5ffe79b3ca7cb46"
+origin = "v2-usage-audit"
+context = "Seen 2026-11-20 in partnerhub_pages and dev-tools runs, each worked around (sed on a staged file, a second call). Coerce where unambiguous (a string design to a one-element shape) or document the shapes in tasks-write.md and plan.md."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+
+[[backlog]]
+id = "B-157c8fe4"
+kind = "bug"
+summary = "plan run gate keeps the last 200 lines of a command's log, which for nextest are all PASS lines, so the stored log loses the failure detail"
+area = "tomlctl/src/plan"
+tags = [
+    "v2",
+    "implement-v2",
+    "gate",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "157c8fe4d3989d55"
+origin = "v2-usage-audit"
+context = "dev-tools milestone A gate log A-r0-s1-c3 holds 194 PASS lines and no failure. Keep the FAIL sections (or the narrow-rerun log) instead of a plain tail."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+related = ["B-2a33255a"]
+
+[[backlog]]
+id = "B-e56aeeef"
+kind = "bug"
+summary = "the verification agent's 540 s poll loop outlives the Bash tool's 180 s auto-background, so every long gate command is polled twice"
+area = "claude/agents/verification.md"
+tags = [
+    "v2",
+    "verification",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "e56aeeefa511043a"
+origin = "v2-usage-audit"
+context = "dev-tools 2026-11-20, every long gate command in milestone A (three verification dispatches). Cap one poll call at under 170 s."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
+evidence = ["claude/agents/verification.md:97"]
+
+[[backlog]]
+id = "B-08f10dce"
+kind = "debt"
+summary = "several tasks claiming one shared file serialise a milestone into a single long chain, and plan-v2 does not report the longest such chain"
+area = "claude/skills/plan-v2-engine/references/write-and-prove.md"
+tags = [
+    "v2",
+    "plan-v2",
+    "parallelism",
+]
+status = "open"
+created = 2026-11-20T15:12:32Z
+last_seen = 2026-11-20T15:12:32Z
+seen_count = 1
+dedup_id = "08f10dce19015855"
+origin = "v2-usage-audit"
+context = "dev-tools implement-v2-run-hardening milestone A: tasks 1, 3, 6 and 11 all claim tomlctl/src/cli/types/plan.rs, so a 4-slot pool ran one worker for long stretches and the chain set the 29-minute run. Report the longest same-file chain at Prove and suggest a foundational split."
+base_sha = "89d464228e198a865b16e3436a61f2af5f7567f8"
