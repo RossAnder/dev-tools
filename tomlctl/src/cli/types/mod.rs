@@ -211,11 +211,15 @@ pub(crate) const FEATURES: &[&str] = &[
     "plan_emit",
     "agents_audit",
     "plan_emit_lane_check",
+    "plan_emit_commit_paths",
+    "effect_mark",
+    "plan_run_gate_blocks",
     "milestone_schedule",
     // Plan records in the snapshot, run records, authored files, agent usage
     // and single-finding reads.
     "snapshot_plan_records",
     "plan_run_records",
+    "plan_run_visual",
     "authored_files",
     "agent_usage",
     "review_finding_read",

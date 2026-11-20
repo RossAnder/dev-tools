@@ -359,6 +359,9 @@ const REQUEST_ADD_SLUG: &str = "request-add";
 const REQUEST_OPEN_SLUG: &str = "request-open";
 const REQUEST_RULED_SLUG: &str = "request-ruled";
 const REQUEST_PAYLOAD: &str = r#"{"paths":[{"path":"src/new.rs","why":"a caller needs it"}]}"#;
+/// A flow whose milestone `A` declares the UI state `list-full`, which is what
+/// `plan run visual --accept` checks a payload's states against.
+const VISUAL_SLUG: &str = "visual-accept";
 const PROBE_CAPTURE: &str = "probe-capture.tsv";
 const PLAN_FILE: &str = "src/plan.rs";
 
@@ -1257,6 +1260,24 @@ fn cases() -> Vec<Case> {
         write(
             &[
                 "plan",
+                "run",
+                "visual",
+                "--slug",
+                VISUAL_SLUG,
+                "--milestone",
+                "A",
+                "--round",
+                "1",
+                "--accept",
+                "--json",
+                "-",
+            ],
+            "milestone",
+        )
+        .stdin(r#"{"why":"a known font issue","states":["list-full"],"backlog":"B-1"}"#),
+        write(
+            &[
+                "plan",
                 "milestone",
                 "add",
                 "--slug",
@@ -1378,6 +1399,22 @@ fn cases() -> Vec<Case> {
             ],
             One,
             "clean",
+        )
+        .git(),
+        read(
+            &[
+                "plan",
+                "emit",
+                "commit-paths",
+                "--slug",
+                PLAN_SLUG,
+                "--milestone",
+                "A",
+                "--for",
+                "work",
+            ],
+            One,
+            "paths",
         )
         .git(),
         read(
@@ -1632,6 +1669,20 @@ fn request_flow(root: &Path, slug: &str) {
     );
 }
 
+fn visual_flow(root: &Path) {
+    setup(root, &["plan", "open", "--slug", VISUAL_SLUG], "");
+    write_tasks_store(
+        &root
+            .join(".claude/flows")
+            .join(VISUAL_SLUG)
+            .join("tasks.toml"),
+        &PLAN_TASKS.replace("{slug}", VISUAL_SLUG).replace(
+            "defer_reason = \"\"",
+            "defer_reason = \"\"\nui_states = [\"list-full\"]",
+        ),
+    );
+}
+
 /// The three flows `plan request` leaves read, each reaching its state
 /// through the verbs.
 fn request_flows(root: &Path) {
@@ -1668,6 +1719,7 @@ fn request_flows(root: &Path) {
 /// `PLAN_FILE` is what gives `plan drift` an affected task.
 fn plan_flows(root: &Path) {
     request_flows(root);
+    visual_flow(root);
     open_plan(root, PLAN_SLUG);
     open_plan(root, READY_SLUG);
     open_plan(root, APPROVED_SLUG);

@@ -304,6 +304,7 @@ mod tests {
             after: after.iter().map(|a| (*a).to_string()).collect(),
             ui_states: Vec::new(),
             ui_controls: Vec::new(),
+            external_gates: Vec::new(),
         }
     }
 

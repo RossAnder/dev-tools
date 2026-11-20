@@ -294,7 +294,7 @@ table is refused. On an audited store `--reason` is required, blank is refused, 
 `[[changes]]` row with `field = "*"` carrying that reason.
 
 ```bash
-tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--ui-state <name>]... [--ui-control <name>]... [--defer --reason '<text>']
+tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<command>']... [--external-gate '<command>']... [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--ui-state <name>]... [--ui-control <name>]... [--defer --reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
@@ -302,6 +302,7 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 | `--id` | id | The milestone's id; blank is refused. | required |
 | `--goal` | text | What the milestone delivers. | required |
 | `--gate` | command, repeatable | Command that must pass at the milestone's drain. | none |
+| `--external-gate` | command, repeatable | A gate whose effect reaches outside the working tree, such as a deploy or an install. Appended to `gates` after the `--gate` commands, in the order given, and recorded in `external_gates`; a command given both as `--gate` and `--external-gate` is stored once, marked. [`plan emit gate-list`](plan-engine.md#plan-emit-gate-list) prints marked commands under `held`. | none |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Stores a [gate probe](plan-probes.md#gate-probes), split at the first ` :: `. `<gate>` must equal one of the milestone's gates; no separator, an empty side, or a probe equal to its gate is refused. | none |
 | `--after` | id, repeatable | An earlier milestone this one must run after, stored as `after`. It must name a checkpoint stored before this one, or `plan check` reports `plan/milestone-after-unknown` or `plan/milestone-after-forward`. | none |
 | `--ui-state` | name, repeatable | A capture state the milestone's visual pass judges, stored in `ui_states`. A name is lowercase letters, digits and `-`, starting with a letter or digit, at most 64 characters; a malformed or repeated name is refused. | none |
@@ -312,7 +313,8 @@ tomlctl plan milestone add --slug <slug> --id <id> --goal '<text>' [--gate '<com
 Prints `{"ok":true,"id":"A"}`.
 
 A milestone holding `ui_states` or `ui_controls`, or a task store holding a `look` accept entry, stamps
-`tasks.toml` at `schema_version = 3`, so a binary predating those keys refuses the store.
+`tasks.toml` at `schema_version = 3`, and a milestone holding `external_gates` at
+`schema_version = 4`, so a binary predating those keys refuses the store.
 
 ## `plan milestone update`
 
@@ -320,20 +322,21 @@ Changes a milestone named in `[[checkpoints]]`, creating its `[[milestones]]` ro
 unknown id is `kind=not_found`, and a call changing none of goal, gates, gate probes, after, UI
 states or controls, deferral or elaboration is refused. On an audited store it needs `--reason`, and
 appends one `[[changes]]` row per changed field with `ref = "milestone:<id>"`: `goal`, `gates`,
-`gate_probes`, `after`, `ui_states`, `ui_controls`, `elaboration`, `defer_reason`. A `gates`,
-`gate_probes`, `after`, `ui_states` or `ui_controls` row's `old` and `new` are compact JSON, such as
-`["a","b"]`.
+`external_gates`, `gate_probes`, `after`, `ui_states`, `ui_controls`, `elaboration`, `defer_reason`. A
+`gates`, `external_gates`, `gate_probes`, `after`, `ui_states` or `ui_controls` row's `old` and `new`
+are compact JSON, such as `["a","b"]`.
 
 ```bash
-tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
+tomlctl plan milestone update --slug <slug> --id <id> [--goal '<text>'] [--gate '<command>']... [--external-gate '<command>']... [--clear-gate] [--gate-probe '<gate> :: <probe>']... [--after <id>]... [--clear-after] [--ui-state <name>]... [--ui-control <name>]... [--clear-ui] [--defer] [--elaborated] [--reason '<text>']
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--id` | id | The milestone's id. | required |
 | `--goal` | text | Replaces the goal. | keeps it |
-| `--gate` | command, repeatable | Replaces the whole gate list. | keeps it |
-| `--clear-gate` | — | Empties the gate list, which `plan check` then reports as `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate`. | keeps it |
+| `--gate` | command, repeatable | Replaces the whole gate list and the whole `external_gates` list with what this call gives, so `--gate` alone leaves no gate marked. | keeps it |
+| `--external-gate` | command, repeatable | A gate marked external, stored as on `plan milestone add`. With or without `--gate`, replaces the whole gate list and the whole `external_gates` list. | keeps it |
+| `--clear-gate` | — | Empties the gate list and `external_gates`; `plan check` then reports `plan/milestone-no-gate`. Refused with `kind=validation` alongside `--gate` or `--external-gate`. | keeps it |
 | `--gate-probe` | `<gate> :: <probe>`, repeatable | Replaces the whole probe list, checked against the gates this call leaves; a pair already stored keeps its verdict. | keeps it |
 | `--after` | id, repeatable | Replaces the whole `after` list with the ids given, each a checkpoint stored before this one. | keeps it |
 | `--clear-after` | — | Empties the `after` list. Refused with `kind=validation` alongside `--after`. | keeps it |
@@ -533,9 +536,10 @@ reported as written.
 
 ## `plan emit`
 
-The `launch-args`, `gate-list` and `reproduce-units` leaves the execution engine builds its Workflow
-input, gate command list and reproduce launches from; their flags and output are
-[plan-engine.md](plan-engine.md#plan-emit).
+The `schedule`, `launch-args`, `gate-list`, `reproduce-units`, `lane-check` and `commit-paths`
+leaves the execution engine picks its next milestone, builds its Workflow input, gate command list
+and reproduce launches, checks a worker's lane and stages its two commits from; their flags and
+output are [plan-engine.md](plan-engine.md#plan-emit).
 
 ## Check classes
 
@@ -563,6 +567,7 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/accept-owner-invalid` | error | An `accept` entry's `run_by` is not `worker`, `gate`, `covered` or `look`; is `worker` on a check whose `writes_build` is not `false`; is `covered` with no `covered_by`; or a `covered_by` is set without `covered`. |
 | `plan/accept-cover-unknown` | error | An `accept` entry's `covered_by` equals no gate of its row's checkpoint milestone. |
 | `plan/gate-probe-unknown` | error | A milestone's stored gate probe names a gate that is no longer one of the milestone's gates. |
+| `plan/external-gate-unknown` | error | A milestone's `external_gates` entry equals none of the milestone's gates, as a hand edit can leave it. `plan milestone update --id <id>` with the gates restated through `--gate` and `--external-gate` clears it. |
 | `plan/means-required-no-reason` | error | A `means` entry with `binding = "required"` has a blank `detail`. |
 | `plan/design-anchor-dead` | error | A spec's `design` citation resolves to no section. |
 | `plan/deferred-no-reason` | error | A deferred milestone has a blank `defer_reason`. |
@@ -570,8 +575,9 @@ input, gate command list and reproduce launches from; their flags and output are
 | `plan/milestone-after-forward` | error | A milestone's `after` names itself or a milestone not stored before it in `[[checkpoints]]`. `plan milestone update --after <id>` with an earlier id, or `--clear-after`, clears it. |
 | `plan/probe-unhealthy` | error | An `accept` entry's recorded verdict is anything but `healthy`. |
 | `plan/probe-absent` | warning | An `accept` entry of a `pending` row, with a non-empty `check`, `writes_build = false` and an effective owner of `worker`, has no probe. A row added after approval, which an audited store marks with a `[[changes]]` row of `field = "*"` and an empty `old`, is not reported, since probes run only before approval. |
+| `plan/needs-gate-effect` | warning | A pending row whose `needs`, followed at any distance, reach another row of its own milestone holding a gate-run `accept` entry with `effect = "external"`. That effect exists only after the milestone's gate, so the row cannot observe it while it runs. One finding per row; `detail` names the row, the reached row and its check. A row reached in another milestone is not reported, since its milestone is committed before this one runs. |
 | `plan/milestone-no-gate` | warning | A milestone, or a checkpoint with no `[[milestones]]` row, has no non-blank gate. |
-| `plan/ui-accept-structural` | warning | A pending row, in a milestone that declares `ui_states` and is not deferred, has no `look` entry and every `accept` entry is `writes_build = false`, so its behaviour is accepted on reads alone. |
+| `plan/ui-accept-structural` | warning | A pending row, in a milestone that declares `ui_states` and is not deferred, has no `look` entry and every `accept` entry is `writes_build = false`, so its behaviour is accepted on reads alone. A row whose files match none of the capture config's `paths` is exempt when the project declares `paths`. |
 | `plan/ui-milestone-no-states` | warning | A milestone that is not deferred and declares no `ui_states` holds rows whose `files` match a `paths` glob of the project's `.claude/ui-capture.toml`; `ids` names those rows. A config that cannot be read or parsed is one finding naming no row. |
 | `plan/file-case-collision` | warning | A file a pending row creates has the same stem, the name without its last extension, as another file in its directory, on disk or planned by any row, spelled with different case. One stem under two extensions, or the same spelling twice, is no collision. |
 | `plan/generated-output-unheld` | warning | A pending row of a milestone that is not deferred holds an input of a generator declared in [`.claude/generated.toml`](generated.md) but not every output of it. `ids` names the row. A malformed config is one finding naming no row. |

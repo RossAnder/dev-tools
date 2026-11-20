@@ -1403,6 +1403,22 @@ fn check_ui_a_pending_row_proving_a_ui_milestone_on_reads_alone_warns() {
 }
 
 #[test]
+fn ui_accept_structural_skips_a_row_off_the_capture_paths() {
+    let flow = Flow::with_tasks(&ui_tasks(UI_LISTS, false));
+    write_capture_config(&flow, "paths = [\"ui/**\"]\n");
+    assert_clean(&flow);
+
+    let flow = Flow::with_tasks(&ui_tasks(UI_LISTS, false));
+    write_capture_config(&flow, "paths = [\"src/**\"]\n");
+    assert_reports_warning(&flow, "plan/ui-accept-structural");
+    assert_eq!(finding_ids(&flow, "plan/ui-accept-structural"), vec![1]);
+
+    let flow = Flow::with_tasks(&ui_tasks(UI_LISTS, false));
+    write_capture_config(&flow, "command = \"bun run visual-audit\"\n");
+    assert_reports_warning(&flow, "plan/ui-accept-structural");
+}
+
+#[test]
 fn check_ui_a_milestone_editing_capture_paths_with_no_states_warns() {
     let flow = Flow::with_tasks(TASKS);
     write_capture_config(&flow, "paths = [\"src/**\"]\n");
@@ -1627,4 +1643,107 @@ fn a_malformed_generated_config_warns_once_naming_no_row() {
     write_generated_config(&flow, "generators = 3\n");
     assert_reports_warning(&flow, GENERATED_UNHELD);
     assert!(finding_ids(&flow, GENERATED_UNHELD).is_empty());
+}
+
+const NEEDS_GATE_EFFECT: &str = "plan/needs-gate-effect";
+
+/// The fixture's row with its accept made a gate-run check with an external effect.
+fn with_external_accept(tasks: &str) -> String {
+    swap(
+        tasks,
+        "writes_build = false, probe",
+        "writes_build = true, run_by = \"gate\", effect = \"external\", probe",
+    )
+}
+
+/// A second row, in milestone `checkpoint`, needing the first and sharing no file.
+fn needing_row(checkpoint: &str) -> String {
+    format!(
+        r#"
+[[specs]]
+ref = "read-deploy"
+outcome = "the deploy is read"
+accept = [{{ behaviour = "the page answers", check = "cargo test page", kind = "forward", positive = "", writes_build = false{PROBE} }}]
+
+[[items]]
+id = 2
+ref = "read-deploy"
+title = "Read deploy"
+effort = "S"
+status = "pending"
+checkpoint = "{checkpoint}"
+files = ["src/c.rs"]
+needs = [1]
+"#
+    )
+}
+
+const MILESTONE_B: &str = "\n[[checkpoints]]\nid = \"B\"\nrationale = \"the reader\"\n\n\
+                           [[milestones]]\nid = \"B\"\ngates = [\"cargo test\"]\n\
+                           elaboration = \"upfront\"\ndefer_reason = \"\"\n";
+
+#[test]
+fn a_same_milestone_need_on_a_gate_run_external_accept_warns() {
+    let tasks = format!("{}{}", with_external_accept(TASKS), needing_row("A"));
+    let flow = Flow::with_tasks(&tasks);
+    assert_reports_warning(&flow, NEEDS_GATE_EFFECT);
+    assert_eq!(
+        finding_ids(&flow, NEEDS_GATE_EFFECT),
+        vec![serde_json::json!(2)]
+    );
+    let (_, report) = flow.run();
+    let detail = report["findings"][0]["detail"].as_str().expect("a detail");
+    assert!(detail.contains("task 2 needs task 1"), "{detail}");
+    assert!(detail.contains("`cargo test retry`"), "{detail}");
+}
+
+#[test]
+fn a_need_reaching_the_effect_through_another_row_warns_on_each_row() {
+    let middle = needing_row("A")
+        .replace("read-deploy", "relay")
+        .replace("id = 2", "id = 3")
+        .replace("src/c.rs", "src/d.rs");
+    let reader = needing_row("A").replace("needs = [1]", "needs = [3]");
+    let tasks = format!("{}{middle}{reader}", with_external_accept(TASKS));
+    let flow = Flow::with_tasks(&tasks);
+    assert_eq!(
+        flow.classes(),
+        vec![
+            (NEEDS_GATE_EFFECT.to_string(), "warning".to_string()),
+            (NEEDS_GATE_EFFECT.to_string(), "warning".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn a_need_across_milestones_on_an_external_accept_does_not_warn() {
+    let tasks = format!(
+        "{}{MILESTONE_B}{}",
+        with_external_accept(TASKS),
+        needing_row("B")
+    );
+    assert_clean(&Flow::with_tasks(&tasks));
+}
+
+#[test]
+fn a_need_on_a_row_with_no_external_accept_does_not_warn() {
+    let tasks = format!("{TASKS}{}", needing_row("A"));
+    assert_clean(&Flow::with_tasks(&tasks));
+}
+
+#[test]
+fn an_external_gate_naming_no_gate_is_an_error() {
+    let marked = swap(
+        TASKS,
+        "gates = [\"cargo test\"]",
+        "gates = [\"cargo test\"]\nexternal_gates = [\"cargo test\"]",
+    );
+    assert_clean(&Flow::with_tasks(&marked));
+
+    let stray = swap(
+        TASKS,
+        "gates = [\"cargo test\"]",
+        "gates = [\"cargo test\"]\nexternal_gates = [\"cargo install --path .\"]",
+    );
+    assert_reports_error(&Flow::with_tasks(&stray), "plan/external-gate-unknown");
 }

@@ -172,6 +172,16 @@ fn parse_log(log: &str, owned: &[String], flow_dir: &str) -> BTreeSet<String> {
 /// its deleted source and its new path. Paths under either of the flow's
 /// directories are its stores and its run notes, which are never drift.
 pub(super) fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<String>> {
+    let skip = [
+        format!(".claude/flows/{slug}/"),
+        format!("docs/flows/{slug}/"),
+    ];
+    Ok(parse_status(&git_status(root, &[], &[])?, &skip))
+}
+
+/// The raw `-z` output of the status read `uncommitted_files` makes, with
+/// `extra` flags added and narrowed to `pathspecs` when any are given.
+pub(super) fn git_status(root: &Path, extra: &[&str], pathspecs: &[String]) -> Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -182,6 +192,9 @@ pub(super) fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<Stri
             "--no-renames",
             "--untracked-files=all",
         ])
+        .args(extra)
+        .arg("--")
+        .args(pathspecs)
         .output()
         .map_err(|e| tagged_err(ErrorKind::Other, None, format!("git status: {e}")))?;
     if !out.status.success() {
@@ -194,19 +207,22 @@ pub(super) fn uncommitted_files(root: &Path, slug: &str) -> Result<BTreeSet<Stri
             ),
         ));
     }
-    let skip = [
-        format!(".claude/flows/{slug}/"),
-        format!("docs/flows/{slug}/"),
-    ];
-    Ok(parse_status(&String::from_utf8_lossy(&out.stdout), &skip))
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Each NUL-terminated entry is two status bytes, a space, then the path.
+pub(super) fn status_entries(status: &str) -> impl Iterator<Item = (&str, &str)> {
+    status.split('\0').filter_map(|entry| {
+        let code = entry.get(..2)?;
+        let path = entry.get(3..)?;
+        (!path.is_empty()).then_some((code, path))
+    })
+}
+
 fn parse_status(status: &str, skip: &[String]) -> BTreeSet<String> {
-    status
-        .split('\0')
-        .filter_map(|entry| entry.get(3..))
-        .filter(|path| !path.is_empty() && !skip.iter().any(|dir| path.starts_with(dir.as_str())))
+    status_entries(status)
+        .map(|(_, path)| path)
+        .filter(|path| !skip.iter().any(|dir| path.starts_with(dir.as_str())))
         .map(str::to_string)
         .collect()
 }

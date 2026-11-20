@@ -429,7 +429,8 @@ pub(crate) enum AgentsOp {
         #[arg(long = "transcripts", value_name = "DIR")]
         transcripts: std::path::PathBuf,
         /// Regex a command must match; repeatable. Without one, the build and
-        /// test-suite runs of the common toolchains are reported.
+        /// test-suite runs of the common toolchains, and a `bun`/`node` eval
+        /// command naming a file under `scripts/`, are reported.
         #[arg(long = "pattern", value_name = "REGEX")]
         pattern: Vec<String>,
         /// A gate command, taken literally; repeatable. A command containing

@@ -1859,11 +1859,15 @@ fn capabilities_features_contains_every_plan_feature() {
         "plan_emit",
         "agents_audit",
         "plan_emit_lane_check",
+        "plan_emit_commit_paths",
+        "effect_mark",
+        "plan_run_gate_blocks",
         "milestone_schedule",
         // Plan records in the snapshot, run records, authored files, agent
         // usage and single-finding reads.
         "snapshot_plan_records",
         "plan_run_records",
+        "plan_run_visual",
         "authored_files",
         "agent_usage",
         "review_finding_read",
@@ -1915,8 +1919,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.25.0",
-        "expected version `0.25.0` (the minor bump for `plan request` and the generator config); got `{version}`"
+        version, "0.26.0",
+        "expected version `0.26.0` (the minor bump for `plan request` and the generator config); got `{version}`"
     );
 }
 

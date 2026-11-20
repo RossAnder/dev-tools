@@ -5,8 +5,10 @@
 mod approve;
 pub(crate) mod authored;
 pub(crate) mod check;
+mod commit_paths;
 mod drift;
 mod emit;
+mod gate_blocks;
 mod holders;
 mod lane;
 mod milestone;
@@ -19,6 +21,7 @@ mod run_gate;
 mod run_note;
 mod run_notes;
 mod run_report;
+mod run_visual;
 mod schedule;
 mod stage;
 pub(crate) mod target;

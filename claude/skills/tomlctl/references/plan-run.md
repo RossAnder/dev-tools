@@ -1,8 +1,9 @@
 # tomlctl — plan run records reference
 
-The three `plan run` leaves that record what an `/implement-v2` invocation did, in `plan.toml`:
+The four `plan run` leaves that record what an `/implement-v2` invocation did, in `plan.toml`:
 `plan run notes` (one `[[attempt]]` per dispatched task), `plan run gate` (one `[[gate_round]]` per
-gate run) and `plan run report` (one `[[report]]` per invocation). Each takes the required `--slug`
+gate run), `plan run report` (one `[[report]]` per invocation) and `plan run visual` (one
+`[[visual_accept]]` per accepted visual round). Each takes the required `--slug`
 and the write bundle described in [plan.md](plan.md), which also holds `plan run start`, `finish`,
 `abandon` and `skip` and every other `plan` verb. The arrays' keys are
 [plan-store.md](plan-store.md)'s. Which drain step reaches for each leaf is owned by the
@@ -13,6 +14,7 @@ and the write bundle described in [plan.md](plan.md), which also holds `plan run
 - [`plan run notes`](#plan-run-notes)
 - [`plan run gate`](#plan-run-gate)
 - [`plan run report`](#plan-run-report)
+- [`plan run visual`](#plan-run-visual)
 
 ## `plan run notes`
 
@@ -68,16 +70,29 @@ A relative `log` resolves against the current directory. The verb reads a log on
 
 ```bash
 tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --ndjson <path> [--rerun]
+tomlctl plan run gate --slug <slug> --milestone <id> --round <n> --blocks <path> [--rerun]
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--milestone` | id | The milestone whose gate ran. | required |
 | `--round` | integer | `0` for the milestone's first gate run, the fix round's number after that. | required |
-| `--ndjson` | source | One row per command, `-` for stdin or a file path (a leading `@` is accepted, and a `.toml` path is a [record file](write.md)). `command` and `outcome` (`pass`, `flaky`, `fail`, `timeout`) are required; an absent or `null` `exit` is omitted from the store; `duration_s` (whole seconds, a fraction rounded), `summary`, `failed_ids` and `log` default to empty. An unknown key or outcome, a blank `command` or a command named twice refuses the batch before any write, naming the line. | required |
+| `--ndjson` | source | One row per command, `-` for stdin or a file path (a leading `@` is accepted, and a `.toml` path is a [record file](write.md)). `command` and `outcome` (`pass`, `flaky`, `fail`, `timeout`) are required; an absent or `null` `exit` is omitted from the store; `duration_s` (whole seconds, a fraction rounded), `summary`, `failed_ids` and `log` default to empty. An unknown key or outcome, a blank `command` or a command named twice refuses the batch before any write, naming the line. | one of `--ndjson` and `--blocks` |
+| `--blocks` | source | The `verification` agent's returned text as it was returned, `-` for stdin or a file path; excludes `--ndjson`. Each pass line and each block becomes one of the rows `--ndjson` takes, with the same refusals; see [Reading the verification agent's text](#reading-the-verification-agents-text). | one of `--ndjson` and `--blocks` |
 | `--rerun` | flag | Merge into the round's latest run, replacing the commands named by `command`, appending new ones and keeping the rest; refused with `kind=validation` when the round has no run. Without it the call records a new run, `seq` one past the round's highest, so a later gate run never overwrites an earlier one. | off |
 
 Prints `{"ok":true,"milestone":"A","round":0,"outcome":"fail","commands":[{"command":"cargo test","outcome":"fail","log":".claude/flows/<slug>/gates/A-r0-s1-c1.log"}],"unread":[]}`: `commands` is the round's stored commands after the merge, `unread` the commands of this call whose log was not read; `--lines` splits on `commands`.
+
+### Reading the verification agent's text
+
+`--blocks` reads the two entry shapes `claude/agents/verification.md` returns, without changing that format.
+
+- **A pass line**, `outcome: pass | command: <command> | duration: <n> | summary: <text> | log: <path>`, with an optional ` | retried: transient` tail that is dropped. `command` runs to the last ` | duration: ` followed by an integer and ` | summary: `, and `summary` to the last ` | log: `, so a command holding a shell pipe and a summary holding ` | ` are both kept whole. The row stores `exit = 0`.
+- **A block**, for `fail`, `timeout` and `flaky`: a `command: <command>` line directly followed by a line starting `outcome: `, then `exit:` (`none` means absent), `duration_s:`, `log:`, `summary:` and an optional `failed_ids:`. `retried:`, `rerun:`, `TANGENTIAL:` and `tail:` produce no key, and the raw log lines after `tail:` are skipped. A tail ends at a `command: ` line directly followed by an `outcome: ` line, a line starting `outcome: pass | command: `, a line starting `not_run:`, or the end of the text. A refused-command block, carrying only `command`, `outcome`, `exit: none` and `tail:`, takes the defaults.
+
+`summary: none` is the empty summary in both shapes. The command is stored byte for byte, quotes and backslashes included, so `--rerun` replaces the same command rather than adding a second. Blank lines, fence lines and any other line between entries are skipped; text that yields no row is refused with `kind=validation`.
+
+**Failed ids.** When `<log>.ids` exists beside a block's `log` and lies under the OS temp directory, the same rule the kept tail follows, `failed_ids` is its lines, one id each, so an id holding a space and every id past the twentieth are kept. Otherwise the block's `failed_ids:` value is split on spaces and a trailing `(+<n> more)` is dropped.
 
 ## `plan run report`
 
@@ -95,3 +110,30 @@ tomlctl plan run report --slug <slug> --milestone <id> --why <text> [--ndjson <p
 | `--ndjson` | source | One row per entry, `-` for stdin or a file path (a leading `@` is accepted, and a `.toml` path is a [record file](write.md)). `kind` (`parked`, `failed`, `handover`, `no-worker`, `withheld`, `gate`, `audit`, `out-of-lane`, `store-change`, `reconcile`, `request`) and a non-empty `text` are required; a `request` entry reports a worker's request and how it was ruled (see [plan-request.md](plan-request.md)), and is written with `needs_person` `false` when the orchestrator ruled it without the user; `task` defaults to `0`, naming no task; `path` defaults to `""` and must be repo-relative with no `..`; `needs_person` defaults to `true`, and `false` marks a line that only informs. An unknown key or kind, or a bad value, refuses the batch before any write, naming the line. An empty source records no entries. | none: the report has no entries |
 
 Prints `{"ok":true,"milestone":"A","entries":2}`, `entries` being how many entries the report holds.
+
+## `plan run visual`
+
+Records the user's acceptance of a failed visual round as one `[[visual_accept]]`, keyed on (`milestone`, `round`); it writes no other part of `plan.toml`, and a second call for the same milestone and round replaces that record. `at` is the time of the call; an undeclared milestone is refused as in [`plan emit`](plan-engine.md#plan-emit). The verb cannot know which states failed and does not check it. A store holding an acceptance is stamped `6` (see [plan-store.md](plan-store.md)).
+
+```bash
+tomlctl plan run visual --slug <slug> --milestone <id> --round <n> --accept --json @<path>
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--milestone` | id | The milestone whose visual pass failed. | required |
+| `--round` | integer | The visual round accepted. | required |
+| `--accept` | flag | Record the acceptance. The only mode, and required. | required |
+| `--json` | source | The payload below, `-` for stdin or `@<path>` for a file (a `.toml` path is a [record file](write.md)). | required |
+
+| Payload key | Meaning | Default |
+|---|---|---|
+| `why` | Why the user accepted the round; refused when blank. | required |
+| `states` | The states accepted, at least one, each one of the milestone's `ui_states` and named once; a `ui_controls` entry is refused, a control not being a state. | required |
+| `looks` | Each `{task, accept}`: a look criterion waived, `accept` being the 0-based index `plan emit gate-list` prints in `visual.looks`. It must name a `run_by = "look"` accept entry of a row whose `checkpoint` is the milestone. | `[]` |
+| `defects` | Each `{state, class, location, detail, note}`: a reported defect accepted. `state` is required and one of `states`; the other four are strings that may be empty or absent. | `[]` |
+| `backlog` | The id of the backlog item that follows the waiver up; refused when blank. | required |
+
+An unknown key, in the payload or in an entry, is refused naming the accepted set. Each refusal above is `kind=validation` and writes nothing.
+
+Prints `{"ok":true,"milestone":"A","round":1}`.

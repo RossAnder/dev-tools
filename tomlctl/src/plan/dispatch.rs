@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use super::{
     approve, check, drift, emit, milestone, open, probes, records, request, run_gate, run_notes,
-    run_report, stage, view,
+    run_report, run_visual, stage, view,
 };
 use crate::cli::{
     PlanHandoverOp, PlanMilestoneOp, PlanOp, PlanRequestOp, PlanRunAbandonArgs, PlanRunOp,
@@ -40,6 +40,7 @@ pub(crate) fn dispatch(op: PlanOp) -> Result<()> {
             PlanRunOp::Notes(args) => run_notes::run(args),
             PlanRunOp::Gate(args) => run_gate::run(args),
             PlanRunOp::Report(args) => run_report::run(args),
+            PlanRunOp::Visual(args) => run_visual::run(args),
         },
         PlanOp::Milestone { op } => match op {
             PlanMilestoneOp::Add(args) => milestone::add(args),

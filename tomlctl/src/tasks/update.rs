@@ -2422,6 +2422,7 @@ mod tests {
             run_by: String::new(),
             covered_by: String::new(),
             states: Vec::new(),
+            effect: String::new(),
             probe: None,
         }
     }

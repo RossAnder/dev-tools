@@ -2,7 +2,7 @@
 
 The two read-only `plan` verbs the engines steer by: `plan stage`, where a plan stands, and the
 `plan emit` leaves, what the execution engine passes on to its Workflow, its gate and its reproduce
-check, and whether a run stayed in its lane. Both take the required `--slug` and the read bundle (`--verify-integrity`, `--strict-read`)
+check, whether a run stayed in its lane, and the paths each of a milestone's commits stages. Both take the required `--slug` and the read bundle (`--verify-integrity`, `--strict-read`)
 described in [plan.md](plan.md), which also holds every other `plan` verb and the
 [check classes](plan.md#check-classes) `plan stage` reads. Which step of planning or execution reaches
 for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
@@ -17,6 +17,7 @@ for them is owned by the [`plan-v2-engine`](../../plan-v2-engine/SKILL.md) and
 - [`plan emit gate-list`](#plan-emit-gate-list)
 - [`plan emit reproduce-units`](#plan-emit-reproduce-units)
 - [`plan emit lane-check`](#plan-emit-lane-check)
+- [`plan emit commit-paths`](#plan-emit-commit-paths)
 
 ## `plan stage`
 
@@ -94,6 +95,7 @@ tomlctl plan emit launch-args --slug <slug> --milestone <id> [--max-parallel <n>
 tomlctl plan emit gate-list --slug <slug> --milestone <id>
 tomlctl plan emit reproduce-units --slug <slug> --milestone <id> [--since-launch] [--relaunch <n> --round <r> --task <refs>]
 tomlctl plan emit lane-check --slug <slug> --milestone <id>
+tomlctl plan emit commit-paths --slug <slug> --milestone <id> --for <commit>
 tomlctl plan emit schedule --slug <slug>
 ```
 
@@ -169,15 +171,16 @@ The commands the milestone gate runs, in order.
 |---|---|---|---|
 | `--milestone` | id | The milestone whose gate is listed. | required |
 
-Prints `{commands, skipped}`, and `{commands, skipped, visual}` when the milestone has `ui_states`.
+Prints `{commands, skipped}`, plus `held` when any command is marked external and `visual` when the milestone has `ui_states`.
 
 | Key | Holds |
 |---|---|
 | `commands` | The milestone's `gates` in stored order (`source = "gate"`), then each accept check whose effective owner is `gate`, in row then entry order (`source = "accept:<task>:<index>"`), then the `check` of each generator in [`.claude/generated.toml`](generated.md) with an input held by any row of the milestone (`source = "generated:<id>"`), skipping a command already listed. A malformed generator config refuses the verb. |
+| `held` | Present only when not empty. `{command, source}` rows, in the order they would have had in `commands`, for each gate listed in the milestone's `external_gates` and each gate-owned accept check whose `effect` is `external`. A command marked anywhere is held and never also listed under `commands`. |
 | `skipped` | Rows of `task`, `accept` and `reason`: `duplicate` for a command already listed, `covered_by <command>` for a `covered` entry. |
 | `visual` | Present only when the milestone has `ui_states`. `states` holds the milestone's `ui_states`, `controls` its `ui_controls` (`[]` when none), and `looks` each `run_by = "look"` entry of its rows as `{task, accept, behaviour, states}`, in row then entry order, `accept` being the entry's index. A look entry never enters `commands` or `skipped`. |
 
-Holds and `timeout:`, `rerun:` or `transient:` options stay the orchestrator's to add.
+The `held` rows are always held. An unmarked command that installs, links or deploys is still held by the orchestrator's judgement, and the `timeout:`, `rerun:` and `transient:` options stay the orchestrator's to add.
 
 ## `plan emit reproduce-units`
 
@@ -241,3 +244,25 @@ its field, its old value and its
 new one; a `digest` entry alone means a write no audited verb made, found by comparing the
 section with the store's last commit. Any store write of the drain other than resetting a
 dispatched row's `status` moves the digest, so the check runs before the replan.
+
+## `plan emit commit-paths`
+
+The paths one of the drain's two commits stages, called once before each, since the stamp, the
+backlog reconcile and the report write more stores between them. Each call makes its own
+`git status` read (porcelain v1, `-z`, `--no-renames`, every untracked file) that skips no
+directory, so a row file under `docs/flows/<slug>/` is found; `plan drift` and `lane-check` keep
+their skip.
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--milestone` | id | The milestone being committed. | required |
+| `--for` | `work` or `flow` | The milestone's work commit, or the flow-store commit after it. Any other value is refused `validation`. | required |
+
+`--for work` prints `{paths, ignored, unmatched}`; `--for flow` prints `{paths, ignored}`. Every key
+is an array, so `--get paths` prints one unquoted path per line.
+
+| Key | Holds |
+|---|---|
+| `paths` | `work`: every changed path, deletions included and spelled as git prints it, that the `files` of a row of the milestone name, matched with `./` and `\` folded. `flow`: every changed path under `.claude/flows/<slug>/` or `docs/flows/<slug>/notes/run/`, `.claude/backlog.toml`, `.claude/inputs.toml`, and each review store a `[[finding_links]]` entry of a row of the milestone names outside `.claude/flows/<slug>/`, each of those three with its `.sha256`, less any path `--for work` prints. |
+| `ignored` | `{path, rule}` per path the ignore rules hide, which no plain status read shows and so no list above holds; `rule` is `<source>:<line>:<pattern>` as `git check-ignore -v` prints it. `work`: the row files of the milestone an ignore rule hides. `flow`: the paths a second status read with `--ignored=matching` over the same directories and stores reports ignored, such as a gate log under the flow's store directory. A tracked path is never hidden. |
+| `unmatched` | `work` only: the row files, normalised, that match no changed path and no ignore rule. |

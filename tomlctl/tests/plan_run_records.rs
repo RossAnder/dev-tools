@@ -1,7 +1,8 @@
 //! Black-box coverage for the `plan run` leaves that record what a milestone's
 //! run left behind: `plan run notes` reading each worker's run note into an
 //! `[[attempt]]`, `plan run gate` recording a gate run as a `[[gate_round]]`,
-//! and `plan run report` appending what an invocation left for a person.
+//! `plan run report` appending what an invocation left for a person, and
+//! `plan run visual --accept` recording an accepted visual round.
 
 use serde_json::{Value, json};
 use std::fs;
@@ -637,6 +638,224 @@ fn a_refused_row_writes_nothing_and_names_its_line() {
     }
 }
 
+fn gate_blocks(root: &Path, round: u32, rerun: bool, text: &str) -> assert_cmd::assert::Assert {
+    let round = round.to_string();
+    let mut cmd = cli(root);
+    cmd.args(["--error-format", "json"])
+        .args(["plan", "run", "gate", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", &round, "--blocks", "-"]);
+    if rerun {
+        cmd.arg("--rerun");
+    }
+    cmd.write_stdin(text.to_string()).assert()
+}
+
+#[test]
+fn blocks_keep_a_piped_pass_line_and_store_exit_zero() {
+    let (_dir, root) = flow(&["done"]);
+    let text = "outcome: pass | command: cargo test 2>&1 | tail -n 5 | duration: 41 | summary: Test Files  3 passed | Tests  12 passed (12) | log: C:/t/c1.log\n\
+                outcome: pass | command: cargo build | duration: 9 | summary: none | log: C:/t/c2t.log | retried: transient\n";
+    let out = stdout_json(&gate_blocks(&root, 0, false, text).success());
+    assert_eq!(out["outcome"], json!("pass"));
+    let commands = gate_rounds(&root)[0]["commands"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(
+        commands[0]["command"].as_str(),
+        Some("cargo test 2>&1 | tail -n 5")
+    );
+    assert_eq!(
+        commands[0]["summary"].as_str(),
+        Some("Test Files  3 passed | Tests  12 passed (12)")
+    );
+    assert_eq!(commands[0]["exit"].as_integer(), Some(0));
+    assert_eq!(commands[0]["duration_s"].as_integer(), Some(41));
+    assert_eq!(commands[1]["command"].as_str(), Some("cargo build"));
+    assert_eq!(commands[1]["summary"].as_str(), Some(""));
+    assert_eq!(commands[1]["exit"].as_integer(), Some(0));
+    assert_eq!(commands[1]["log"].as_str(), Some(""));
+}
+
+#[test]
+fn a_fail_block_tail_may_hold_a_command_line() {
+    let (_dir, root) = flow(&["done"]);
+    let log = write_log(&root, "c2.log", "tail text\n");
+    let text = format!(
+        "```\n\
+         command: cargo clippy --all-targets\n\
+         outcome: fail\n\
+         exit: 101\n\
+         duration_s: 31\n\
+         log: {log}\n\
+         summary: none\n\
+         tail:\n\
+         command: not a block, only a log line\n\
+         error[E0308]: mismatched types\n\
+         not_run: cargo audit --file Cargo.lock\n\
+         ```\n"
+    );
+    let out = stdout_json(&gate_blocks(&root, 0, false, &text).success());
+    assert_eq!(out["outcome"], json!("fail"));
+    let commands = gate_rounds(&root)[0]["commands"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(commands.len(), 1);
+    let block = &commands[0];
+    assert_eq!(
+        block["command"].as_str(),
+        Some("cargo clippy --all-targets")
+    );
+    assert_eq!(block["exit"].as_integer(), Some(101));
+    assert_eq!(block["duration_s"].as_integer(), Some(31));
+    assert_eq!(block["summary"].as_str(), Some(""));
+    assert!(
+        block.get("failed_ids").is_none() || block["failed_ids"].as_array().unwrap().is_empty()
+    );
+    assert!(block["log"].as_str().unwrap().ends_with("-r0-s1-c1.log"));
+}
+
+#[test]
+fn a_flaky_block_drops_its_rerun_and_tangential_lines() {
+    let (_dir, root) = flow(&["done"]);
+    let text = "command: cargo nextest run --no-fail-fast\n\
+                outcome: flaky\n\
+                exit: 100\n\
+                duration_s: 412\n\
+                log: C:/t/c2.log\n\
+                summary: Summary [ 410.2s] 812 tests run: 811 passed, 1 failed\n\
+                failed_ids: store::tests::lock_contention\n\
+                rerun: cargo nextest run -- --exact 'store::tests::lock_contention' → exit 0; 1 passed\n\
+                TANGENTIAL: flaky-test | store::tests::lock_contention | failed under x, passed on narrow rerun | y\n\
+                \n\
+                outcome: pass | command: cargo build | duration: 2 | summary: none | log: C:/t/c3.log\n";
+    let out = stdout_json(&gate_blocks(&root, 0, false, text).success());
+    assert_eq!(out["outcome"], json!("pass"));
+    let commands = gate_rounds(&root)[0]["commands"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(commands.len(), 2);
+    let flaky = &commands[0];
+    assert_eq!(flaky["outcome"].as_str(), Some("flaky"));
+    assert_eq!(
+        flaky["failed_ids"],
+        toml::Value::Array(vec![toml::Value::String(
+            "store::tests::lock_contention".into()
+        )])
+    );
+    let keys: Vec<&String> = flaky.as_table().unwrap().keys().collect();
+    assert!(
+        keys.iter().all(|k| [
+            "command",
+            "outcome",
+            "exit",
+            "duration_s",
+            "summary",
+            "failed_ids",
+            "log"
+        ]
+        .contains(&k.as_str())),
+        "{keys:?}"
+    );
+    assert_eq!(commands[1]["command"].as_str(), Some("cargo build"));
+}
+
+#[test]
+fn quoted_commands_are_kept_byte_for_byte_and_replaced_under_rerun() {
+    let (_dir, root) = flow(&["done"]);
+    let command = r#"test "$(grep -c '#\[test\]' tomlctl/tests/it.rs)" -gt 0"#;
+    let fail = format!(
+        "command: {command}\noutcome: fail\nexit: 1\nduration_s: 1\nsummary: none\ntail:\nno\n"
+    );
+    gate_blocks(&root, 0, false, &fail).success();
+    let pass = format!(
+        "outcome: pass | command: {command} | duration: 1 | summary: none | log: C:/t/c1.log\n"
+    );
+    let out = stdout_json(&gate_blocks(&root, 0, true, &pass).success());
+    assert_eq!(out["outcome"], json!("pass"));
+    let rounds = gate_rounds(&root);
+    assert_eq!(rounds.len(), 1);
+    let commands = rounds[0]["commands"].as_array().unwrap();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0]["command"].as_str(), Some(command));
+    assert_eq!(commands[0]["outcome"].as_str(), Some("pass"));
+}
+
+#[test]
+fn failed_ids_come_from_the_ids_file_beside_the_log() {
+    let (_dir, root) = flow(&["done"]);
+    let log = write_log(&root, "c1.log", "fail\n");
+    fs::write(
+        format!("{log}.ids"),
+        "suite > adds two numbers\r\nsuite > keeps order\nthird::id\n",
+    )
+    .unwrap();
+    let text = format!(
+        "command: bun test\noutcome: fail\nexit: 1\nduration_s: 4\nlog: {log}\nsummary: 3 fail\nfailed_ids: suite > adds two numbers suite > keeps order (+1 more)\ntail:\nx\n"
+    );
+    gate_blocks(&root, 0, false, &text).success();
+    let ids: Vec<String> = gate_rounds(&root)[0]["commands"][0]["failed_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "suite > adds two numbers",
+            "suite > keeps order",
+            "third::id"
+        ]
+    );
+}
+
+#[test]
+fn a_refused_command_block_takes_the_defaults() {
+    let (_dir, root) = flow(&["done"]);
+    let text = "command: git reset --hard HEAD~1\noutcome: fail\nexit: none\ntail:\nrefused — verification agent cannot mutate the working tree. Returning to orchestrator.\n";
+    let out = stdout_json(&gate_blocks(&root, 0, false, text).success());
+    assert_eq!(out["outcome"], json!("fail"));
+    let block = &gate_rounds(&root)[0]["commands"][0];
+    assert!(block.get("exit").is_none());
+    assert_eq!(block["duration_s"].as_integer(), Some(0));
+    assert_eq!(block["log"].as_str(), Some(""));
+}
+
+#[test]
+fn blocks_with_no_entry_or_beside_ndjson_are_refused() {
+    let (_dir, root) = flow(&["done"]);
+    let before = plan_text(&root);
+    let assert = gate_blocks(&root, 0, false, "```\nnothing to record\n```\n").failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert_eq!(
+        parse_json_error_envelope(&stderr)["kind"],
+        json!("validation")
+    );
+
+    let file = root.join("verify-logs");
+    fs::create_dir_all(&file).unwrap();
+    let file = file.join("blocks.txt");
+    fs::write(
+        &file,
+        "outcome: pass | command: a | duration: 1 | summary: none | log: x\n",
+    )
+    .unwrap();
+    let file = file.to_string_lossy().into_owned();
+    let assert = cli(&root)
+        .args(["plan", "run", "gate", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", "0"])
+        .args(["--blocks", &file, "--ndjson", &file])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("cannot be used with"), "{stderr}");
+    assert_eq!(plan_text(&root), before);
+}
+
 #[test]
 fn the_gate_leaf_writes_only_the_gate_round_array() {
     let (_dir, root) = flow(&["done"]);
@@ -784,4 +1003,215 @@ fn the_report_leaf_writes_only_the_report_array() {
     assert_eq!(keys(&before), keys(&after));
     assert_eq!(before["run"], after["run"]);
     assert!(after.get("report").is_some());
+}
+
+/// A flow whose milestone declares two UI states and a control, task 1
+/// holding a look entry at accept 0 and a gate-run check at accept 1.
+fn visual_flow() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = sandbox();
+    let doc = json!({
+        "schema_version": 3,
+        "checkpoints": [{ "id": MILESTONE, "rationale": "this one" }],
+        "milestones": [{
+            "id": MILESTONE,
+            "gates": ["cargo test"],
+            "ui_states": ["list-empty", "list-full"],
+            "ui_controls": ["list-broken"],
+        }],
+        "items": [row(1, "done")],
+        "specs": [{
+            "ref": "row-1",
+            "outcome": "the list renders",
+            "executor": "lite",
+            "accept": [
+                {
+                    "behaviour": "the badge is legible",
+                    "check": "",
+                    "kind": "forward",
+                    "writes_build": false,
+                    "run_by": "look",
+                    "states": ["list-full"],
+                },
+                {
+                    "behaviour": "it builds",
+                    "check": "cargo test --test one",
+                    "kind": "forward",
+                    "writes_build": true,
+                },
+            ],
+        }],
+    });
+    seed_tasks(&root, &toml::to_string(&doc).unwrap());
+    fs::write(
+        flow_dir(&root).join("plan.toml"),
+        format!(
+            "schema_version = 2\n{}",
+            implement_run(RUN_ID, &[1], "2026-11-05T11:00:00Z")
+        ),
+    )
+    .unwrap();
+    (dir, root)
+}
+
+fn visual(root: &Path, round: u32, flags: &[&str], payload: &Value) -> assert_cmd::assert::Assert {
+    let round = round.to_string();
+    cli(root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "visual", "--slug", TASKS_SLUG])
+        .args(["--milestone", MILESTONE, "--round", &round])
+        .args(flags)
+        .args(["--json", "-"])
+        .write_stdin(payload.to_string())
+        .assert()
+}
+
+fn plan_doc(root: &Path) -> toml::Value {
+    toml::from_str(&plan_text(root)).expect("the store parses")
+}
+
+fn accepted() -> Value {
+    json!({
+        "why": "the clipped badge waits on the font update",
+        "states": ["list-full"],
+        "looks": [{ "task": 1, "accept": 0 }],
+        "defects": [{ "state": "list-full", "class": "clipping", "location": "the badge" }],
+        "backlog": "B-1a2b3c4d",
+    })
+}
+
+#[test]
+fn an_accepted_round_is_stored_and_kept_by_a_later_plan_write() {
+    let (_dir, root) = visual_flow();
+    let out = stdout_json(&visual(&root, 1, &["--accept"], &accepted()).success());
+    assert_eq!(out, json!({"ok": true, "milestone": MILESTONE, "round": 1}));
+
+    let doc = plan_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(6), "{doc}");
+    let records = doc["visual_accept"]
+        .as_array()
+        .expect("the array is written");
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record["milestone"].as_str(), Some(MILESTONE));
+    assert_eq!(record["round"].as_integer(), Some(1));
+    assert!(record["at"].as_datetime().is_some());
+    assert_eq!(
+        record["why"].as_str(),
+        Some("the clipped badge waits on the font update")
+    );
+    assert_eq!(record["states"][0].as_str(), Some("list-full"));
+    assert_eq!(record["looks"][0]["task"].as_integer(), Some(1));
+    assert_eq!(record["looks"][0]["accept"].as_integer(), Some(0));
+    assert_eq!(record["defects"][0]["class"].as_str(), Some("clipping"));
+    assert_eq!(record["defects"][0]["detail"].as_str(), Some(""));
+    assert_eq!(record["backlog"].as_str(), Some("B-1a2b3c4d"));
+
+    report(&root, "the visual pass was accepted", None).success();
+    let after = plan_doc(&root);
+    assert_eq!(after["visual_accept"], doc["visual_accept"]);
+    assert_eq!(after["schema_version"].as_integer(), Some(6));
+}
+
+#[test]
+fn a_second_call_for_the_same_round_replaces_the_first() {
+    let (_dir, root) = visual_flow();
+    visual(&root, 1, &["--accept"], &accepted()).success();
+    let mut later = accepted();
+    later["why"] = json!("a second look");
+    later["states"] = json!(["list-empty", "list-full"]);
+    visual(&root, 1, &["--accept"], &later).success();
+    visual(&root, 2, &["--accept"], &accepted()).success();
+
+    let records = plan_doc(&root)["visual_accept"].as_array().unwrap().clone();
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert_eq!(records[0]["round"].as_integer(), Some(1));
+    assert_eq!(records[0]["why"].as_str(), Some("a second look"));
+    assert_eq!(records[0]["states"].as_array().unwrap().len(), 2);
+    assert_eq!(records[1]["round"].as_integer(), Some(2));
+}
+
+#[test]
+fn a_state_or_look_the_milestone_does_not_hold_is_refused_writing_nothing() {
+    let (_dir, root) = visual_flow();
+    let before = plan_text(&root);
+    let with = |key: &str, value: Value| {
+        let mut payload = accepted();
+        payload[key] = value;
+        payload
+    };
+    let with_states = |states: Value| {
+        let mut payload = with("states", states);
+        payload["defects"] = json!([]);
+        payload
+    };
+    for (payload, needle) in [
+        (
+            with_states(json!(["list-broken"])),
+            "a control is not a state",
+        ),
+        (with_states(json!(["checkout"])), "not one of its ui_states"),
+        (
+            with("looks", json!([{ "task": 1, "accept": 1 }])),
+            "not run_by = \"look\"",
+        ),
+        (
+            with("looks", json!([{ "task": 1, "accept": 5 }])),
+            "no accept entry 5",
+        ),
+        (
+            with("looks", json!([{ "task": 9, "accept": 0 }])),
+            "not a row of milestone",
+        ),
+        (with("why", json!("  ")), "`why`"),
+        (with("backlog", json!("")), "`backlog`"),
+        (with_states(json!([])), "at least one"),
+        (
+            with("stray", json!(1)),
+            "why, states, looks, defects, backlog",
+        ),
+    ] {
+        let assert = visual(&root, 1, &["--accept"], &payload).failure();
+        let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        let err = parse_json_error_envelope(&stderr);
+        assert_eq!(err["kind"], json!("validation"), "{payload}: {err}");
+        assert!(
+            err["message"].as_str().unwrap().contains(needle),
+            "{payload}: {err}"
+        );
+        assert_eq!(plan_text(&root), before);
+    }
+}
+
+#[test]
+fn an_unknown_milestone_or_a_missing_accept_flag_is_refused() {
+    let (_dir, root) = visual_flow();
+    let before = plan_text(&root);
+    cli(&root)
+        .args(["--error-format", "json"])
+        .args(["plan", "run", "visual", "--slug", TASKS_SLUG])
+        .args([
+            "--milestone",
+            "Z",
+            "--round",
+            "1",
+            "--accept",
+            "--json",
+            "-",
+        ])
+        .write_stdin(accepted().to_string())
+        .assert()
+        .failure();
+    let assert = visual(&root, 1, &[], &accepted()).failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(stderr.contains("--accept"), "{stderr}");
+    assert_eq!(plan_text(&root), before);
+}
+
+#[test]
+fn a_store_without_an_acceptance_keeps_its_version() {
+    let (_dir, root) = visual_flow();
+    report(&root, "nothing accepted", None).success();
+    let doc = plan_doc(&root);
+    assert_eq!(doc["schema_version"].as_integer(), Some(3), "{doc}");
+    assert!(doc.get("visual_accept").is_none(), "{doc}");
 }

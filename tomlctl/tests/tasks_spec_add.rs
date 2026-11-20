@@ -338,6 +338,80 @@ fn accept_look_states_are_refused_on_any_other_owner() {
     );
 }
 
+#[test]
+fn accept_external_effect_round_trips_and_stamps_version_4() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    let entries = json!([
+        {"check": "bun run preview:deploy", "kind": "forward", "run_by": "gate",
+         "effect": "external"},
+        {"check": "true", "kind": "guard", "writes_build": false},
+    ]);
+    let envelope = add_many(&root, &row_with_spec(&json!({"accept": entries})));
+    let id = envelope["rows"][0]["id"].to_string();
+
+    let doc = read_store(&store);
+    assert_eq!(
+        doc.get("schema_version").and_then(toml::Value::as_integer),
+        Some(4)
+    );
+    let stored = &side_table(&doc, "specs")[0]["accept"];
+    assert_eq!(text(&stored[0], "effect"), "external");
+    assert!(stored[1].get("effect").is_none(), "{}", stored[1]);
+
+    let out = cli(&root)
+        .args(["tasks", "show", &id, "--slug", TASKS_SLUG, "--with", "spec"])
+        .assert()
+        .success();
+    let shown: Value = serde_json::from_slice(&out.get_output().stdout).expect("stdout is JSON");
+    let accept = &shown["spec"]["accept"];
+    assert_eq!(accept[0]["effect"], json!("external"));
+    assert_eq!(accept[1].get("effect"), None, "{accept}");
+    assert_sidecar_matches(&store);
+}
+
+#[test]
+fn accept_external_effect_is_refused_unless_the_gate_runs_it() {
+    for entry in [
+        json!({"check": "true", "kind": "guard", "writes_build": false, "effect": "external"}),
+        json!({"check": "true", "kind": "guard", "writes_build": false, "run_by": "worker",
+               "effect": "external"}),
+        json!({"check": "cargo test", "kind": "guard", "run_by": "covered",
+               "covered_by": "cargo test", "effect": "external"}),
+        {
+            let mut judged = look(json!(["empty-cart"]));
+            judged["effect"] = json!("external");
+            judged
+        },
+    ] {
+        assert_refused(
+            &row_with_spec(&json!({"accept": [entry]})),
+            "allowed only on a check the gate runs",
+        );
+    }
+    assert_refused(
+        &row_with_spec(&json!({"accept": [
+            {"check": "true", "kind": "guard", "run_by": "gate", "effect": "deploy"}
+        ]})),
+        "expected one of external",
+    );
+}
+
+#[test]
+fn a_spec_with_no_effect_keeps_its_stamp() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, FIXTURE);
+    add_many(
+        &root,
+        &row_with_spec(&json!({"accept": [look(json!(["empty-cart"]))]})),
+    );
+    let doc = read_store(&store);
+    assert_eq!(
+        doc.get("schema_version").and_then(toml::Value::as_integer),
+        Some(3)
+    );
+}
+
 /// A look entry gets no probe line, even marked as not writing the build, and
 /// a guard beside it stands alone: it never counts as discriminating.
 #[test]

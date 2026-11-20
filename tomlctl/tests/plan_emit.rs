@@ -867,6 +867,49 @@ fn gate_list_visual_holds_states_controls_and_looks() {
 }
 
 #[test]
+fn gate_list_holds_marked_gates_and_checks() {
+    let (_dir, root) = sandbox();
+    let items = vec![row(1, "pending", MILESTONE, &[], &["src/one.rs"])];
+    let mut deploy = accept("bun run preview:deploy", false, Some(("gate", "")));
+    deploy["effect"] = json!("external");
+    let specs = vec![accept_spec(
+        1,
+        vec![accept("cargo test --test one", true, None), deploy],
+    )];
+    let doc = store(
+        items,
+        specs,
+        json!({
+            "schema_version": 4,
+            "milestones": [
+                { "id": MILESTONE, "gates": [SUITE, LINT], "external_gates": [LINT] },
+                { "id": OTHER, "gates": ["cargo build --manifest-path y/Cargo.toml"] },
+            ],
+        }),
+    );
+    seed_tasks(&root, &doc);
+
+    let out = gate_list(&root);
+
+    assert_eq!(
+        out["commands"],
+        json!([
+            { "command": SUITE, "source": "gate" },
+            { "command": "cargo test --test one", "source": "accept:1:0" },
+        ]),
+        "{out}"
+    );
+    assert_eq!(
+        out["held"],
+        json!([
+            { "command": LINT, "source": "gate" },
+            { "command": "bun run preview:deploy", "source": "accept:1:1" },
+        ]),
+        "{out}"
+    );
+}
+
+#[test]
 fn gate_list_visual_is_absent_without_ui_states() {
     let (_dir, root) = sandbox();
     let items = vec![row(1, "pending", MILESTONE, &[], &["src/one.rs"])];

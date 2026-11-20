@@ -1063,3 +1063,170 @@ fn milestone_ui_update_is_audited_on_an_audited_store() {
         .collect();
     assert_eq!(added, vec!["ui_states", "ui_controls"], "{doc}");
 }
+
+#[test]
+fn add_external_gate_stores_the_command_once_and_marks_it() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--external-gate",
+            "bun run deploy",
+            "--gate",
+            "cargo test",
+            "--gate",
+            "cargo install --path x",
+            "--external-gate",
+            "cargo install --path x",
+            "--gate-probe",
+            "bun run deploy :: bun run deploy --dry-run",
+        ],
+    )
+    .success();
+
+    let doc = read_store(&store);
+    assert_eq!(stamp(&doc), 4, "{doc}");
+    assert_eq!(
+        names_of(&doc, 0, "gates"),
+        strings(&["cargo test", "cargo install --path x", "bun run deploy"]),
+        "external gates follow the --gate commands, and a command given both ways is stored once"
+    );
+    assert_eq!(
+        names_of(&doc, 0, "external_gates"),
+        strings(&["bun run deploy", "cargo install --path x"])
+    );
+    assert_eq!(
+        gate_probes(&doc),
+        vec![(
+            "bun run deploy".to_string(),
+            "bun run deploy --dry-run".to_string()
+        )],
+        "a probe may name an external gate"
+    );
+
+    milestone(&root, "add", &["--id", "B", "--goal", "g", "--gate", "x"]).success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 1, "external_gates"), None, "{doc}");
+}
+
+#[test]
+fn update_external_gate_replaces_the_gates_and_the_marks_together() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, &audited_fixture());
+    milestone(
+        &root,
+        "add",
+        &[
+            "--id",
+            "A",
+            "--goal",
+            "g",
+            "--gate",
+            "a",
+            "--external-gate",
+            "deploy",
+            "--reason",
+            "r",
+        ],
+    )
+    .success();
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--goal", "g2", "--reason", "x"],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "gates"), strings(&["a", "deploy"]));
+    assert_eq!(
+        names_of(&doc, 0, "external_gates"),
+        strings(&["deploy"]),
+        "an update passing neither gate flag keeps both lists"
+    );
+
+    let rows_before = table(&doc, "changes").len();
+    milestone(
+        &root,
+        "update",
+        &[
+            "--id",
+            "A",
+            "--gate",
+            "b",
+            "--external-gate",
+            "install",
+            "--reason",
+            "moved",
+        ],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "gates"), strings(&["b", "install"]));
+    assert_eq!(names_of(&doc, 0, "external_gates"), strings(&["install"]));
+    let marks = table(&doc, "changes")[rows_before..]
+        .iter()
+        .find(|row| text(row, "field") == "external_gates")
+        .expect("an external_gates change row");
+    assert_eq!(text(marks, "old"), "[\"deploy\"]");
+    assert_eq!(text(marks, "new"), "[\"install\"]");
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--gate", "install", "--reason", "y"],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "gates"), strings(&["install"]));
+    assert_eq!(
+        names_of(&doc, 0, "external_gates"),
+        None,
+        "--gate alone leaves no gate marked"
+    );
+    assert_eq!(stamp(&doc), 2, "{doc}");
+
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--external-gate", "install", "--reason", "z"],
+    )
+    .success();
+    milestone(
+        &root,
+        "update",
+        &["--id", "A", "--clear-gate", "--reason", "w"],
+    )
+    .success();
+    let doc = read_store(&store);
+    assert_eq!(names_of(&doc, 0, "gates"), strings(&[]), "{doc}");
+    assert_eq!(names_of(&doc, 0, "external_gates"), None, "{doc}");
+}
+
+#[test]
+fn clear_gate_beside_external_gate_is_refused_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_v2(&root, FIXTURE);
+    milestone(
+        &root,
+        "add",
+        &["--id", "A", "--goal", "g", "--external-gate", "deploy"],
+    )
+    .success();
+    let before = fs::read(&store).unwrap();
+
+    let err = refused(
+        &root,
+        "update",
+        &["--id", "A", "--clear-gate", "--external-gate", "install"],
+    );
+
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(fs::read(&store).unwrap(), before);
+}

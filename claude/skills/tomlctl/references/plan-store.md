@@ -11,7 +11,7 @@ that write it and the check classes are [plan.md](plan.md); the probe verdicts a
 ## `plan.toml` store shape
 
 ```toml
-schema_version = 5
+schema_version = 6
 last_updated = 2026-11-05
 
 [binding]
@@ -159,13 +159,32 @@ evidence = "tests/a.rs"
 ruling = "denied"
 by = "orchestrator"
 reason = "The accept check is the plan's to change."
+
+[[visual_accept]]
+milestone = "B"
+round = 1
+at = 2026-11-12T11:00:00Z
+why = "The clipped badge waits on the font update."
+states = ["list-full"]
+backlog = "B-1a2b3c4d"
+
+[[visual_accept.looks]]
+task = 7
+accept = 0
+
+[[visual_accept.defects]]
+state = "list-full"
+class = "clipping"
+location = "the badge"
+detail = ""
+note = ""
 ```
 
 Keys are written in that order, each root key but `schema_version` omitted while empty. Every write
 restamps `last_updated`, re-emits the store from this shape, so an unknown key is dropped, and
 LF-normalises free text. A `schema_version` newer than the binary's is refused rather than read.
 
-The stamp is `5` while the store holds a `[[request]]`, otherwise `4` while any decision carries a `class`, otherwise `3` while the store holds an
+The stamp is `6` while the store holds a `[[visual_accept]]`, otherwise `5` while it holds a `[[request]]`, otherwise `4` while any decision carries a `class`, otherwise `3` while the store holds an
 `[[attempt]]`, `[[gate_round]]` or `[[report]]`, and `2` while it holds none of those. A binary that
 predates those keys or arrays therefore refuses such a store rather than rewriting it without them,
 and a store that holds none reads and writes as it did before they existed. Removing what raised the
@@ -299,3 +318,16 @@ invocation.
 | `changes` | Each `{field, what, evidence, ruling, by, reason}`: a correction to the task's own `accept`, `means`, `constraints`, `detail` or `files`. |
 
 `ruling` is `open`, `granted`, `denied` or `needs-user`; `by` is `tomlctl` for a mechanical ruling, `orchestrator` for one made by `plan request rule`, and `""` while open.
+
+`[[visual_accept]]` is the user's acceptance of a failed visual round, written by `plan run visual --accept` ([plan-run.md](plan-run.md)) and keyed on (`milestone`, `round`): a second acceptance of the same round replaces the first.
+
+| `[[visual_accept]]` key | Meaning |
+|---|---|
+| `milestone` | The milestone whose visual pass failed. Required. |
+| `round` | The visual round accepted. Required. |
+| `at` | When the acceptance was recorded. Required. |
+| `why` | Why the user accepted the round. |
+| `states` | The states accepted, each one of the milestone's `ui_states`. |
+| `looks` | Each `{task, accept}`: a waived `run_by = "look"` accept entry, by its 0-based index in the task's `accept`. |
+| `defects` | Each `{state, class, location, detail, note}`: a reported defect accepted, `state` being one of `states`. |
+| `backlog` | The id of the backlog item that follows the waiver up. |

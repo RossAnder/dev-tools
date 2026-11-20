@@ -99,6 +99,9 @@ pub(crate) enum PlanEmitOp {
     /// paths no started row holds, and task-store writes beyond a worker's
     /// own `status` and `agent`.
     LaneCheck(PlanEmitLaneCheckArgs),
+    /// The paths one of the drain's two commits stages: the changed files a
+    /// milestone's rows name, or the flow's stores and run notes.
+    CommitPaths(PlanEmitCommitPathsArgs),
     /// Print each milestone's state and the milestone /implement-v2 runs next
     Schedule(PlanEmitScheduleArgs),
 }
@@ -148,6 +151,9 @@ pub(crate) enum PlanRunOp {
     /// Append one report of what this invocation left for a person, from one
     /// row per entry.
     Report(PlanRunReportArgs),
+    /// Record the user's acceptance of a failed visual round: the states and
+    /// look criteria waived and the backlog item that follows it up.
+    Visual(PlanRunVisualArgs),
 }
 
 /// `plan milestone` leaves.
@@ -428,6 +434,7 @@ pub(crate) struct PlanRunNotesArgs {
 }
 
 #[derive(Args)]
+#[command(group(clap::ArgGroup::new("gate_rows").required(true).multiple(false).args(["ndjson", "blocks"])))]
 pub(crate) struct PlanRunGateArgs {
     #[command(flatten)]
     pub(crate) target: PlanTarget,
@@ -448,7 +455,13 @@ pub(crate) struct PlanRunGateArgs {
         value_name = "SRC",
         help = "One row per command: command, outcome, exit, duration_s, summary, failed_ids, log; `-` for stdin, otherwise a file path (a leading `@` is accepted; a `.toml` path is a record file)"
     )]
-    pub(crate) ndjson: String,
+    pub(crate) ndjson: Option<String>,
+    #[arg(
+        long = "blocks",
+        value_name = "SRC",
+        help = "The verification agent's returned text, its pass lines and blocks parsed into the rows --ndjson takes; `-` for stdin, otherwise a file path"
+    )]
+    pub(crate) blocks: Option<String>,
     #[arg(
         long = "rerun",
         help = "Merge into the round's latest recorded run, replacing the commands named, rather than record a new run"
@@ -484,6 +497,39 @@ pub(crate) struct PlanRunReportArgs {
     pub(crate) integrity: WriteIntegrityArgs,
 }
 
+/// `--accept` sits in a required group, so a later mode joins the group.
+#[derive(Args)]
+#[command(group(clap::ArgGroup::new("visual_mode").required(true).args(["accept"])))]
+pub(crate) struct PlanRunVisualArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The milestone whose visual pass failed"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "round",
+        value_name = "N",
+        help = "The visual round accepted; a second call for the same round replaces its record"
+    )]
+    pub(crate) round: u32,
+    #[arg(
+        long = "accept",
+        help = "Record the user's acceptance of the failed round"
+    )]
+    pub(crate) accept: bool,
+    #[arg(
+        long = "json",
+        value_name = "SRC",
+        help = "{\"why\",\"states\":[..],\"looks\":[{\"task\",\"accept\"}],\"defects\":[{\"state\",\"class\",\"location\",\"detail\",\"note\"}],\"backlog\"}; pass `-` to read from stdin or `@<path>` to read a file (a `.toml` path is a record file)"
+    )]
+    pub(crate) json: String,
+    #[command(flatten)]
+    pub(crate) integrity: WriteIntegrityArgs,
+}
+
 #[derive(Args)]
 pub(crate) struct PlanMilestoneAddArgs {
     #[command(flatten)]
@@ -502,6 +548,13 @@ pub(crate) struct PlanMilestoneAddArgs {
         help = "Command that must pass at the milestone's drain (repeatable)"
     )]
     pub(crate) gate: Vec<String>,
+    #[arg(
+        long = "external-gate",
+        value_name = "CMD",
+        help = "A gate whose effect reaches outside the working tree, such as a deploy or an \
+                install: stored after the --gate commands and marked external (repeatable)"
+    )]
+    pub(crate) external_gate: Vec<String>,
     #[arg(
         long = "gate-probe",
         value_name = "GATE :: PROBE",
@@ -560,7 +613,19 @@ pub(crate) struct PlanMilestoneUpdateArgs {
         help = "Command that must pass at the milestone's drain (repeatable; the flags given replace the whole gate list, unlike add)"
     )]
     pub(crate) gate: Vec<String>,
-    #[arg(long = "clear-gate", help = "Empty the gate list; refused with --gate")]
+    #[arg(
+        long = "external-gate",
+        value_name = "CMD",
+        help = "A gate whose effect reaches outside the working tree, marked external \
+                (repeatable; with --gate, the flags given replace the whole gate list and the \
+                whole mark list)"
+    )]
+    pub(crate) external_gate: Vec<String>,
+    #[arg(
+        long = "clear-gate",
+        help = "Empty the gate list and its external marks; refused with --gate or \
+                --external-gate"
+    )]
     pub(crate) clear_gate: bool,
     #[arg(
         long = "gate-probe",
@@ -774,6 +839,26 @@ pub(crate) struct PlanEmitLaneCheckArgs {
         help = "The checkpoint whose latest `implement:<id>` run is checked"
     )]
     pub(crate) milestone: String,
+    #[command(flatten)]
+    pub(crate) integrity: ReadIntegrityArgs,
+}
+
+#[derive(Args)]
+pub(crate) struct PlanEmitCommitPathsArgs {
+    #[command(flatten)]
+    pub(crate) target: PlanTarget,
+    #[arg(
+        long = "milestone",
+        value_name = "ID",
+        help = "The checkpoint whose commit is staged"
+    )]
+    pub(crate) milestone: String,
+    #[arg(
+        long = "for",
+        value_name = "COMMIT",
+        help = "work|flow: the milestone's work commit or its flow-store commit"
+    )]
+    pub(crate) for_commit: String,
     #[command(flatten)]
     pub(crate) integrity: ReadIntegrityArgs,
 }

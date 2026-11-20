@@ -751,6 +751,7 @@ mod tests {
             after: Vec::new(),
             ui_states: Vec::new(),
             ui_controls: Vec::new(),
+            external_gates: Vec::new(),
         }
     }
 

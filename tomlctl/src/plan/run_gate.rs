@@ -1,6 +1,7 @@
 //! The `plan run gate` leaf: records one run of a milestone's gate as a
 //! `[[gate_round]]`, keyed on `(milestone, round, seq)`, from one row per
-//! command the caller ran. A call without `--rerun` records a new run of the
+//! command the caller ran, given as NDJSON or parsed from the verification
+//! agent's returned text. A call without `--rerun` records a new run of the
 //! round; with it, the call merges into the round's latest run, replacing the
 //! commands it names. The tail of each non-pass command's log is kept under
 //! `.claude/flows/<slug>/gates/`; a log that cannot be read stores `""` and
@@ -13,11 +14,12 @@ use anyhow::{Context, Result};
 use serde_json::{Map, Value as JsonValue, json};
 
 use super::emit::load_milestone_store;
+use super::gate_blocks;
 use super::schema::{CommandOutcome, GateCommand, GateOutcome, GateRound, PlanStore};
 use super::store;
 use crate::cli::PlanRunGateArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::read_ndjson_source;
+use crate::io::{read_ndjson_source, read_text_arg};
 use crate::items::{parse_ndjson_batch, row_err, row_string, row_strings};
 use crate::output::{Rows, print_rows_compact};
 
@@ -49,13 +51,23 @@ pub(super) fn run(args: PlanRunGateArgs) -> Result<()> {
         milestone,
         round,
         ndjson,
+        blocks,
         rerun,
         integrity,
     } = args;
     let slug = target.slug.as_str();
     load_milestone_store(slug, &milestone, integrity.verify_integrity)?;
     check_file_safe(&milestone)?;
-    let staged = parse_rows(&read_ndjson_source(&ndjson)?)?;
+    let rows = match (ndjson, blocks) {
+        (_, Some(blocks)) => gate_blocks::parse(&read_blocks_source(&blocks)?, read_temp_log)?,
+        (Some(ndjson), None) => parse_ndjson_batch(&read_ndjson_source(&ndjson)?)?,
+        (None, None) => {
+            return Err(refusal(
+                "`plan run gate` needs `--ndjson <src>` or `--blocks <src>`",
+            ));
+        }
+    };
+    let staged = parse_rows(&rows)?;
     let plan_path = store::resolve(slug)?;
     let gates = store::flow_dir(&plan_path).join(GATES_DIR);
     let relative_gates = format!(".claude/flows/{slug}/{GATES_DIR}");
@@ -188,11 +200,19 @@ fn round_outcome(commands: &[GateCommand]) -> GateOutcome {
     }
 }
 
+/// The verification agent's text from a file, or from stdin for `-`.
+fn read_blocks_source(src: &str) -> Result<String> {
+    if src == "-" {
+        read_text_arg("-")
+    } else {
+        fs::read_to_string(src).with_context(|| format!("reading `--blocks` file `{src}`"))
+    }
+}
+
 /// Every row checked before anything is written, so a refused row persists nothing.
-fn parse_rows(text: &str) -> Result<Vec<Staged>> {
-    let rows = parse_ndjson_batch(text)?;
+fn parse_rows(rows: &[(usize, Row)]) -> Result<Vec<Staged>> {
     let mut staged: Vec<Staged> = Vec::with_capacity(rows.len());
-    for (line, row) in &rows {
+    for (line, row) in rows {
         let parsed = parse_row(*line, row)?;
         if staged
             .iter()
@@ -292,6 +312,8 @@ fn keep_tail(source: &Path, gates: &Path, name: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// The bytes of `source` when it resolves to a file under the OS temp
+/// directory, where the verification agent writes its logs.
 fn read_temp_log(source: &Path) -> Option<Vec<u8>> {
     let temp = std::env::temp_dir().canonicalize().ok()?;
     let resolved = source.canonicalize().ok()?;

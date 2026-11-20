@@ -109,6 +109,24 @@ fn gate_probes_for(
         .collect()
 }
 
+/// The gate list and the external marks for `--gate` and `--external-gate`:
+/// each external command is appended after the plain gates unless already
+/// there, and each external command is stored and marked once. The plain gates
+/// are kept as given.
+fn gates_and_marks(gates: &[String], external: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut all = gates.to_vec();
+    let mut marks: Vec<String> = Vec::new();
+    for gate in external {
+        if !all.contains(gate) {
+            all.push(gate.clone());
+        }
+        if !marks.contains(gate) {
+            marks.push(gate.clone());
+        }
+    }
+    (all, marks)
+}
+
 fn gate_probes_json(probes: &[GateProbe]) -> String {
     let pairs: Vec<JsonValue> = probes
         .iter()
@@ -179,7 +197,8 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
     if id.is_empty() {
         return Err(refuse("`--id` must not be empty".to_string()));
     }
-    let gate_probes = gate_probes_for(&id, &parse_gate_probes(&args.gate_probe)?, &args.gate, &[])?;
+    let (gates, external_gates) = gates_and_marks(&args.gate, &args.external_gate);
+    let gate_probes = gate_probes_for(&id, &parse_gate_probes(&args.gate_probe)?, &gates, &[])?;
     check_ui_names("--ui-state", &args.ui_state)?;
     check_ui_names("--ui-control", &args.ui_control)?;
     check_ui_disjoint(&id, &args.ui_state, &args.ui_control)?;
@@ -207,7 +226,7 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
         });
         store.milestones.push(MilestoneSpec {
             id: id.clone(),
-            gates: args.gate.clone(),
+            gates: gates.clone(),
             elaboration: match args.defer {
                 true => ELABORATION_DEFERRED.to_string(),
                 false => ELABORATION_UPFRONT.to_string(),
@@ -220,6 +239,7 @@ pub(super) fn add(args: PlanMilestoneAddArgs) -> Result<()> {
             after: args.after.clone(),
             ui_states: args.ui_state.clone(),
             ui_controls: args.ui_control.clone(),
+            external_gates: external_gates.clone(),
         });
         if store.audit {
             store.changes.push(change(
@@ -240,6 +260,7 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     let id = args.id.trim().to_string();
     if args.goal.is_none()
         && args.gate.is_empty()
+        && args.external_gate.is_empty()
         && !args.clear_gate
         && args.gate_probe.is_empty()
         && args.ui_state.is_empty()
@@ -251,7 +272,8 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
         && !args.elaborated
     {
         return Err(refuse(
-            "nothing to update: pass `--goal`, `--gate`, `--clear-gate`, `--gate-probe`, \
+            "nothing to update: pass `--goal`, `--gate`, `--external-gate`, `--clear-gate`, \
+             `--gate-probe`, \
              `--ui-state`, `--ui-control`, `--clear-ui`, `--after`, `--clear-after`, \
              `--defer` or `--elaborated`"
                 .to_string(),
@@ -276,6 +298,13 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
             "`--clear-gate` and `--gate` set the gate list two different ways".to_string(),
         ));
     }
+    if args.clear_gate && !args.external_gate.is_empty() {
+        return Err(refuse(
+            "`--clear-gate` and `--external-gate` set the gate list two different ways".to_string(),
+        ));
+    }
+    let gates_given = !args.gate.is_empty() || !args.external_gate.is_empty() || args.clear_gate;
+    let (gates, external_gates) = gates_and_marks(&args.gate, &args.external_gate);
     if args.defer && args.elaborated {
         return Err(refuse(
             "`--defer` and `--elaborated` move the milestone in opposite directions".to_string(),
@@ -292,7 +321,8 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
     let path = resolve_store_path(Some(&args.target.slug), None)?;
     let patch = MilestonePatch {
         goal: args.goal.clone(),
-        gates: (!args.gate.is_empty() || args.clear_gate).then(|| args.gate.clone()),
+        gates: gates_given.then_some(gates),
+        external_gates: gates_given.then_some(external_gates),
         gate_probes: (!gate_probes.is_empty()).then_some(gate_probes),
         ui_states: (!args.ui_state.is_empty() || args.clear_ui).then(|| args.ui_state.clone()),
         ui_controls: (!args.ui_control.is_empty() || args.clear_ui)
@@ -316,6 +346,9 @@ pub(super) fn update(args: PlanMilestoneUpdateArgs) -> Result<()> {
 struct MilestonePatch {
     goal: Option<String>,
     gates: Option<Vec<String>>,
+    /// The external marks replacing the whole mark list. `None` with `gates`
+    /// set keeps only the marks whose command is still a gate.
+    external_gates: Option<Vec<String>>,
     /// `(gate, probe)` pairs replacing the whole probe list, each checked
     /// against the gates the patch leaves.
     gate_probes: Option<Vec<(String, String)>>,
@@ -374,6 +407,7 @@ fn patch_milestone(
                 after: Vec::new(),
                 ui_states: Vec::new(),
                 ui_controls: Vec::new(),
+                external_gates: Vec::new(),
             });
             store.milestones.len() - 1
         }
@@ -382,6 +416,25 @@ fn patch_milestone(
     if let Some(gates) = &patch.gates {
         let old = std::mem::replace(&mut spec.gates, gates.clone());
         changes.push(("gates", json!(old).to_string(), json!(gates).to_string()));
+    }
+    let marks = match (&patch.external_gates, &patch.gates) {
+        (Some(marks), _) => Some(marks.clone()),
+        (None, Some(_)) => Some(
+            spec.external_gates
+                .iter()
+                .filter(|mark| spec.gates.contains(mark))
+                .cloned()
+                .collect(),
+        ),
+        (None, None) => None,
+    };
+    if let Some(marks) = marks {
+        let old = std::mem::replace(&mut spec.external_gates, marks);
+        changes.push((
+            "external_gates",
+            json!(old).to_string(),
+            json!(spec.external_gates).to_string(),
+        ));
     }
     if let Some(pairs) = &patch.gate_probes {
         let probes = gate_probes_for(id, pairs, &spec.gates, &spec.gate_probes)?;

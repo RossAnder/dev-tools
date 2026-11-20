@@ -266,6 +266,7 @@ fn entry_matches(entry: &JsonValue, stored: &Accept) -> bool {
         ("positive", &stored.positive),
         ("run_by", &stored.run_by),
         ("covered_by", &stored.covered_by),
+        ("effect", &stored.effect),
     ];
     let mut compared = false;
     for (key, value) in strings {
@@ -755,6 +756,7 @@ summary = "Not a plan finding."
             run_by: String::new(),
             covered_by: String::new(),
             states: Vec::new(),
+            effect: String::new(),
             probe: probed.then(schema_probe),
         }
     }

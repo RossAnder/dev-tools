@@ -102,7 +102,13 @@ fn audit_reports_a_bun_suite_and_cuts_long_commands() {
     let rows = rows.as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["command"], "bun test");
-    assert_eq!(rows[1]["command"].as_str().unwrap().chars().count(), 200);
+    let cut = rows[1]["command"].as_str().unwrap();
+    assert!(cut.ends_with("..."), "cut row carries the end marker");
+    assert_eq!(
+        cut.chars().count(),
+        200 + 3,
+        "COMMAND_CAP chars plus marker"
+    );
 }
 
 #[test]

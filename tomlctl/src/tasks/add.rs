@@ -24,9 +24,9 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{
-    ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_ACTOR, DEFAULT_HEADING_DEPTH, Effort,
-    FileNote, FindingLink, MEANS_BINDINGS, Means, Premise, RUN_BY_OWNERS, Status, Store, TaskRow,
-    TaskSpec, premise_target,
+    ACCEPT_KINDS, Accept, BacklogLink, Change, DEFAULT_ACTOR, DEFAULT_HEADING_DEPTH, EFFECTS,
+    Effort, FileNote, FindingLink, MEANS_BINDINGS, Means, Premise, RUN_BY_OWNERS, Status, Store,
+    TaskRow, TaskSpec, premise_target,
 };
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -96,7 +96,7 @@ const SPEC_FIELDS: [&str; 8] = [
     "precedent",
     "executor",
 ];
-const ACCEPT_FIELDS: [&str; 8] = [
+const ACCEPT_FIELDS: [&str; 9] = [
     "behaviour",
     "check",
     "kind",
@@ -105,6 +105,7 @@ const ACCEPT_FIELDS: [&str; 8] = [
     "run_by",
     "covered_by",
     "states",
+    "effect",
 ];
 const PREMISE_FIELDS: [&str; 3] = ["claim", "check", "at"];
 const MEANS_FIELDS: [&str; 3] = ["text", "binding", "detail"];
@@ -625,6 +626,7 @@ fn accept_entry(entry: &SpecObject<'_>) -> Result<Accept> {
         run_by: entry.one_of("run_by", &RUN_BY_OWNERS)?.unwrap_or_default(),
         covered_by: entry.text("covered_by")?.unwrap_or_default(),
         states: entry.strings("states")?.unwrap_or_default(),
+        effect: entry.one_of("effect", &EFFECTS)?.unwrap_or_default(),
         probe: None,
     };
     match accept.owner_problem() {

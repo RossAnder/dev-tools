@@ -48,6 +48,7 @@ pub(super) fn dispatch(op: PlanEmitOp) -> Result<()> {
         PlanEmitOp::GateList(args) => gate_list(args),
         PlanEmitOp::ReproduceUnits(args) => reproduce_units(args),
         PlanEmitOp::LaneCheck(args) => super::lane::lane_check(args),
+        PlanEmitOp::CommitPaths(args) => super::commit_paths::run(args),
         PlanEmitOp::Schedule(args) => super::schedule::run(args),
     }
 }
@@ -165,8 +166,11 @@ fn launch_args(args: PlanEmitLaunchArgs) -> Result<()> {
 }
 
 /// The milestone's gates in stored order, then each gate-owned accept check of
-/// its rows by row id and entry. Holds and per-command options are the
-/// orchestrator's to add, so none is printed here. A milestone with
+/// its rows by row id and entry. A gate named in the milestone's
+/// `external_gates`, or a gate-owned accept check whose `effect` is
+/// `external`, goes to `held` instead of `commands`, with the `source` it
+/// would have had there; `held` is printed only when it is not empty. Per-command
+/// options are the orchestrator's to add. A milestone with
 /// `ui_states` also gets a `visual` object holding its look entries, which
 /// are judged rather than run and so never enter `commands` or `skipped`.
 fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
@@ -180,8 +184,23 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
 
     let mut listed: BTreeSet<&str> = BTreeSet::new();
     let mut commands: Vec<JsonValue> = Vec::new();
+    let mut held: Vec<JsonValue> = Vec::new();
     let mut skipped: Vec<JsonValue> = Vec::new();
     let mut looks: Vec<JsonValue> = Vec::new();
+    let mut marked: BTreeSet<&str> = milestone_spec
+        .into_iter()
+        .flat_map(|spec| spec.external_gates.iter().map(String::as_str))
+        .collect();
+    for row in tasks.items.iter().filter(|row| row.checkpoint == milestone) {
+        if let Some(spec) = spec_of(&tasks, row) {
+            marked.extend(
+                spec.accept
+                    .iter()
+                    .filter(|accept| accept.owner() == RUN_BY_GATE && accept.effect == "external")
+                    .map(|accept| accept.check.as_str()),
+            );
+        }
+    }
     for gate in tasks
         .milestones
         .iter()
@@ -189,7 +208,12 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
         .flat_map(|spec| &spec.gates)
     {
         if listed.insert(gate.as_str()) {
-            commands.push(json!({ "command": gate, "source": "gate" }));
+            let entry = json!({ "command": gate, "source": "gate" });
+            if marked.contains(gate.as_str()) {
+                held.push(entry);
+            } else {
+                commands.push(entry);
+            }
         }
     }
     let mut members: Vec<&TaskRow> = tasks
@@ -207,10 +231,15 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
                 RUN_BY_COVERED => format!("covered_by {}", accept.covered_by),
                 RUN_BY_GATE if !accept.check.trim().is_empty() => {
                     if listed.insert(accept.check.as_str()) {
-                        commands.push(json!({
+                        let entry = json!({
                             "command": accept.check,
                             "source": format!("accept:{}:{index}", row.id),
-                        }));
+                        });
+                        if marked.contains(accept.check.as_str()) {
+                            held.push(entry);
+                        } else {
+                            commands.push(entry);
+                        }
                         continue;
                     }
                     "duplicate".to_string()
@@ -247,6 +276,9 @@ fn gate_list(args: PlanEmitGateListArgs) -> Result<()> {
         }
     }
     let mut out = json!({ "commands": commands, "skipped": skipped });
+    if !held.is_empty() {
+        out["held"] = json!(held);
+    }
     if let Some(spec) = milestone_spec.filter(|spec| !spec.ui_states.is_empty()) {
         out["visual"] = json!({
             "states": spec.ui_states,

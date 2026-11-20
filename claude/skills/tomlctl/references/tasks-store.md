@@ -25,7 +25,7 @@ re-render is a clean diff.
 
 | Key | Set by |
 |---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`, else `2` while the store holds `audit`, `id_high_water`, `finding_links`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store, and one that knows only `2` refuses a `3` store. |
+| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path; every write re-stamps it `4` while a milestone holds a non-empty `external_gates` or an accept entry holds `effect`, else `3` while a milestone holds `ui_states` or `ui_controls` or an accept entry holds `run_by = "look"` or `states`, else `2` while the store holds `audit`, `id_high_water`, `finding_links`, `specs`, `milestones` or `changes`, else `1`. A binary that knows only `1` refuses a `2` store, one that knows only `2` refuses a `3` store, and one that knows only `3` refuses a `4` store. |
 | `audit` | `true` once the plan is approved; omitted otherwise. A non-boolean value is an error. Written between `last_import_refs` and `[policy]`. |
 | `id_high_water` | `tasks remove`, on a store in a flow with a `plan.toml` or already holding a v2 key: the highest id a removal retired. `tasks add` and `add-many` mint past it, so an id never names a second task. A bare integer, omitted while `0`; anything but a non-negative integer is an error. Written after `audit`. |
 | `last_updated` | a bare TOML date, restamped on every mutation |
@@ -127,15 +127,21 @@ otherwise; `writes_build` keeps its one meaning, whether running the check build
 
 `states` is allowed only with `run_by = "look"`, which needs a non-empty `states` and an empty `check`; a store holding either raises `schema_version` to `3`.
 
+`effect = "external"` marks a check whose command has an effect outside the working tree, such as a
+deploy or an install. It is allowed only on an entry whose effective owner is `gate`, so no probe
+ever runs it; `external` is the one value, the key is written only when set, and a store holding
+one raises `schema_version` to `4`.
+
 `tasks add`, `add-many` and `update` refuse an unknown `run_by`, `worker` on a building check,
-`covered` without `covered_by` and `covered_by` without `covered`; `plan check` reports the same as
+`covered` without `covered_by`, `covered_by` without `covered`, an unknown `effect` and `effect` on
+an entry the gate does not run; `plan check` reports the same as
 `plan/accept-owner-invalid`, and a `covered_by` matching no gate of the milestone as
 `plan/accept-cover-unknown`. `plan view` prints the owner as a `Run by:` line under each check.
 
 `[[milestones]]`: `id` (a `[[checkpoints]]` id), `gates`, `gate_probes`, `elaboration` (`upfront`
 when absent, `deferred`, or `elaborated` once a deferred milestone's tasks exist) and
 `defer_reason`, and `after`, the earlier milestone ids this one runs after, set by
-`plan milestone add|update --after` and omitted while empty. `ui_states` lists the capture states the milestone's visual pass judges and `ui_controls` the planted-defect states the inspector must fail; each is omitted while empty. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
+`plan milestone add|update --after` and omitted while empty. `ui_states` lists the capture states the milestone's visual pass judges and `ui_controls` the planted-defect states the inspector must fail; each is omitted while empty. `external_gates` lists the gates, each the exact command of one of `gates`, whose effect reaches outside the working tree; it is omitted while empty, and a non-empty list raises `schema_version` to `4`. `gate_probes` is a list of `{gate, probe, verdict, at}` tables written as
 `[[milestones.gate_probes]]` and omitted while empty: `gate` is one of the milestone's `gates`,
 `probe` a cheap command that fails where that gate cannot pass here, and `verdict` (`holds`, `fails`
 or `broken`) and `at` (the capture's head) are written only by `plan probes --record --gates`

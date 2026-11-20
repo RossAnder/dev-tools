@@ -286,8 +286,9 @@ fn task_json(store: &Store, row: &TaskRow) -> JsonValue {
 }
 
 /// Unlike `tasks show`, every accept entry carries `run_by`, `covered_by` and
-/// `states` even when empty, plus its derived `owner`; `probeable` is the probe
-/// emitter's own skip rule, so a viewer never restates it.
+/// `states` even when empty, plus its derived `owner`; `effect` appears only
+/// when set. `probeable` is the probe emitter's own skip rule, so a viewer
+/// never restates it.
 fn spec_json(store: &Store, spec: &TaskSpec) -> JsonValue {
     let accept: Vec<JsonValue> = spec
         .accept
@@ -302,6 +303,9 @@ fn spec_json(store: &Store, spec: &TaskSpec) -> JsonValue {
             map.insert("run_by".into(), json!(entry.run_by));
             map.insert("covered_by".into(), json!(entry.covered_by));
             map.insert("states".into(), json!(entry.states));
+            if !entry.effect.is_empty() {
+                map.insert("effect".into(), json!(entry.effect));
+            }
             map.insert("owner".into(), json!(entry.owner()));
             map.insert(
                 "probeable".into(),

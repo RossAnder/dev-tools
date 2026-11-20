@@ -11,8 +11,9 @@
 //! ```
 //!
 //! Each path or change item carries its own ruling, so one request can be
-//! granted in part. A store holding a request is stamped `SCHEMA_VERSION`, so
-//! a binary predating the array refuses it rather than dropping it.
+//! granted in part. A store holding a request is stamped at least
+//! `REQUEST_SCHEMA_VERSION`, so a binary predating the array refuses it rather
+//! than dropping it.
 
 use anyhow::{Result, anyhow};
 use toml::Value as TomlValue;
@@ -260,7 +261,7 @@ mod tests {
     use super::*;
     use crate::plan::schema::tests::fixture;
     use crate::plan::schema::{
-        BASE_SCHEMA_VERSION, RUN_RECORDS_SCHEMA_VERSION, SCHEMA_VERSION, from_toml, to_toml,
+        BASE_SCHEMA_VERSION, REQUEST_SCHEMA_VERSION, RUN_RECORDS_SCHEMA_VERSION, from_toml, to_toml,
     };
 
     fn at(raw: &str) -> Datetime {
@@ -306,7 +307,7 @@ mod tests {
 
     fn with_request() -> PlanStore {
         PlanStore {
-            schema_version: SCHEMA_VERSION,
+            schema_version: REQUEST_SCHEMA_VERSION,
             requests: vec![request()],
             ..fixture()
         }
@@ -388,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn a_store_holding_a_request_stamps_the_newest_version() {
+    fn a_store_holding_a_request_stamps_the_request_version() {
         let mut base = PlanStore {
             schema_version: BASE_SCHEMA_VERSION,
             attempts: Vec::new(),
@@ -398,10 +399,10 @@ mod tests {
         };
         base.requests.push(request());
         for store in [with_request(), base] {
-            assert_eq!(store.write_version(), SCHEMA_VERSION);
+            assert_eq!(store.write_version(), REQUEST_SCHEMA_VERSION);
             assert_eq!(
                 to_toml(&store)["schema_version"].as_integer(),
-                Some(SCHEMA_VERSION)
+                Some(REQUEST_SCHEMA_VERSION)
             );
         }
     }

@@ -90,7 +90,7 @@ tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledg
 tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 tomlctl plan open|decide|contract|handover|request|run|milestone|check|view|probes|stage|gate|approve|drift --slug <s>   # a v2 flow's plan.toml, brief and task-store side tables; `plan open` creates the plan.toml that makes a flow v2
-tomlctl plan emit launch-args|gate-list|reproduce-units --slug <s> --milestone <id>   # a milestone's Workflow args, gate command list or reproduce launches, built from the stores; read-only
+tomlctl plan emit launch-args|gate-list|reproduce-units|commit-paths --slug <s> --milestone <id>   # a milestone's Workflow args, gate command list or reproduce launches, built from the stores; read-only
 tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
 tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--head <rev>] [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
 tomlctl review run update <U> --slug <s> --set-json waivers=<json>   # patch signals, waivers, audit, agents or baselines (--set / --set-file also)
@@ -334,7 +334,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.25.0",
+  "version": "0.26.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -391,9 +391,11 @@ downstream flow-command templates can feature-gate at boot without parsing
                "review_add_dry_run", "review_reproduce_checker",
                "accept_run_by", "reproduce_status_milestone",
                "gate_probes", "plan_emit", "agents_audit",
-               "plan_emit_lane_check", "milestone_schedule",
+               "plan_emit_lane_check", "plan_emit_commit_paths",
+               "effect_mark", "plan_run_gate_blocks", "milestone_schedule",
                "snapshot_plan_records",
-               "plan_run_records", "authored_files", "agent_usage",
+               "plan_run_records", "plan_run_visual",
+               "authored_files", "agent_usage",
                "review_finding_read", "decision_class", "ui_look",
                "inputs_plan_ledger", "plan_request",
                "generated_config", "review_propose_kinds",
@@ -606,9 +608,13 @@ Feature meanings:
 | `plan_emit` | `plan emit launch-args\|gate-list\|reproduce-units --slug <SLUG> --milestone <ID>` print the milestone Workflow's args with their hash, the gate's command list, and the reproduce check's launches, built from the stores and writing nothing; `plan run start --tasks <N1,N2>` stores the ids a launch dispatched |
 | `agents_audit` | `agents audit --transcripts <DIR> [--pattern <REGEX>]...` prints `{agent, command}` rows for the Bash commands in a launch's `agent-*.jsonl` transcripts that match a pattern, by default a cargo build, test or nextest run and a recursive grep; writes nothing |
 | `plan_emit_lane_check` | `plan emit lane-check --slug <SLUG> --milestone <ID>` reports the uncommitted paths outside the latest `implement:<ID>` run's lanes and every task-store write beyond a worker's `status` and `agent`, from the `[[changes]]` trail and the `store_digest` `plan run start` records on the run; `plan emit launch-args` also takes `--max-compile-parallel <N>` |
+| `plan_emit_commit_paths` | `plan emit commit-paths --slug <SLUG> --milestone <ID>` prints the changed files a milestone's rows name, for its commit |
+| `effect_mark` | a gate command or accept check can carry an external-effect mark, and `plan emit gate-list` reports the marked commands under `held` |
+| `plan_run_gate_blocks` | `plan run gate --blocks` records a gate's results from the verification agent's blocks without retyping them |
 | `milestone_schedule` | `plan emit schedule --slug <SLUG>` prints each milestone's state and the milestone /implement-v2 runs next; `plan milestone add\|update --after <ID>` and `update --clear-after` order a milestone after an earlier one; `plan check --milestone <ID>` keeps findings on that milestone and its upstream rows; after approval `plan stage` keeps open `elaborate:<id>` and `cold-read:<id>` runs out of `blockers`; `plan emit launch-args` drops `need-not-committed:<task>`; the lane check leaves out milestones deferred when the run opened |
 | `snapshot_plan_records` | `tasks snapshot` also carries each task's spec, the plan's milestones, its changes and its plan keys |
 | `plan_run_records` | `plan run notes`, `plan run gate` and `plan run report` read and record a milestone run's notes, gate result and report |
+| `plan_run_visual` | `plan run visual --accept` records the user's acceptance of a failed visual pass in the plan store |
 | `authored_files` | the library's `authored_list` and `authored_read` list and read the authored files under a flow's directory |
 | `agent_usage` | the agent record carries a `usage` table of the token counts a hook payload reported |
 | `review_finding_read` | the library's `review_finding` reads a single finding row from a review store |

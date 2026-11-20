@@ -5,12 +5,14 @@
 //! last_updated = 2026-11-05
 //! [binding] / [id_high_water]
 //! [[decision]] / [[contract]] / [[approval]] / [[run]] / [[handover]]
-//! [[attempt]] / [[gate_round]] / [[report]] / [[request]]
+//! [[attempt]] / [[gate_round]] / [[report]] / [[request]] / [[visual_accept]]
 //! ```
 //!
 //! `to_toml` inserts keys in that order and `preserve_order` holds it, so a
-//! write is byte-stable with no sort step. A write stamps `SCHEMA_VERSION` when
-//! the store holds a request, `CLASS_SCHEMA_VERSION` when a decision otherwise
+//! write is byte-stable with no sort step. A write stamps
+//! `VISUAL_ACCEPT_SCHEMA_VERSION` when the store holds a visual acceptance,
+//! `REQUEST_SCHEMA_VERSION` when it otherwise holds a request,
+//! `CLASS_SCHEMA_VERSION` when a decision otherwise
 //! carries a `class`, `RUN_RECORDS_SCHEMA_VERSION` when the store otherwise
 //! holds an attempt, gate round or report, and `BASE_SCHEMA_VERSION` else, so
 //! that a binary predating those keys refuses the store rather than dropping
@@ -30,9 +32,14 @@ use crate::tasks::schema::{
     as_date as as_datetime, id_array, lf, normal_path, str_arr_value, str_array,
 };
 
-/// The newest stamp this build reads; a store holding a request is written at
-/// it.
-pub(crate) const SCHEMA_VERSION: i64 = 5;
+/// The newest stamp this build reads.
+pub(crate) const SCHEMA_VERSION: i64 = VISUAL_ACCEPT_SCHEMA_VERSION;
+
+/// The stamp of a store holding a visual acceptance.
+pub(crate) const VISUAL_ACCEPT_SCHEMA_VERSION: i64 = 6;
+
+/// The stamp of a store holding a request and no visual acceptance.
+pub(crate) const REQUEST_SCHEMA_VERSION: i64 = 5;
 
 /// The stamp of a store holding no request and a decision with a class.
 pub(crate) const CLASS_SCHEMA_VERSION: i64 = 4;
@@ -44,7 +51,8 @@ pub(crate) const RUN_RECORDS_SCHEMA_VERSION: i64 = 3;
 /// decision class, and the version an unstamped store reads as.
 pub(crate) const BASE_SCHEMA_VERSION: i64 = 2;
 
-const _: () = assert!(SCHEMA_VERSION > CLASS_SCHEMA_VERSION);
+const _: () = assert!(VISUAL_ACCEPT_SCHEMA_VERSION > REQUEST_SCHEMA_VERSION);
+const _: () = assert!(REQUEST_SCHEMA_VERSION > CLASS_SCHEMA_VERSION);
 const _: () = assert!(CLASS_SCHEMA_VERSION > RUN_RECORDS_SCHEMA_VERSION);
 const _: () = assert!(RUN_RECORDS_SCHEMA_VERSION > BASE_SCHEMA_VERSION);
 
@@ -248,6 +256,7 @@ pub(crate) struct PlanStore {
     pub(crate) gate_rounds: Vec<GateRound>,
     pub(crate) reports: Vec<Report>,
     pub(crate) requests: Vec<Request>,
+    pub(crate) visual_accepts: Vec<VisualAccept>,
 }
 
 /// The branch and scope a draft holds here until approval, so that it matches
@@ -523,6 +532,39 @@ pub(crate) struct ReportEntry {
     pub(crate) needs_person: bool,
 }
 
+/// The user's acceptance of a failed visual round, keyed on
+/// `(milestone, round)`: the states and look criteria waived and the backlog
+/// item that follows the waiver up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VisualAccept {
+    pub(crate) milestone: String,
+    pub(crate) round: u32,
+    pub(crate) at: Datetime,
+    pub(crate) why: String,
+    pub(crate) states: Vec<String>,
+    pub(crate) looks: Vec<WaivedLook>,
+    pub(crate) defects: Vec<WaivedDefect>,
+    pub(crate) backlog: String,
+}
+
+/// A `run_by = "look"` accept entry, by its 0-based index in the task's spec.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WaivedLook {
+    pub(crate) task: u32,
+    pub(crate) accept: u32,
+}
+
+/// One defect the inspector reported and the user accepted; `state` is one of
+/// its record's `states`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WaivedDefect {
+    pub(crate) state: String,
+    pub(crate) class: String,
+    pub(crate) location: String,
+    pub(crate) detail: String,
+    pub(crate) note: String,
+}
+
 impl Default for PlanStore {
     fn default() -> Self {
         Self {
@@ -539,6 +581,7 @@ impl Default for PlanStore {
             gate_rounds: Vec::new(),
             reports: Vec::new(),
             requests: Vec::new(),
+            visual_accepts: Vec::new(),
         }
     }
 }
@@ -546,8 +589,10 @@ impl Default for PlanStore {
 impl PlanStore {
     /// The stamp a write gives this store.
     pub(crate) fn write_version(&self) -> i64 {
-        if !self.requests.is_empty() {
-            SCHEMA_VERSION
+        if !self.visual_accepts.is_empty() {
+            VISUAL_ACCEPT_SCHEMA_VERSION
+        } else if !self.requests.is_empty() {
+            REQUEST_SCHEMA_VERSION
         } else if self.decisions.iter().any(|d| d.class.is_some()) {
             CLASS_SCHEMA_VERSION
         } else if self.attempts.is_empty() && self.gate_rounds.is_empty() && self.reports.is_empty()
@@ -614,6 +659,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<PlanStore> {
         gate_rounds: records(root, "gate_round", gate_round_from_toml)?,
         reports: records(root, "report", report_from_toml)?,
         requests: records(root, "request", request_from_toml)?,
+        visual_accepts: records(root, "visual_accept", visual_accept_from_toml)?,
     })
 }
 
@@ -632,6 +678,7 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
         gate_rounds,
         reports,
         requests,
+        visual_accepts,
     } = store;
 
     let mut root = Table::new();
@@ -660,6 +707,12 @@ pub(crate) fn to_toml(store: &PlanStore) -> TomlValue {
     insert_records(&mut root, "gate_round", gate_rounds, gate_round_to_toml);
     insert_records(&mut root, "report", reports, report_to_toml);
     insert_records(&mut root, "request", requests, request_to_toml);
+    insert_records(
+        &mut root,
+        "visual_accept",
+        visual_accepts,
+        visual_accept_to_toml,
+    );
     TomlValue::Table(root)
 }
 
@@ -1425,6 +1478,99 @@ fn report_to_toml(report: &Report) -> TomlValue {
     TomlValue::Table(table)
 }
 
+fn visual_accept_from_toml(table: &Table, context: &str) -> Result<VisualAccept> {
+    let milestone = required_str(table, "milestone", context)?;
+    let round = required_u32(table, "round", context)?;
+    let context = format!("visual_accept {milestone} r{round}");
+    Ok(VisualAccept {
+        at: required_datetime(table, "at", &context)?,
+        why: lf(&str_or(table, "why")),
+        states: str_array(table, "states"),
+        looks: nested(table, "looks", &context, |entry, context| {
+            Ok(WaivedLook {
+                task: required_u32(entry, "task", context)?,
+                accept: required_u32(entry, "accept", context)?,
+            })
+        })?,
+        defects: nested(table, "defects", &context, |entry, _| {
+            let class = lf(&str_or(entry, "class"));
+            Ok(WaivedDefect {
+                state: lf(&str_or(entry, "state")),
+                class,
+                location: lf(&str_or(entry, "location")),
+                detail: lf(&str_or(entry, "detail")),
+                note: lf(&str_or(entry, "note")),
+            })
+        })?,
+        backlog: str_or(table, "backlog"),
+        milestone,
+        round,
+    })
+}
+
+fn visual_accept_to_toml(accept: &VisualAccept) -> TomlValue {
+    let VisualAccept {
+        milestone,
+        round,
+        at,
+        why,
+        states,
+        looks,
+        defects,
+        backlog,
+    } = accept;
+    let mut table = Table::new();
+    table.insert(
+        "milestone".to_string(),
+        TomlValue::String(milestone.clone()),
+    );
+    table.insert("round".to_string(), TomlValue::Integer(i64::from(*round)));
+    table.insert("at".to_string(), TomlValue::Datetime(*at));
+    table.insert("why".to_string(), TomlValue::String(lf(why)));
+    table.insert("states".to_string(), str_arr_value(states));
+    table.insert(
+        "looks".to_string(),
+        TomlValue::Array(
+            looks
+                .iter()
+                .map(|WaivedLook { task, accept }| {
+                    let mut entry = Table::new();
+                    entry.insert("task".to_string(), TomlValue::Integer(i64::from(*task)));
+                    entry.insert("accept".to_string(), TomlValue::Integer(i64::from(*accept)));
+                    TomlValue::Table(entry)
+                })
+                .collect(),
+        ),
+    );
+    table.insert(
+        "defects".to_string(),
+        TomlValue::Array(
+            defects
+                .iter()
+                .map(
+                    |WaivedDefect {
+                         state,
+                         class,
+                         location,
+                         detail,
+                         note,
+                     }| {
+                        text_table(&[
+                            ("state", state),
+                            ("class", class),
+                            ("location", location),
+                            ("detail", detail),
+                            ("note", note),
+                        ])
+                    },
+                )
+                .collect(),
+        ),
+    );
+    table.insert("backlog".to_string(), TomlValue::String(backlog.clone()));
+    TomlValue::Table(table)
+}
+
 /// A table of string keys, each LF-normalised, in the order given.
 fn text_table(fields: &[(&str, &String)]) -> TomlValue {
     TomlValue::Table(
@@ -1623,6 +1769,7 @@ pub(crate) mod tests {
             gate_rounds: vec![gate_round()],
             reports: vec![report()],
             requests: Vec::new(),
+            visual_accepts: Vec::new(),
         }
     }
 
@@ -1877,6 +2024,88 @@ pub(crate) mod tests {
             assert_eq!(doc["decision"][0]["class"].as_str(), Some("compromise"));
             assert_eq!(rendered_round_trip(&store), store);
         }
+    }
+
+    fn visual_accept() -> VisualAccept {
+        VisualAccept {
+            milestone: "B".to_string(),
+            round: 2,
+            at: at("2026-11-12T11:00:00Z"),
+            why: "The clipped badge is a known font issue.".to_string(),
+            states: vec!["list-full".to_string()],
+            looks: vec![WaivedLook { task: 7, accept: 1 }],
+            defects: vec![WaivedDefect {
+                state: "list-full".to_string(),
+                class: "clipping".to_string(),
+                location: "the badge".to_string(),
+                detail: String::new(),
+                note: "Fixed by the font update.".to_string(),
+            }],
+            backlog: "B-1a2b3c4d".to_string(),
+        }
+    }
+
+    fn open_request() -> Request {
+        Request {
+            id: "Q1".to_string(),
+            run_id: "wf_1".to_string(),
+            milestone: "B".to_string(),
+            task: 7,
+            at: at("2026-11-12T10:10:00Z"),
+            status: crate::plan::schema_request::RequestStatus::Open,
+            ruled_at: None,
+            applied: false,
+            paths: Vec::new(),
+            changes: Vec::new(),
+        }
+    }
+
+    /// The acceptance tier is tested before the request tier, so a store
+    /// holding both is still refused by a binary that predates the array.
+    #[test]
+    fn a_visual_acceptance_round_trips_and_stamps_its_tier_over_a_request() {
+        let accepted = PlanStore {
+            schema_version: VISUAL_ACCEPT_SCHEMA_VERSION,
+            visual_accepts: vec![visual_accept()],
+            ..fixture()
+        };
+        let with_request = PlanStore {
+            requests: vec![open_request()],
+            ..accepted.clone()
+        };
+        for store in [accepted, with_request] {
+            assert_eq!(store.write_version(), VISUAL_ACCEPT_SCHEMA_VERSION);
+            let doc = to_toml(&store);
+            assert_eq!(
+                doc["schema_version"].as_integer(),
+                Some(VISUAL_ACCEPT_SCHEMA_VERSION)
+            );
+            let keys: Vec<&str> = doc
+                .as_table()
+                .expect("root table")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(keys.last(), Some(&"visual_accept"), "{doc}");
+            assert_eq!(rendered_round_trip(&store), store);
+        }
+    }
+
+    #[test]
+    fn a_store_without_a_visual_acceptance_keeps_its_stamp_and_writes_no_key() {
+        for store in [fixture(), base_fixture(), classed(fixture())] {
+            let doc = to_toml(&store);
+            assert!(doc.get("visual_accept").is_none(), "{doc}");
+            assert_eq!(
+                doc["schema_version"].as_integer(),
+                Some(store.schema_version)
+            );
+        }
+        let request = PlanStore {
+            requests: vec![open_request()],
+            ..fixture()
+        };
+        assert_eq!(request.write_version(), REQUEST_SCHEMA_VERSION);
     }
 
     #[test]

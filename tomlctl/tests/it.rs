@@ -53,6 +53,7 @@ mod output_trim;
 mod payload_toml;
 mod plan_approve;
 mod plan_check;
+mod plan_commit_paths;
 mod plan_drift;
 mod plan_emit;
 mod plan_lifecycle;

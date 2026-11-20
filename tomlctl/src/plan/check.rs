@@ -4,7 +4,7 @@
 //!
 //! Warnings are `plan/file-case-collision`, `plan/generated-output-unheld`,
 //! `plan/milestone-no-gate`,
-//! `plan/milestone-order-unqualified`, `plan/probe-absent`,
+//! `plan/milestone-order-unqualified`, `plan/needs-gate-effect`, `plan/probe-absent`,
 //! `plan/ui-accept-structural` and `plan/ui-milestone-no-states`, and `plan/file-only-chain` and `plan/milestone-width`
 //! are info; every other class raised here is an error.
 
@@ -29,8 +29,8 @@ use crate::tasks::finding::{
 use crate::tasks::markdown::FenceState;
 use crate::tasks::milestones;
 use crate::tasks::schema::{
-    BINDING_REQUIRED, MilestoneSpec, Premise, RUN_BY_LOOK, Status, Store, TaskRow, TaskSpec,
-    VERDICT_HEALTHY, normal_path,
+    BINDING_REQUIRED, EFFECT_EXTERNAL, MilestoneSpec, Premise, RUN_BY_GATE, RUN_BY_LOOK, Status,
+    Store, TaskRow, TaskSpec, VERDICT_HEALTHY, normal_path,
 };
 use crate::tasks::slug::{dedupe_refs, derive_ref};
 use crate::tasks::{load_store, resolve_store_path};
@@ -187,7 +187,11 @@ pub(crate) fn findings(slug: &str, integrity: &ReadIntegrityArgs) -> Result<Vec<
     );
     found.extend(spec_findings(&tasks, &authored));
     found.extend(milestone_findings(&tasks));
-    found.extend(ui_findings(&tasks));
+    found.extend(needs_gate_effect_findings(&tasks));
+    found.extend(ui_findings(
+        &tasks,
+        ui_capture::load_paths(&root).ok().as_ref(),
+    ));
     found.extend(ui_scope_findings(&tasks, &root));
     found.extend(generated_outputs::generated_output_findings(&tasks, &root));
     found.extend(case_collision::case_collision_findings(&tasks, &root));
@@ -777,6 +781,70 @@ fn milestone_findings(tasks: &Store) -> Vec<Finding> {
                 ));
             }
         }
+        for (index, external) in milestone.external_gates.iter().enumerate() {
+            if !milestone.gates.contains(external) {
+                findings.push(error(
+                    "plan/external-gate-unknown",
+                    members(&milestone.id),
+                    format!(
+                        "milestone `{}`'s `external_gates[{index}]` marks `{external}`, which is \
+                         no gate of the milestone",
+                        milestone.id
+                    ),
+                ));
+            }
+        }
+    }
+    findings
+}
+
+/// Per pending row, the first row its `needs` reach in its own milestone that
+/// holds a gate-run `effect = "external"` accept. That effect exists only once
+/// the milestone's gate has run, after every row of the milestone is done.
+fn needs_gate_effect_findings(tasks: &Store) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for row in &tasks.items {
+        if row.status != Status::Pending || row.checkpoint.is_empty() {
+            continue;
+        }
+        let mut visited: BTreeSet<u32> = BTreeSet::new();
+        let mut frontier: Vec<u32> = row.needs.clone();
+        let mut hit: Option<(u32, &str)> = None;
+        while let Some(id) = frontier.pop() {
+            if !visited.insert(id) {
+                continue;
+            }
+            let Some(reached) = tasks.find(id) else {
+                continue;
+            };
+            frontier.extend(reached.needs.iter().copied());
+            if reached.id == row.id || reached.checkpoint != row.checkpoint {
+                continue;
+            }
+            let external = tasks.spec_for(&reached.r#ref).and_then(|spec| {
+                spec.accept.iter().find(|accept| {
+                    accept.effect == EFFECT_EXTERNAL && accept.owner() == RUN_BY_GATE
+                })
+            });
+            if let Some(accept) = external
+                && hit.is_none_or(|(at, _)| reached.id < at)
+            {
+                hit = Some((reached.id, accept.check.as_str()));
+            }
+        }
+        if let Some((effect_row, check)) = hit {
+            findings.push(Finding {
+                class: "plan/needs-gate-effect",
+                severity: WARNING,
+                ids: vec![row.id],
+                detail: format!(
+                    "task {} needs task {effect_row}, whose gate-run accept `{check}` has an \
+                     external effect; that effect exists only after milestone `{}`'s gate, so \
+                     task {} cannot observe it while it runs",
+                    row.id, row.checkpoint, row.id
+                ),
+            });
+        }
     }
     findings
 }
@@ -794,7 +862,8 @@ fn milestone_members(tasks: &Store, id: &str) -> Vec<u32> {
 /// The classes a milestone's declared capture states raise. A `look` entry is
 /// judged on the milestone's `ui_states` only: a control state is one the
 /// inspector must fail, so no behaviour is accepted on it.
-fn ui_findings(tasks: &Store) -> Vec<Finding> {
+fn ui_findings(tasks: &Store, capture_paths: Option<&globset::GlobSet>) -> Vec<Finding> {
+    let capture_paths = capture_paths.filter(|globs| !globs.is_empty());
     let mut findings = Vec::new();
     for milestone in &tasks.milestones {
         if !milestone.ui_states.is_empty() && milestone.ui_controls.is_empty() {
@@ -870,6 +939,11 @@ fn ui_findings(tasks: &Store) -> Vec<Finding> {
             && row.status == Status::Pending
             && !looked
             && structural
+            && capture_paths.is_none_or(|globs| {
+                row.files
+                    .iter()
+                    .any(|file| globs.is_match(normal_path(file)))
+            })
         {
             findings.push(Finding {
                 class: "plan/ui-accept-structural",

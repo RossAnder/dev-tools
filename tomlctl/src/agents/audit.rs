@@ -20,6 +20,7 @@ pub(crate) const DEFAULT_PATTERNS: &[&str] = &[
     r"\bgo\s+(?:build|test)\b",
     r"\bdotnet\s+(?:build|test)\b",
     r"\bpytest\b",
+    r"\b(?:bun|node)\s+(?:-e|--eval)\b.*\bscripts/\S",
 ];
 
 /// The longest command a row carries, in characters, besides the `...`
@@ -182,6 +183,8 @@ mod tests {
             "go test ./...",
             "dotnet build",
             "python -m pytest",
+            "bun -e \"await import('./scripts/preview-deploy.ts')\"",
+            "node --eval \"require('./scripts/x.js')\"",
         ] {
             assert!(flagged(command), "{command}");
         }
@@ -196,6 +199,9 @@ mod tests {
             "grep -rn foo node_modules/pkg",
             "grep --include=*.rs foo file",
             "rustfmt --edition 2024 --check src/a.rs",
+            "bun run scripts/x.ts",
+            "bun -e \"console.log(1)\"",
+            "rg -n foo scripts/",
         ] {
             assert!(!flagged(command), "{command}");
         }

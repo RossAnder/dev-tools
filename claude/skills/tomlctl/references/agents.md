@@ -110,7 +110,9 @@ tomlctl agents audit --transcripts <dir> --gate '<command>' --gate '<command>'
 command over 200 characters is cut to a 200-character window around its first match, each cut end
 marked `...`; a gate match is windowed over the whitespace-collapsed command. Each transcript line is read as JSON, and only `tool_use` entries named `Bash` in
 its `message.content` array count; a line that is not JSON, or has no such array, is skipped. A
-directory with no matching command prints `[]`. The default patterns and the `--gate` commands name what a milestone
+directory with no matching command prints `[]`. The default patterns cover builds and whole-suite test runs, plus a `bun -e`, `bun --eval`,
+`node -e` or `node --eval` command that names a file under `scripts/` (a script run by evaluating
+an import of it; a direct `bun run scripts/x.ts` is not matched). The default patterns and the `--gate` commands name what a milestone
 gate owns and a sub-agent must not run, so a row is a lead to read, not a verdict: a quoted
 `bun test` in a grep's search text also matches.
 
